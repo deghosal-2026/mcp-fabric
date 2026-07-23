@@ -1,6 +1,6 @@
 # MCP Fabric — Design Document
 
-> **Status:** Draft v1.0  
+> **Status:** Approved v1.0  
 > **Last updated:** 2026-07-22  
 > **Covers:** Auth design, state machines, sequence diagrams, caching, concurrency model
 

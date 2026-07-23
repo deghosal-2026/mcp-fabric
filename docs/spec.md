@@ -1,6 +1,6 @@
 # MCP Fabric — Technical Specification
 
-> **Status:** Draft v2.0  
+> **Status:** Approved v2.0  
 > **Last updated:** 2026-07-22  
 > **Covers:** PRD v1.0 (29 journeys, 9 features, all scenarios)
 
