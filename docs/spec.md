@@ -1484,7 +1484,1375 @@ curl http://fabric:8000/v1/health
 
 ---
 
-## 18. Development Setup
+## 18. API Pagination, Filtering, and Sorting
+
+### 18.1 Pagination Strategy
+
+All list endpoints use **cursor-based pagination** for large datasets (audit, servers) and **offset-based** for small datasets (capabilities, agent classes).
+
+```json
+// Request
+GET /v1/audit?event_type=capability_request&cursor=eyJpZCI6IjEyMyJ9&per_page=50
+
+// Response
+{
+    "events": [...],
+    "pagination": {
+        "next_cursor": "eyJpZCI6IjE3MyJ9",
+        "has_more": true,
+        "per_page": 50,
+        "total": 14203
+    }
+}
+```
+
+| Endpoint | Strategy | Default per_page | Max per_page |
+|---|---|---|---|
+| `GET /servers` | Cursor (by created_at) | 50 | 200 |
+| `GET /capabilities` | Offset | 100 | 500 |
+| `GET /audit` | Cursor (by created_at DESC) | 50 | 200 |
+| `GET /approvals` | Cursor (by requested_at) | 50 | 100 |
+| `GET /alerts` | Cursor (by fired_at) | 50 | 100 |
+| `GET /agent-classes` | Offset | 50 | 100 |
+| `GET /packs` | Offset | 50 | 100 |
+| `GET /admin/users` | Offset | 50 | 100 |
+
+### 18.2 Filtering
+
+```python
+# Common filter pattern for all list endpoints
+GET /v1/servers?team_namespace=team:platform&trust_level=trusted&health_status=healthy&q=search
+GET /v1/audit?event_type=capability_request&actor_type=agent&actor_id=dev-agent-01&from=2026-07-01&to=2026-07-31
+GET /v1/capabilities?domain=code&status=active&q=search
+
+# Filter parameters are validated against allowed values
+# Unknown filter params return 400: {"error": "invalid_filter", "parameter": "color"}
+```
+
+### 18.3 Sorting
+
+```python
+# Sort by any sortable field, ascending or descending
+GET /v1/servers?sort=created_at&order=desc
+GET /v1/audit?sort=created_at&order=asc
+GET /v1/capabilities?sort=name&order=asc
+
+# Allowed sort fields per endpoint:
+# /servers: name, created_at, health_status, trust_level
+# /audit: created_at (only — immutable log)
+# /capabilities: name, domain, created_at
+# /approvals: requested_at, status
+```
+
+### 18.4 OpenAPI Documentation
+
+FastAPI auto-generates OpenAPI 3.1 spec at:
+
+```
+GET /docs      — Swagger UI (interactive)
+GET /redoc     — ReDoc (documentation)
+GET /openapi.json — Raw OpenAPI spec
+```
+
+The OpenAPI spec includes all request/response schemas, validation rules, and examples. It is the authoritative API reference.
+
+### 18.5 Webhook Delivery Specification
+
+```python
+# Webhook registration (from Journey 22)
+POST /v1/agents/{agent_id}/webhooks
+Body: {
+    "url": "https://igor.internal/fabric-events",
+    "events": ["capability_added", "capability_deprecated", "capability_schema_changed"]
+}
+Response 201: {
+    "id": "uuid",
+    "webhook_secret": "whsec_xxxx",   # HMAC-SHA256 signing secret
+    "url": "https://...",
+    "events": [...]
+}
+```
+
+**Delivery:**
+- Method: `POST` to registered URL
+- Header: `Fabric-Webhook-Signature: sha256=<hmac>`
+- Body: JSON event payload
+- Timeout: 10 seconds
+- Retry: 3 attempts with exponential backoff (1s, 5s, 25s)
+- Failure: After 3 failed attempts, webhook is marked `degraded`
+- Reactivation: Manual or automatic after 1 hour of successful deliveries
+
+**Signature verification (agent side):**
+```python
+import hmac, hashlib
+
+def verify_webhook(body: bytes, signature: str, secret: str) -> bool:
+    expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(f"sha256={expected}", signature)
+```
+
+---
+
+## 19. Entity Relationship Diagram
+
+```
+┌───────────────────┐       ┌───────────────────┐
+│   mcp_servers     │       │   capabilities    │
+│───────────────────│       │───────────────────│
+│ id (PK)           │       │ id (PK)           │
+│ name              │       │ name (UQ)         │
+│ endpoint          │       │ domain            │
+│ owner_team        │       │ norm_input_schema │
+│ labels (JSONB)    │       │ norm_output_schema│
+│ trust_level       │       │ description       │
+│ health_status     │       │ status            │
+│ team_namespace    │       │ deprecated_at     │
+│ decommissioned_at │       │ grace_period_days │
+└──────┬────────────┘       └────────┬──────────┘
+       │                             │
+       │ 1:N                         │ 1:N
+       ▼                             ▼
+┌───────────────────┐       ┌──────────────────────────────────────┐
+│   server_tools    │       │        capability_mappings           │
+│───────────────────│       │──────────────────────────────────────│
+│ id (PK)           │       │ id (PK)                              │
+│ server_id (FK)────┼──┐    │ capability_id (FK)────────────────────┼──┐
+│ tool_name         │  │    │ server_id (FK)──────────────────────┐│  │
+│ input_schema(JSONB)│  │    │ tool_name                          ││  │
+│ output_schema(JSONB)│  │    │ input_mapping (JSONB)             ││  │
+└───────────────────┘  │    │ output_mapping (JSONB)             ││  │
+                       │    │ is_primary                         ││  │
+┌───────────────────┐  │    │ routing_weight                     ││  │
+│  tool_versions    │  │    └────────────────────────────────────┘│  │
+│───────────────────│  │                                          │  │
+│ id (PK)           │  │    ┌──────────────────────────────────┐  │  │
+│ server_id (FK)────┼──┘    │        routing_rules             │  │  │
+│ tool_name         │       │──────────────────────────────────│  │  │
+│ input_schema(JSONB)│      │ id (PK)                          │  │  │
+│ output_schema(JSONB)│     │ capability_id (FK)───────────────┼──┘  │
+│ is_breaking       │       │ server_id (FK)───────────────────┼─────┘
+│ detected_at       │       │ priority                         │
+└───────────────────┘       │ condition (JSONB)                │
+                            └──────────────────────────────────┘
+
+┌───────────────────┐       ┌──────────────────────────────────────┐
+│  agent_classes    │       │         trust_assignments            │
+│───────────────────│       │──────────────────────────────────────│
+│ id (PK)           │◄──────│ agent_class_id (FK)                  │
+│ name (UQ)         │       │ server_id (FK)──────────────────────┐│
+│ team_namespace    │       │ trust_level                         ││
+└────────┬──────────┘       │ tool_scope (JSONB)                  ││
+         │                  └─────────────────────────────────────┘│
+         │ 1:N                                                     │
+         ▼                                                         │
+┌───────────────────┐                                              │
+│ agent_identities  │                                              │
+│───────────────────│                                              │
+│ id (PK)           │                                              │
+│ agent_class_id(FK)│                                              │
+│ token_hash        │       ┌──────────────────────────────────┐   │
+│ token_prefix      │       │       approval_requests          │   │
+│ status            │       │──────────────────────────────────│   │
+│ rate_limit_per_min│       │ id (PK)                          │   │
+│ expires_at        │       │ agent_identity_id (FK)───────────┼───┘
+└───────────────────┘       │ capability_id (FK)               │
+                            │ server_id (FK)───────────────────┼───┐
+┌───────────────────┐       │ request_params (JSONB)           │   │
+│ capability_packs  │       │ status                           │   │
+│───────────────────│       │ approver_id (FK)                 │◄──┼──┐
+│ id (PK)           │       │ requested_at                     │   │  │
+│ name (UQ)         │       │ resolved_at                      │   │  │
+│ team_namespace    │       └──────────────────────────────────┘   │  │
+└────────┬──────────┘                                              │  │
+         │                                                         │  │
+         │ N:M (via pack_assignments)                               │  │
+         ▼                                                         │  │
+┌──────────────────────────────────────┐                            │  │
+│          pack_assignments            │                            │  │
+│──────────────────────────────────────│                            │  │
+│ pack_id (FK) ────────────────────────┼── capability_packs.id     │  │
+│ capability_id (FK) ──────────────────┼── capabilities.id         │  │
+└──────────────────────────────────────┘                            │  │
+                                                                    │  │
+┌──────────────────────────────────────┐                            │  │
+│        agent_class_packs             │                            │  │
+│──────────────────────────────────────│                            │  │
+│ agent_class_id (FK) ─────────────────┼── agent_classes.id        │  │
+│ pack_id (FK) ────────────────────────┼── capability_packs.id     │  │
+└──────────────────────────────────────┘                            │  │
+                                                                    │  │
+┌───────────────────┐       ┌──────────────────────────────────┐   │  │
+│   admin_users     │       │          audit_events            │   │  │
+│───────────────────│       │──────────────────────────────────│   │  │
+│ id (PK)───────────┼──┐    │ id (PK)                          │   │  │
+│ username (UQ)     │  │    │ event_type                       │   │  │
+│ email (UQ)        │  │    │ actor_type                       │   │  │
+│ password_hash     │  │    │ actor_id                         │   │  │
+│ role              │  │    │ target_type                      │   │  │
+│ team_namespace    │  │    │ target_id                        │   │  │
+│ mfa_enabled       │  │    │ details (JSONB)                  │   │  │
+│ status            │  │    │ created_at                       │   │  │
+└───────────────────┘  │    └──────────────────────────────────┘   │  │
+                       │                                            │  │
+┌───────────────────┐  │    ┌──────────────────────────────────┐    │  │
+│  alert_rules      │  │    │         alert_events             │    │  │
+│───────────────────│  │    │──────────────────────────────────│    │  │
+│ id (PK)           │  │    │ id (PK)                          │    │  │
+│ name              │  │    │ rule_id (FK)─────────────────────┼────┼──┘
+│ alert_type        │  │    │ message                          │    │
+│ condition (JSONB) │  │    │ details (JSONB)                  │    │
+│ channels (JSONB)  │  │    │ fired_at                         │    │
+│ enabled           │  │    │ acknowledged_at                   │    │
+└───────────────────┘  │    │ acknowledged_by (FK)──────────────┼────┘
+                       │    └──────────────────────────────────┘
+┌───────────────────┐  │
+│capability_aliases │  │
+│───────────────────│  │
+│ id (PK)           │  │
+│ capability_id(FK)─┼──┼── capabilities.id
+│ alias (UQ)        │  │
+└───────────────────┘  │
+                       │
+┌───────────────────┐  │
+│ opa_policy_versions│  │
+│───────────────────│  │
+│ id (PK)           │  │
+│ version           │  │
+│ bundle_hash       │  │
+│ deployed_by (FK)──┼──┘
+│ rego_content      │
+└───────────────────┘
+```
+
+### 19.1 Indexing Strategy
+
+```sql
+-- Hot-path indexes (every capability request hits these)
+CREATE INDEX idx_tools_server ON server_tools(server_id);
+CREATE INDEX idx_mappings_capability ON capability_mappings(capability_id);
+CREATE INDEX idx_mappings_server ON capability_mappings(server_id);
+CREATE INDEX idx_trust_class ON trust_assignments(agent_class_id);
+CREATE UNIQUE INDEX idx_trust_unique ON trust_assignments(agent_class_id, server_id);
+CREATE INDEX idx_identities_token ON agent_identities(token_hash);
+
+-- Audit query indexes
+CREATE INDEX idx_audit_type ON audit_events(event_type);
+CREATE INDEX idx_audit_actor ON audit_events(actor_type, actor_id);
+CREATE INDEX idx_audit_time ON audit_events(created_at DESC);
+CREATE INDEX idx_audit_type_time ON audit_events(event_type, created_at DESC);
+
+-- Admin query indexes
+CREATE INDEX idx_servers_team ON mcp_servers(team_namespace);
+CREATE INDEX idx_servers_trust ON mcp_servers(trust_level);
+CREATE INDEX idx_servers_health ON mcp_servers(health_status);
+CREATE INDEX idx_capabilities_domain ON capabilities(domain);
+CREATE INDEX idx_capabilities_status ON capabilities(status);
+CREATE INDEX idx_capabilities_name ON capabilities(name);
+
+-- Approval indexes
+CREATE INDEX idx_approvals_status ON approval_requests(status);
+CREATE INDEX idx_approvals_agent ON approval_requests(agent_identity_id);
+
+-- Lookup indexes
+CREATE INDEX idx_aliases_alias ON capability_aliases(alias);
+CREATE INDEX idx_aliases_capability ON capability_aliases(capability_id);
+
+-- Alert indexes
+CREATE INDEX idx_alerts_fired ON alert_events(fired_at DESC);
+CREATE INDEX idx_alerts_rule ON alert_events(rule_id);
+
+-- Agent indexes
+CREATE INDEX idx_identities_class ON agent_identities(agent_class_id);
+CREATE INDEX idx_identities_status ON agent_identities(status);
+```
+
+### 19.2 Migration Safety Rules
+
+```
+1. All migrations MUST be additive (CREATE TABLE, ALTER TABLE ADD COLUMN).
+2. New columns MUST have DEFAULT values or be NULLABLE.
+3. No DROP TABLE, DROP COLUMN, or RENAME COLUMN in minor versions.
+4. Destructive changes are deferred to next MAJOR version (v2.0.0).
+5. Each migration is tested against SQLite AND PostgreSQL.
+6. Migrations are backward-compatible: old API instances work with new schema.
+7. Migration rollback is tested before deployment (alembic downgrade -1).
+8. Long-running migrations (>5s) must use batched operations with lock timeouts.
+```
+
+---
+
+## 20. Operational Runbook
+
+### 20.1 Graceful Shutdown
+
+```python
+# api/main.py
+import signal
+import asyncio
+
+async def shutdown():
+    """Gracefully drain in-flight requests before shutting down."""
+    # 1. Stop accepting new requests (health check reports "shutting_down")
+    app.state.readiness = "shutting_down"
+
+    # 2. Wait for in-flight requests to complete (max 30s grace period)
+    await asyncio.sleep(5)  # give existing requests time to finish
+
+    # 3. Close database connections
+    await db.dispose()
+
+    # 4. Close Redis connections
+    await redis.close()
+
+    # 5. Close MCP client sessions
+    await mcp_client.close()
+
+    # 6. Flush telemetry
+    # (OpenTelemetry SDK flushes on shutdown)
+
+# Register signal handlers
+for sig in (signal.SIGTERM, signal.SIGINT):
+    loop.add_signal_handler(sig, lambda: asyncio.create_task(shutdown()))
+
+# Kubernetes: terminationGracePeriodSeconds: 35
+
+# Sequence:
+# 1. SIGTERM received
+# 2. /health reports "shutting_down" → load balancer removes pod
+# 3. 5s grace for LB to drain
+# 4. Wait for in-flight requests (up to 25s)
+# 5. Close connections
+# 6. Process exits with code 0
+```
+
+### 20.2 Health Probes
+
+```
+GET /health
+Response 200:
+{
+    "status": "healthy",         // healthy | degraded | shutting_down
+    "version": "0.1.0",
+    "uptime_seconds": 123456,
+    "checks": {
+        "database": "connected", // connected | disconnected
+        "redis": "connected",
+        "opa": "connected"
+    }
+}
+
+GET /health/ready                  // Readiness probe
+Response 200: {"status": "ready"}  // ready | shutting_down
+# Kubernetes: readinessProbe → controls service routing
+# Returns 503 when shutting down (LB removes pod)
+
+GET /health/live                   // Liveness probe
+Response 200: {"status": "alive"}
+# Kubernetes: livenessProbe → controls pod restart
+# Returns 200 as long as process is running (doesn't check dependencies)
+# Only returns 500 if process is deadlocked
+
+Kubernetes probe configuration:
+readinessProbe:
+  httpGet:
+    path: /health/ready
+    port: 8000
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  failureThreshold: 3
+
+livenessProbe:
+  httpGet:
+    path: /health/live
+    port: 8000
+  initialDelaySeconds: 15
+  periodSeconds: 10
+  failureThreshold: 3
+```
+
+### 20.3 Logging Strategy
+
+```python
+# structlog configuration
+# Levels:
+#   DEBUG — Full request/response bodies, SQL queries, OPA decision details
+#   INFO  — Request method + path + status + latency, server registrations, policy changes
+#   WARN  — Degraded servers, fallback events, rate limit hits, token near expiry
+#   ERROR — Server failures, DB/Redis connection errors, OPA unreachable, 5xx responses
+
+# Production log format (JSON):
+{
+    "timestamp": "2026-07-22T14:30:00.123Z",
+    "level": "info",
+    "event": "capability_request",
+    "request_id": "req_abc123",
+    "agent_id": "dev-agent-01",
+    "agent_class": "agent:developer",
+    "capability": "code:search",
+    "server": "code-search",
+    "latency_ms": 320,
+    "status": 200,
+    "routing_reason": "primary server, best match"
+}
+
+# What is NOT logged:
+# - Agent tokens (only token_hash prefix)
+# - Capability request parameter values (sanitized: {"query": "***"})
+# - MCP server response bodies (metadata only)
+# - Admin passwords (never logged, even in DEBUG)
+```
+
+---
+
+## 21. Metrics and Tracing Definitions
+
+### 21.1 Prometheus Metrics
+
+```python
+# api/telemetry/metrics.py
+
+from prometheus_client import Counter, Histogram, Gauge, Info
+
+# Request metrics
+fabric_requests_total = Counter(
+    "fabric_requests_total",
+    "Total capability requests",
+    ["agent_class", "capability", "status"]  # status: success, denied, error, fallback
+)
+
+fabric_request_duration_seconds = Histogram(
+    "fabric_request_duration_seconds",
+    "Capability request duration (total: resolve + policy + route + server_call + normalize)",
+    ["agent_class", "capability", "server"],
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0]
+)
+
+fabric_routing_overhead_seconds = Histogram(
+    "fabric_routing_overhead_seconds",
+    "Fabric-internal routing time (resolve + policy + select — excluding server call)",
+    ["agent_class", "capability"],
+    buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25]
+)
+
+# Server health metrics
+fabric_server_health = Gauge(
+    "fabric_server_health",
+    "MCP server health status",
+    ["server_name", "server_id"]
+)  # 1 = healthy, 0.5 = degraded, 0 = unhealthy
+
+fabric_server_tool_count = Gauge(
+    "fabric_server_tool_count",
+    "Number of tools exposed per server",
+    ["server_name"]
+)
+
+# Policy metrics
+fabric_policy_decisions_total = Counter(
+    "fabric_policy_decisions_total",
+    "Total OPA policy evaluations",
+    ["agent_class", "decision"]  # decision: allow, deny, approval_required
+)
+
+fabric_policy_evaluation_duration = Histogram(
+    "fabric_policy_evaluation_duration_seconds",
+    "OPA policy evaluation duration",
+    buckets=[0.001, 0.005, 0.01, 0.025, 0.05]
+)
+
+# Approval metrics
+fabric_approvals_pending = Gauge(
+    "fabric_approvals_pending",
+    "Number of pending approval requests"
+)
+
+fabric_approval_duration_minutes = Histogram(
+    "fabric_approval_duration_minutes",
+    "Time from approval request to resolution",
+    buckets=[1, 5, 15, 30, 60, 120, 240, 480]
+)
+
+# Audit metrics
+fabric_audit_events_total = Counter(
+    "fabric_audit_events_total",
+    "Total audit events written",
+    ["event_type"]
+)
+
+# Infrastructure metrics
+fabric_db_connections = Gauge(
+    "fabric_db_connections",
+    "Active database connections"
+)
+
+fabric_redis_connections = Gauge(
+    "fabric_redis_connections",
+    "Active Redis connections"
+)
+
+fabric_celery_tasks_total = Counter(
+    "fabric_celery_tasks_total",
+    "Total Celery tasks executed",
+    ["task_type", "status"]  # status: success, failure, retry
+)
+
+# API info
+fabric_info = Info("fabric", "Fabric instance metadata")
+fabric_info.info({
+    "version": "0.1.0",
+    "environment": "production"
+})
+```
+
+### 21.2 OpenTelemetry Spans
+
+```
+Request Trace: POST /v1/capability/request
+│
+├── Span: "capability_request" (root)
+│   Attributes: agent_id, agent_class, capability, params_hash
+│
+├── Span: "resolve_capability"
+│   Attributes: capability_name, resolved_to, match_type (exact/alias)
+│   Events: candidate_count=3
+│
+├── Span: "evaluate_policy"
+│   Attributes: agent_class, server_id, trust_level
+│   Events: opa_decision=allow, opa_duration_ms=12
+│
+├── Span: "select_server"
+│   Attributes: candidates_evaluated=3, selected_server, routing_reason
+│   Events: ranking_scores=[0.95, 0.80, 0.60]
+│
+├── Span: "call_mcp_server"
+│   Attributes: server_name, server_endpoint, tool_name
+│   Events: timeout=5000ms, retry_count=0
+│   │
+│   ├── Span: "mcp_tools_call" (external call via mcp SDK)
+│   │   Attributes: http.method=POST, http.url=..., http.status_code=200
+│   │
+│   └── (if fallback) Span: "fallback_call_mcp_server"
+│       Events: primary_failed_reason=timeout, fallback_server=git-history
+│
+├── Span: "normalize_response"
+│   Attributes: output_mapping_applied=true, schema_match=true
+│
+└── Span: "write_audit_event"
+    Attributes: event_type=capability_request, event_id=uuid
+```
+
+### 21.3 Grafana Dashboard (Outline)
+
+| Panel | Metric | Type |
+|---|---|---|
+| Request rate | `rate(fabric_requests_total[5m])` | Graph (timeseries) |
+| Request latency (p50/p95/p99) | `histogram_quantile(0.95, fabric_request_duration_seconds)` | Graph |
+| Routing overhead | `histogram_quantile(0.95, fabric_routing_overhead_seconds)` | Graph |
+| Requests by agent class | `sum(fabric_requests_total) by (agent_class)` | Bar chart |
+| Requests by capability | `sum(fabric_requests_total) by (capability)` | Bar chart |
+| Error rate | `rate(fabric_requests_total{status="error"}[5m])` | Graph |
+| Denial rate | `rate(fabric_requests_total{status="denied"}[5m])` | Graph |
+| Fallback rate | `rate(fabric_requests_total{status="fallback"}[5m])` | Graph |
+| Server health | `fabric_server_health` | Status grid |
+| Pending approvals | `fabric_approvals_pending` | Stat |
+| Approval resolution time | `histogram_quantile(0.95, fabric_approval_duration_minutes)` | Graph |
+| OPA evaluation latency | `histogram_quantile(0.95, fabric_policy_evaluation_duration)` | Graph |
+| DB connections | `fabric_db_connections` | Graph |
+| Celery task status | `rate(fabric_celery_tasks_total[5m])` | Graph |
+
+---
+
+## 22. CI/CD Pipeline (GitHub Actions)
+
+### 22.1 Pipeline Workflow
+
+```yaml
+# .github/workflows/ci.yml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install ruff
+      - run: ruff check api/ tests/
+      - run: ruff format --check api/ tests/
+
+  test-sqlite:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install poetry && poetry install
+      - run: poetry run pytest tests/ -v --cov=api --cov-report=xml
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///:memory:
+          REDIS_URL: redis://localhost:6379/0
+          ENVIRONMENT: testing
+      - uses: codecov/codecov-action@v4
+        with: { file: ./coverage.xml }
+
+  test-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: fabric, POSTGRES_PASSWORD: fabric, POSTGRES_DB: mcp_fabric }
+        ports: ["5432:5432"]
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+      opa:
+        image: openpolicyagent/opa:latest
+        ports: ["8181:8181"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install poetry && poetry install
+      - run: poetry run alembic upgrade head
+      - run: poetry run pytest tests/ -v -m "integration"
+        env:
+          DATABASE_URL: postgresql+asyncpg://fabric:fabric@localhost:5432/mcp_fabric
+          REDIS_URL: redis://localhost:6379/0
+          OPA_URL: http://localhost:8181
+          ENVIRONMENT: testing
+
+  opa-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: open-policy-agent/setup-opa@v2
+        with: { version: "0.68.0" }
+      - run: opa test policies/ -v
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install poetry && poetry install
+      - run: poetry run mypy api/
+
+  ui-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - run: cd ui && npm ci && npm run lint && npm run typecheck
+```
+
+### 22.2 Release Pipeline
+
+```yaml
+# .github/workflows/release.yml
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: ${{ github.actor }}, password: ${{ secrets.GITHUB_TOKEN }} }
+      - uses: docker/build-push-action@v6
+        with: { push: true, tags: ghcr.io/deghosal-2026/mcp-fabric:${{ github.ref_name }}, ghcr.io/deghosal-2026/mcp-fabric:latest }
+      - run: poetry build && poetry publish
+```
+
+### 22.3 Required GitHub Secrets
+
+| Secret | Purpose |
+|---|---|
+| `GITHUB_TOKEN` | Auto-provided — Docker push, release creation |
+| `PYPI_TOKEN` | Poetry publish to PyPI |
+| `CODECOV_TOKEN` | Coverage upload (optional for public repo) |
+
+---
+
+## 23. Performance Targets
+
+### 23.1 Latency SLAs
+
+| Operation | Target (p95) | Budget |
+|---|---|---|
+| Capability request (total) | < 500ms | Server call: ~450ms, Fabric overhead: ~50ms |
+| Fabric routing overhead | < 50ms | Resolve: 10ms, policy: 15ms, select: 5ms, normalize: 10ms, audit: 10ms |
+| OPA policy evaluation | < 25ms | Single Rego evaluation, cached in OPA |
+| Server registration + inspect | < 5s | Includes MCP server /tools/list call |
+| Capability listing (100 items) | < 100ms | With JSONB schema fields |
+| Audit query (50 events) | < 200ms | With filtered Cursor pagination |
+| Batch request (3 capabilities) | < max(server_calls) + 50ms | Parallel execution |
+| Agent connect + capability surface | < 50ms | Token lookup + class resolution |
+| Health check | < 10ms | DB ping + Redis ping |
+
+### 23.2 Throughput Targets
+
+| Metric | Target (single instance) |
+|---|---|
+| Concurrent capability requests | 500 |
+| Capability requests/second | 1000 |
+| Server registrations/minute | 10 |
+| Audit events written/second | 2000 |
+| Batch requests (3 capabilities) / second | 300 |
+
+### 23.3 Resource Limits
+
+| Component | CPU (request/limit) | Memory (request/limit) |
+|---|---|---|
+| Fabric API | 500m / 2000m | 512Mi / 2Gi |
+| Celery worker | 250m / 1000m | 256Mi / 1Gi |
+| Celery beat | 100m / 250m | 128Mi / 256Mi |
+| PostgreSQL | 1000m / 4000m | 1Gi / 4Gi |
+| Redis | 250m / 1000m | 256Mi / 2Gi |
+| OPA | 100m / 500m | 128Mi / 512Mi |
+
+---
+
+## 24. Initial OPA Policy Bootstrap
+
+### 24.1 Default Policies (shipped with v0.1.0)
+
+```rego
+# policies/fabric/policy.rego
+package fabric.policy
+
+# ─── Trust Level Hierarchy ───
+trust_levels := {
+    "trusted": 3,
+    "restricted": 2,
+    "approval-gated": 1,
+    "unreviewed": 0
+}
+
+# ─── Agent Class Defaults ───
+# These ship with Fabric. Teams customize per their needs.
+class_min_trust := {
+    "agent:admin": 3,              # Full access
+    "agent:incident-responder": 2, # Requires restricted+
+    "agent:deploy-monitor": 2,     # Requires restricted+
+    "agent:code-reviewer": 1,      # Can use approval-gated
+    "agent:developer": 1,          # Can use approval-gated
+    "agent:new-hire": 0            # Unreviewed servers only (safe training)
+}
+
+# ─── Main Allow Rule ───
+default allow := false
+
+allow {
+    agent_trust := class_min_trust[input.agent_class]
+    server_trust := trust_levels[input.server_trust_level]
+    server_trust >= agent_trust
+}
+
+# ─── Approval Required Rule ───
+approval_required {
+    input.server_trust_level == "approval-gated"
+    input.agent_class != "agent:admin"  # Admins bypass approval
+}
+
+# ─── Cross-Team Access ───
+# Default: agents can access servers in their own team namespace or global servers
+# Teams can override this rule for cross-team sharing
+default cross_team_allowed := false
+
+cross_team_allowed {
+    input.agent_namespace == input.server_namespace
+}
+
+cross_team_allowed {
+    input.server_namespace == ""  # Global/non-scoped servers
+}
+
+# ─── Decision Output ───
+result := {
+    "allow": allow,
+    "approval_required": approval_required,
+    "cross_team": cross_team_allowed,
+    "trust_level": input.server_trust_level,
+    "agent_class": input.agent_class
+}
+```
+
+### 24.2 Policy Test Suite (shipped with v0.1.0)
+
+```rego
+# policies/fabric/policy_test.rego
+package fabric.policy
+
+test_admin_always_allowed {
+    allow with input as {
+        "agent_class": "agent:admin",
+        "server_trust_level": "trusted",
+        "agent_namespace": "team:platform",
+        "server_namespace": "team:platform"
+    }
+}
+
+test_incident_responder_allowed_restricted {
+    allow with input as {
+        "agent_class": "agent:incident-responder",
+        "server_trust_level": "restricted"
+    }
+}
+
+test_incident_responder_denied_unreviewed {
+    not allow with input as {
+        "agent_class": "agent:incident-responder",
+        "server_trust_level": "unreviewed"
+    }
+}
+
+test_new_hire_denied_any_trusted {
+    not allow with input as {
+        "agent_class": "agent:new-hire",
+        "server_trust_level": "trusted"
+    }
+}
+
+test_new_hire_allowed_unreviewed {
+    allow with input as {
+        "agent_class": "agent:new-hire",
+        "server_trust_level": "unreviewed"
+    }
+}
+
+test_developer_approval_required_for_gated {
+    approval_required with input as {
+        "agent_class": "agent:developer",
+        "server_trust_level": "approval-gated"
+    }
+}
+
+test_admin_no_approval_required {
+    not approval_required with input as {
+        "agent_class": "agent:admin",
+        "server_trust_level": "approval-gated"
+    }
+}
+
+test_cross_team_denied_by_default {
+    not cross_team_allowed with input as {
+        "agent_namespace": "team:platform",
+        "server_namespace": "team:security"
+    }
+}
+
+test_same_team_allowed {
+    cross_team_allowed with input as {
+        "agent_namespace": "team:platform",
+        "server_namespace": "team:platform"
+    }
+}
+
+test_global_server_allowed {
+    cross_team_allowed with input as {
+        "agent_namespace": "team:platform",
+        "server_namespace": ""
+    }
+}
+```
+
+---
+
+## 25. Admin UI Component Specifications
+
+### 25.1 Common Patterns
+
+Every page component handles these states:
+
+```typescript
+type PageState<T> =
+  | { status: "loading" }
+  | { status: "error"; error: string; retry: () => void }
+  | { status: "empty"; message: string; action?: { label: string; onClick: () => void } }
+  | { status: "populated"; data: T };
+```
+
+### 25.2 Dashboard (`/`)
+
+| Aspect | Detail |
+|---|---|
+| **Purpose** | At-a-glance platform health and key metrics |
+| **API calls** | `GET /health`, `GET /servers?per_page=0` (count only), `GET /audit?per_page=0` (count only) |
+| **Widgets** | Server count + health breakdown, recent audit events (last 10), pending approvals count, degraded servers list |
+| **Empty state** | "Welcome to MCP Fabric. Register your first server to get started." with CTA button |
+| **Error state** | "Unable to load dashboard." with retry button |
+| **Refresh** | Auto-refresh every 30 seconds via TanStack Query `refetchInterval` |
+
+### 25.3 Servers (`/servers`)
+
+| Aspect | Detail |
+|---|---|
+| **Purpose** | Server inventory — register, inspect, decommission |
+| **API calls** | `GET /servers` (list), `POST /servers` (register), `POST /servers/{id}/inspect`, `POST /servers/{id}/decommission` |
+| **List view** | Table: name, endpoint (truncated), trust level (badge), health (icon), tool count, last inspected, actions |
+| **Filters** | Team namespace dropdown, trust level multi-select, health status multi-select, search (name/endpoint) |
+| **Empty state** | "No servers registered yet." with "Register Server" button |
+| **Register flow** | Modal: name, endpoint URL, owner team, description, labels (tag input), team namespace. On submit: auto-inspect, show imported tools, navigate to detail |
+| **Detail view** | Server metadata, tool table (name, input/output schema preview, expandable), trust assignments, routing rules, decommission timeline (if applicable) |
+| **Inspect action** | Button → loading → show diff (added/removed/changed tools) with breaking change warnings |
+| **Decommission action** | Modal: select phase + replacement server → confirm → show dependency report |
+
+### 25.4 Capability Catalog (`/capabilities`)
+
+| Aspect | Detail |
+|---|---|
+| **Purpose** | Browse, create, map, deprecate capabilities |
+| **API calls** | `GET /capabilities`, `POST /capabilities`, `POST /capabilities/{id}/mappings`, `POST /capabilities/{id}/deprecate`, `POST /capabilities/{id}/aliases` |
+| **List view** | Table: name, domain (badge), status (active/deprecated badge), mapped tools count, aliases |
+| **Filters** | Domain dropdown, status (active/deprecated), search (name/alias) |
+| **Empty state** | "No capabilities defined. Create your first capability to start mapping tools." |
+| **Create flow** | Modal: name (with domain:action convention helper), domain, description, normalized input/output schema editor (JSON editor with validation) |
+| **Detail view** | Capability metadata, mapped servers table (server name, tool name, mapping status, routing weight), aliases list, deprecation info (if deprecated) |
+| **Map tool flow** | Modal: select server → select tool → configure input/output mapping → save |
+| **Conflict warning** | Banner at top of detail: "2 servers claim this capability. Review routing." with link to conflict resolver |
+| **Deprecate flow** | Modal: grace period days, migration guidance text → confirm |
+
+### 25.5 Agent Classes (`/agent-classes`)
+
+| Aspect | Detail |
+|---|---|
+| **Purpose** | Create and manage agent classes, trust assignments, identity tokens |
+| **API calls** | `GET /agent-classes`, `POST /agent-classes`, `POST /agent-classes/{id}/trust` |
+| **List view** | Table: name, team namespace, server trust count, agent count, packs count |
+| **Detail view** | Class metadata, trust assignments table (server, trust level badge, tool scope), assigned packs, agent identities list (name, status, token prefix, rate limit, expires) |
+| **Create token flow** | Modal: agent name, rate limit → generate → show token ONCE with copy button + warning: "Save this token. It will not be shown again." |
+| **Revoke token** | Confirm dialog → token status changes to "revoked", all active sessions invalidated |
+| **Rotate token** | Modal: grace period hours → generate new token → old token enters grace period |
+
+### 25.6 Policy Editor (`/policies`)
+
+| Aspect | Detail |
+|---|---|
+| **Purpose** | Manage OPA policies, test sandbox changes |
+| **API calls** | `POST /admin/policies/bundle`, `POST /policy/sandbox`, `GET /policy/sandbox/{id}` |
+| **Rego editor** | Code editor (textarea with syntax highlighting or Monaco editor), deploy button, last deployed version + timestamp |
+| **Sandbox** | Create: select trust change (class + server + new trust level) → "Start Sandbox" → real-time or refreshable results (would_approve, would_deny, false_positives, sample decisions) → "Activate" or "Discard" |
+
+### 25.7 Audit Log (`/audit`)
+
+| Aspect | Detail |
+|---|---|
+| **Purpose** | Query, filter, export audit events |
+| **API calls** | `GET /audit`, `POST /audit/export` |
+| **List view** | Table: timestamp, event type (badge), actor, target, summary (first 100 chars of details), expandable row for full details JSON |
+| **Filters** | Event type multi-select, actor type (agent/admin/system), actor ID search, date range (date picker), capability filter |
+| **Empty state** | "No audit events match your filters." |
+| **Export** | Button → modal: select event types, agent classes, date range, format (JSON/CSV) → "Generate Export" → Celery task → download when ready |
+| **Admin-only** | Export requires `admin` or `editor` role |
+
+### 25.8 Approvals (`/approvals`)
+
+| Aspect | Detail |
+|---|---|
+| **Purpose** | Review and resolve pending approval requests |
+| **API calls** | `GET /approvals`, `POST /approvals/{id}/approve`, `POST /approvals/{id}/deny` |
+| **List view** | Table: agent, capability, server, params summary, requested at, status badge, actions |
+| **Filters** | Status (pending/approved/denied), agent class, capability |
+| **Empty state** | "No pending approvals." |
+| **Approval action** | Click "Review" → side panel: full request context (agent, capability, params, server, trust level, requested timestamp) → textarea for approver note → "Approve" or "Deny" button |
+| **Bulk actions** | Checkbox selection → "Approve Selected" or "Deny Selected" (for low-risk patterns) |
+
+### 25.9 Capability Packs (`/packs`)
+
+| Aspect | Detail |
+|---|---|
+| **Purpose** | Create and manage curated capability bundles |
+| **API calls** | `GET /packs`, `POST /packs`, `DELETE /packs/{id}`, `POST /packs/{id}/assign` |
+| **List view** | Cards: pack name, description, capability count, assigned classes count |
+| **Empty state** | "No capability packs. Create your first pack to curate capability access." |
+| **Create/Edit flow** | Modal: name, description, team namespace → capability picker (search/filter from catalog, multi-select) → save |
+| **Detail view** | Assigned capabilities list, assigned agent classes list, usage stats (which agents use this pack) |
+
+### 25.10 Alerts (`/alerts`)
+
+| Aspect | Detail |
+|---|---|
+| **Purpose** | Configure alert rules, view alert history |
+| **API calls** | `GET /alerts` (events), `POST /alerts` (rules — future) |
+| **Alert history** | Table: fired at, rule name, message, acknowledged? (icon), acknowledged by |
+| **Empty state** | "No alerts fired." |
+| **Filter** | Alert type, time range, acknowledged/unacknowledged |
+
+### 25.11 Admin Users (`/admin/users`)
+
+| Aspect | Detail |
+|---|---|
+| **Purpose** | Manage admin UI users, roles, and access |
+| **API calls** | Admin user CRUD (not yet defined in API — to be added) |
+| **List view** | Table: username, email, role badge, team scope, MFA status icon, last login, status |
+| **Empty state** | "No admin users. You are the first." (first user is auto-created as admin) |
+| **Invite flow** | Modal: email, role, team namespace → "Send Invite" → user receives email with setup link |
+| **Deactivate** | Confirm dialog → user status "deactivated", sessions revoked |
+
+### 25.12 Trust Posture (`/trust`)
+
+| Aspect | Detail |
+|---|---|
+| **Purpose** | At-a-glance security posture of all servers |
+| **API calls** | `GET /servers` (with trust/health filters) |
+| **View** | Grid of server cards colored by trust level: trusted (green), restricted (yellow), approval-gated (orange), unreviewed (red) |
+| **Unreviewed count** | Prominent banner: "3 servers unreviewed (oldest: 72 hours)" with link to review |
+| **Actions** | Click card → quick trust change dropdown, or navigate to server detail |
+
+---
+
+## 26. Release Management
+
+### 26.1 Semantic Versioning Policy
+
+```
+MAJOR.MINOR.PATCH  (e.g., 0.1.0)
+
+MAJOR (X.0.0): Breaking changes
+  - Removed endpoints or fields
+  - Changed field types
+  - Changed error response format
+  - Dropped database columns/tables
+  - Changed authentication mechanism
+
+MINOR (0.X.0): New features, backward-compatible
+  - New endpoints
+  - New optional request fields
+  - New response fields
+  - New database tables/columns
+  - New OPA policy rules
+
+PATCH (0.0.X): Bug fixes, backward-compatible
+  - Bug fixes
+  - Performance improvements
+  - Dependency updates (non-breaking)
+  - Documentation updates
+```
+
+### 26.2 Release Checklist
+
+```markdown
+## vX.Y.Z Release Checklist
+
+### Pre-release
+- [ ] All CI checks pass (lint, test-sqlite, test-postgres, opa-tests, typecheck, ui-lint)
+- [ ] CHANGELOG.md updated with all changes since last release
+- [ ] Migration tested: `alembic upgrade head && alembic downgrade -1` (both SQLite + PostgreSQL)
+- [ ] OPA policy tests pass: `opa test policies/ -v`
+- [ ] Security scan passes: `pip-audit`, `npm audit`
+- [ ] Breaking changes documented in CHANGELOG (if any)
+- [ ] API diff reviewed (compare OpenAPI specs): no unexpected breaking changes
+
+### Release
+- [ ] Tag: `git tag -a vX.Y.Z -m "Release vX.Y.Z"`
+- [ ] Push tag: `git push origin vX.Y.Z`
+- [ ] GitHub Release created with CHANGELOG notes
+- [ ] Docker image built and pushed to ghcr.io
+- [ ] PyPI package published: `poetry publish`
+
+### Post-release
+- [ ] Verify: `docker pull ghcr.io/deghosal-2026/mcp-fabric:vX.Y.Z`
+- [ ] Verify: `pip install mcp-fabric==X.Y.Z`
+- [ ] Smoke test: deploy to staging, run capability request
+- [ ] Announce in GitHub Discussions
+```
+
+### 26.3 PyPI Metadata
+
+```toml
+# pyproject.toml (additional fields for PyPI)
+[tool.poetry]
+name = "mcp-fabric"
+version = "0.1.0"
+description = "Composable tool mesh for MCP ecosystems"
+authors = ["Debashish Ghosal <debashish@ghosal.dev>"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/deghosal-2026/mcp-fabric"
+documentation = "https://github.com/deghosal-2026/mcp-fabric#readme"
+keywords = ["mcp", "agent", "governance", "platform", "tool-mesh", "ai"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+
+[tool.poetry.scripts]
+fabric-admin = "api.cli:main"   # CLI tool for backup/restore/migrations
+```
+
+### 26.4 Docker Image Tagging
+
+| Tag | Purpose |
+|---|---|
+| `v0.1.0` | Specific release version (immutable) |
+| `v0.1` | Latest patch in 0.1.x series (moving) |
+| `v0` | Latest minor in 0.x series (moving) |
+| `latest` | Latest stable release (moving) |
+
+```yaml
+# Docker image: ghcr.io/deghosal-2026/mcp-fabric
+# Pull examples:
+#   ghcr.io/deghosal-2026/mcp-fabric:v0.1.0   (pinned)
+#   ghcr.io/deghosal-2026/mcp-fabric:v0.1     (patch auto-update)
+#   ghcr.io/deghosal-2026/mcp-fabric:latest   (always latest)
+```
+
+### 26.5 CHANGELOG Format
+
+```markdown
+# Changelog
+
+## [0.2.0] — 2026-09-15
+
+### Added
+- Capability packs: create curated bundles, assign to agent classes (#42)
+- Conflict detection: flag overlapping capability mappings (#45)
+- Routing rules: explicit server preferences for capability conflicts (#46)
+- Server decommission: phased sunset with dependency report (#48)
+- Capability deprecation: grace period with migration guidance (#49)
+- Schema diff on server re-inspect (#50)
+
+### Changed
+- Policy engine: migrated from embedded Python rules to OPA (#55)
+
+### Fixed
+- Race condition in batch request when two requests target same server (#60)
+
+## [0.1.0] — 2026-08-15
+
+### Added
+- Initial release: server registry, capability catalog, routing engine
+- OPA policy engine integration
+- Agent authentication and capability surface
+- Audit pipeline with structured events
+- Admin UI (dashboard, servers, capabilities, audit, approvals)
+- Health checks and Prometheus metrics
+```
+
+---
+
+## 27. Dependency Management
+
+### 27.1 Dependabot Configuration
+
+```yaml
+# .github/dependabot.yml
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Los_Angeles"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "python"]
+    versioning-strategy: "lockfile-only"
+    groups:
+      fastapi:
+        patterns: ["fastapi", "uvicorn", "starlette"]
+      sqlalchemy:
+        patterns: ["sqlalchemy", "alembic", "aiosqlite", "asyncpg"]
+      telemetry:
+        patterns: ["prometheus-client", "opentelemetry-*"]
+      testing:
+        patterns: ["pytest*", "httpx"]
+      linting:
+        patterns: ["ruff"]
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels: ["dependencies", "docker"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels: ["dependencies", "ci"]
+
+  - package-ecosystem: "npm"
+    directory: "/ui"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "ui"]
+    groups:
+      react:
+        patterns: ["react", "react-dom", "@types/react*"]
+      tanstack:
+        patterns: ["@tanstack/*"]
+      vite:
+        patterns: ["vite", "@vitejs/*"]
+```
+
+### 27.2 Dependency Update Cadence
+
+| Type | Frequency | Auto-merge? |
+|---|---|---|
+| Patch updates | Weekly (Dependabot) | Yes (if CI passes) |
+| Minor updates | Weekly (Dependabot) | Manual review |
+| Major updates | Manual | Manual review + migration plan |
+| Security patches | Immediate (Dependabot security) | Yes (if CI passes) |
+
+### 27.3 Lockfile Strategy
+
+```
+Poetry lock file (poetry.lock): committed to repo
+  → Deterministic builds in CI and production
+  → Dependabot opens PRs with updated lockfiles
+  → CI validates: all tests pass with updated deps
+
+npm lock file (package-lock.json): committed to repo
+  → Same strategy for UI dependencies
+```
+
+### 27.4 Vulnerability Scanning
+
+```yaml
+# Automated scanning:
+# - Dependabot security alerts: enabled (GitHub default)
+# - pip-audit: runs in CI on every PR
+# - npm audit: runs in CI on every PR
+
+# CI step:
+- run: pip-audit
+- run: cd ui && npm audit --audit-level=high
+# Fails CI if high/critical vulnerabilities found
+```
+
+---
+
+## 28. Load Testing Strategy
+
+### 28.1 Load Test Scenarios
+
+```python
+# tests/load/locustfile.py
+from locust import HttpUser, task, between
+
+class FabricUser(HttpUser):
+    wait_time = between(1, 3)
+
+    @task(3)
+    def capability_request(self):
+        """Simulate agent making capability requests (most common)."""
+        self.client.post("/v1/capability/request",
+            headers={"Authorization": f"Bearer {self.token}",
+                     "Accept": "application/vnd.fabric.v1+json"},
+            json={"capability": "code:search",
+                  "params": {"query": "deployment", "max_results": 5}}
+        )
+
+    @task(1)
+    def batch_request(self):
+        """Simulate incident agent making batch requests."""
+        self.client.post("/v1/capability/batch",
+            headers={"Authorization": f"Bearer {self.token}"},
+            json={"requests": [
+                {"id": "1", "capability": "code:search", "params": {"query": "test"}},
+                {"id": "2", "capability": "knowledge:search", "params": {"query": "runbook"}},
+                {"id": "3", "capability": "dependency:list", "params": {"service": "api"}}
+            ]}
+        )
+
+    @task(1)
+    def health_check(self):
+        self.client.get("/v1/health")
+```
+
+### 28.2 Load Test Targets (per scenario)
+
+| Scenario | Target RPS | Max p95 latency | Max error rate |
+|---|---|---|---|
+| Capability request | 500 | < 500ms | < 0.1% |
+| Batch request (3) | 150 | < 800ms | < 0.1% |
+| Agent connect | 200 | < 100ms | < 0.1% |
+| Mixed workload (70% request, 15% batch, 10% connect, 5% health) | 800 total | varies | < 0.5% |
+
+### 28.3 Load Test Procedure
+
+```bash
+# 1. Deploy Fabric to test environment (matching production config)
+docker-compose -f docker-compose.prod.yml up -d
+
+# 2. Register test servers and seed test data
+poetry run python tests/load/seed.py --servers 10 --capabilities 30 --agents 50
+
+# 3. Run Locust (headless)
+locust -f tests/load/locustfile.py \
+  --host http://localhost:8000 \
+  --users 500 \
+  --spawn-rate 50 \
+  --run-time 10m \
+  --headless \
+  --csv results/
+
+# 4. Analyze results
+# Check: p95 latency, error rate, RPS achieved
+# Compare against performance targets (Section 23)
+# If below target: investigate bottlenecks (DB, OPA, MCP server latency)
+```
+
+### 28.4 Chaos Testing (Failure Injection)
+
+```python
+# tests/chaos/chaos.py — scenarios for failure injection
+
+# Scenario 1: MCP server timeout
+# - Simulate a registered MCP server that responds slowly (>5s)
+# - Verify: Fabric times out at 5s, falls back, logs degradation, alerts fire
+
+# Scenario 2: PostgreSQL restart
+# - Restart PostgreSQL while Fabric is serving traffic
+# - Verify: Fabric returns 503 during outage, recovers within 10s of DB coming back
+# - Verify: No data loss, all state intact
+
+# Scenario 3: Redis restart
+# - Restart Redis while Fabric is serving traffic
+# - Verify: Agent sessions expire gracefully (agents re-authenticate)
+# - Verify: Rate limiting pauses (allows through during Redis outage, recovers)
+# - Verify: Health checks pause, resume within 30s
+
+# Scenario 4: OPA failure
+# - Stop OPA while Fabric is serving traffic
+# - Verify: Fabric returns 503 for capability requests (cannot evaluate policy)
+# - Verify: Deny-by-default — no requests pass without policy evaluation
+
+# Scenario 5: Single API instance failure
+# - Kill one of N API instances behind load balancer
+# - Verify: Traffic shifts to remaining instances
+# - Verify: No dropped requests (connection refused → LB retries)
+```
+
+---
+
+## 29. Development Setup
 
 ```bash
 # Prerequisites: Python 3.12+, Poetry, Docker (optional for PostgreSQL mode)
