@@ -5,7 +5,7 @@
 
 ---
 
-### P0-01: Poetry Project Initialization
+### P0-01: Poetry Project Initialization (#1)
 
 **Description:** Initialize the Python project with Poetry, configure pyproject.toml with all dependencies from spec Section 12.1.
 
@@ -35,7 +35,7 @@
 
 ---
 
-### P0-02: Ruff Linting Configuration
+### P0-02: Ruff Linting Configuration (#4)
 
 **Description:** Configure Ruff for Python linting and formatting per spec Section 12.1. Enforce consistent code style.
 
@@ -59,7 +59,7 @@
 
 ---
 
-### P0-03: Makefile
+### P0-03: Makefile (#7)
 
 **Description:** Create Makefile with all targets from spec Section 7. Single-command shortcuts for all dev workflows.
 
@@ -93,7 +93,7 @@
 
 ---
 
-### P0-04: API Dockerfile
+### P0-04: API Dockerfile (#10)
 
 **Description:** Multi-stage Dockerfile per spec Section 30.1. Builder installs deps, runtime runs as non-root.
 
@@ -126,7 +126,7 @@
 
 ---
 
-### P0-05: UI Dockerfile
+### P0-05: UI Dockerfile (#13)
 
 **Description:** Multi-stage Dockerfile per spec Section 30.2. Node builds, nginx serves.
 
@@ -150,7 +150,7 @@
 
 ---
 
-### P0-06: docker-compose.yml Verification
+### P0-06: docker-compose.yml Verification (#16)
 
 **Description:** Verify all 7 services start and health checks pass per spec.
 
@@ -176,7 +176,7 @@
 
 ---
 
-### P0-07: api/config.py — Settings
+### P0-07: api/config.py — Settings (#19)
 
 **Description:** Settings class using pydantic-settings. SQLite default for zero-config dev.
 
@@ -205,7 +205,7 @@
 
 ---
 
-### P0-08: api/config.py — Celery Configuration
+### P0-08: api/config.py — Celery Configuration (#22)
 
 **Description:** Celery app instance with beat schedule.
 
@@ -226,7 +226,7 @@
 
 ---
 
-### P0-09: api/main.py — FastAPI App
+### P0-09: api/main.py — FastAPI App (#25)
 
 **Description:** FastAPI entry point with middleware, routers, lifespan, graceful shutdown per spec Sections 20.1 and 31.
 
@@ -253,7 +253,7 @@
 
 ---
 
-### P0-10: api/dependencies.py
+### P0-10: api/dependencies.py (#28)
 
 **Description:** FastAPI dependency injection: DB, Redis, OPA, agent auth, admin auth, API version, tenant scope.
 
@@ -278,7 +278,7 @@
 
 ---
 
-### P0-11: Alembic Initialization
+### P0-11: Alembic Initialization (#31)
 
 **Description:** Initialize Alembic for async SQLAlchemy with SQLite + PostgreSQL support.
 
@@ -303,7 +303,7 @@
 
 ---
 
-### P0-12: OPA Policy Files
+### P0-12: OPA Policy Files (#34)
 
 **Description:** Default OPA Rego policies + tests per spec Section 24.
 
@@ -323,7 +323,7 @@
 
 ---
 
-### P0-13: GitHub CI Workflow
+### P0-13: GitHub CI Workflow (#37)
 
 **Description:** CI pipeline per spec Section 22.
 
@@ -344,7 +344,7 @@
 
 ---
 
-### P0-14: GitHub Release Workflow
+### P0-14: GitHub Release Workflow (#39)
 
 **Description:** Release pipeline per spec Section 22.2.
 
@@ -365,7 +365,7 @@
 
 ---
 
-### P0-15: Dependabot Configuration
+### P0-15: Dependabot Configuration (#42)
 
 **Description:** Automated dependency updates per spec Section 27.1.
 
@@ -386,7 +386,7 @@
 
 ---
 
-### P0-16: Repository Documentation Files
+### P0-16: Repository Documentation Files (#45)
 
 **Description:** README badges, CHANGELOG, CODE_OF_CONDUCT, PR template, .gitattributes.
 

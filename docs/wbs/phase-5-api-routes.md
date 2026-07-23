@@ -5,27 +5,27 @@
 
 ## 5.1 Registry Routes (5 tasks)
 
-### P5-01: POST /v1/servers
+### P5-01: POST /v1/servers (#27)
 **Effort:** 1.5h | **Deps:** P3-01
 **Checklist:** Body validation via ServerCreate schema → call RegistryService.register() → 201 with ServerResponse → duplicate endpoint → 409 → unreachable → 400. Auth: admin/editor.
 **Success Criteria:** Valid body → 201 with auto-discovered tools. Duplicate → 409. Unreachable → 400.
 
-### P5-02: GET /v1/servers
+### P5-02: GET /v1/servers (#30)
 **Effort:** 1.5h | **Deps:** P3-03
 **Checklist:** Query params: team, trust, health, q (search), cursor, per_page → call list_servers() → 200 with PaginatedServers. Empty → 200 with []. Auth: admin/editor/viewer.
 **Success Criteria:** All filter combinations work. Cursor pagination correct. Empty returns 200.
 
-### P5-03: GET /v1/servers/{id}
+### P5-03: GET /v1/servers/{id} (#32)
 **Effort:** 1h | **Deps:** P3-04
 **Checklist:** Path param server_id UUID → call get_server() → 200 with ServerDetail. Not found → 404. Auth: admin/editor/viewer.
 **Success Criteria:** Full detail returned. 404 for nonexistent.
 
-### P5-04: POST /v1/servers/{id}/inspect
+### P5-04: POST /v1/servers/{id}/inspect (#35)
 **Effort:** 1h | **Deps:** P3-02
 **Checklist:** Call inspect() → 200 with ServerInspectResponse (tools_added/removed/changed). Auth: admin/editor.
 **Success Criteria:** Diff returned. Breaking changes flagged.
 
-### P5-05: POST /v1/servers/{id}/decommission
+### P5-05: POST /v1/servers/{id}/decommission (#40)
 **Effort:** 1h | **Deps:** P3-05
 **Checklist:** Body: {phase, replacement_server_id?} → call decommission() → 200 with DecommissionResult. Invalid phase → 400. Already decommissioned → 409. Auth: admin.
 **Success Criteria:** Phase progression enforced. Dependency report returned.
@@ -38,17 +38,17 @@ Each 1-1.5h. Auth: admin/editor for write, viewer for read.
 
 ## 5.3 Routing Routes (3 tasks)
 
-### P5-12: POST /v1/capability/request
+### P5-12: POST /v1/capability/request (#61)
 **Effort:** 2h | **Deps:** P3-23
 **Checklist:** Agent auth → body validation (CapabilityRequest) → call RoutingService.execute() → 200 success / 202 approval_pending / 403 denied / 404 not_found → response headers: Fabric-Routing-Server, Fabric-Routing-Reason.
 **Success Criteria:** All response types correct. Headers present. Agent token required.
 
-### P5-13: POST /v1/capability/batch
+### P5-13: POST /v1/capability/batch (#64)
 **Effort:** 2h | **Deps:** P3-30
 **Checklist:** Agent auth → body validation (BatchCapabilityRequest, 1-10 items) → call execute_batch() → 200 with BatchResult (per-item status). Exceeds limit → 422.
 **Success Criteria:** Parallel execution. Mixed results supported. 11 items → 422.
 
-### P5-14: GET /v1/capability/status/{request_id}
+### P5-14: GET /v1/capability/status/{request_id} (#68)
 **Effort:** 1h | **Deps:** P3-38
 **Checklist:** Agent auth → call ApprovalService.get_status() → 200 with status (pending/approved/denied/expired). Not found → 404.
 **Success Criteria:** Agent polls for approval resolution.

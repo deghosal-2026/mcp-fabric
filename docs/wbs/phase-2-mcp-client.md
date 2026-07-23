@@ -3,7 +3,7 @@
 > **Tasks:** 12 · **Effort:** 12h (1.5 days)  
 > **Dependencies:** Phase 0, Phase 1
 
-### P2-01: MCPClient Class Structure
+### P2-01: MCPClient Class Structure (#221)
 **Effort:** 1h | **Deps:** P0-07
 **Checklist:**
 - [ ] `api/mcp/__init__.py` — exports MCPClient
@@ -15,7 +15,7 @@
 
 **Success Criteria:** Client initializes. Connection to mock MCP server succeeds.
 
-### P2-02: list_tools Method
+### P2-02: list_tools Method (#222)
 **Effort:** 2h | **Deps:** P2-01
 **Checklist:**
 - [ ] `async list_tools(endpoint, timeout=5.0) -> list[ToolDefinition]`
@@ -27,7 +27,7 @@
 
 **Success Criteria:** Real MCP server → tool list. Mock server → parsed correctly. Unreachable → MCPTimeoutError.
 
-### P2-03: call_tool Method
+### P2-03: call_tool Method (#223)
 **Effort:** 2h | **Deps:** P2-01
 **Checklist:**
 - [ ] `async call_tool(endpoint, tool_name, arguments, timeout=5.0) -> ToolResponse`
@@ -38,7 +38,7 @@
 
 **Success Criteria:** Call valid tool → response. Call invalid tool → MCPToolError. Timeout → MCPTimeoutError.
 
-### P2-04: diff_tools Method
+### P2-04: diff_tools Method (#224)
 **Effort:** 2h | **Deps:** P2-02
 **Checklist:**
 - [ ] `async diff_tools(endpoint, previous_tools) -> ToolDiff`
@@ -49,7 +49,7 @@
 
 **Success Criteria:** Identical tools → empty diff. New tool added → tools_added. Breaking change → is_breaking=True.
 
-### P2-05: Error Types
+### P2-05: Error Types (#225)
 **Effort:** 1h | **Deps:** P2-01
 **Checklist:**
 - [ ] MCPTimeoutError(error, endpoint, timeout) — timeout errors
@@ -60,7 +60,7 @@
 
 **Success Criteria:** All error types catchable. Error messages include endpoint + context.
 
-### P2-06: Health Integration
+### P2-06: Health Integration (#226)
 **Effort:** 1h | **Deps:** P2-02
 **Checklist:**
 - [ ] After each list_tools or call_tool: update Redis health state
@@ -71,17 +71,17 @@
 
 **Success Criteria:** Healthy server → "healthy" in Redis. Timeout → "degraded". 4 consecutive failures → "unhealthy".
 
-### P2-07: ToolDefinition Dataclass
+### P2-07: ToolDefinition Dataclass (#227)
 **Effort:** 0.5h | **Deps:** None
 **Checklist:**
 - [ ] name: str, description: Optional[str], input_schema: dict, output_schema: Optional[dict]
 
-### P2-08: ToolResponse Dataclass
+### P2-08: ToolResponse Dataclass (#228)
 **Effort:** 0.5h | **Deps:** None
 **Checklist:**
 - [ ] result: Any, metadata: dict, server_name: str, tool_name: str
 
-### P2-09: ToolDiff Dataclass
+### P2-09: ToolDiff Dataclass (#229)
 **Effort:** 0.5h | **Deps:** P2-07
 **Checklist:**
 - [ ] tools_added: list[ToolDefinition], tools_removed: list[ToolDefinition], tools_changed: list[ToolChange]
@@ -89,7 +89,7 @@
 
 **Success Criteria:** Structures carry all diff information.
 
-### P2-10: Connection Pool
+### P2-10: Connection Pool (#230)
 **Effort:** 1h | **Deps:** P2-01
 **Checklist:**
 - [ ] httpx.AsyncClient with connection pool: max_connections=20, max_keepalive=10
@@ -99,7 +99,7 @@
 
 **Success Criteria:** Repeated calls to same endpoint reuse connection. Pool closed on app shutdown.
 
-### P2-11: Timeout Configuration
+### P2-11: Timeout Configuration (#231)
 **Effort:** 0.5h | **Deps:** P2-01
 **Checklist:**
 - [ ] Configurable per call: list_tools(timeout=5.0), call_tool(timeout=5.0)
@@ -109,7 +109,7 @@
 
 **Success Criteria:** Timeouts configurable per use case. Default 5s for agent requests, 2s for health checks.
 
-### P2-12: MCPClient Unit Tests
+### P2-12: MCPClient Unit Tests (#232)
 **Effort:** 1h | **Deps:** P2-01 through P2-09
 **Checklist:**
 - [ ] Test list_tools with mock MCP server → returns tools

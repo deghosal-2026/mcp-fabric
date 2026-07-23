@@ -1,10 +1,12 @@
 # MCP Fabric — Work Breakdown Structure (v0.1.0)
 
 > **Status:** Approved  
-> **Total tasks:** 468 across 12 phases  
-> **Estimated effort:** 320 hours (8 weeks)  
+> **Total tasks:** 478 across 13 phases  
+> **Estimated effort:** 332 hours (8 weeks)  
 > **Milestone:** [v0.1.0 - Core Platform](https://github.com/deghosal-2026/mcp-fabric/milestone/1)  
 > **Based on:** `docs/PRD.md`, `docs/spec.md`, `docs/DESIGN.md`, `docs/ARCHITECTURE.md`
+
+> **Issues:** All 368 tasks created as GitHub issues under milestone [v0.1.0 - Core Platform](https://github.com/deghosal-2026/mcp-fabric/milestone/1). Each task in phase files below links to its issue.
 
 ## Phase Index
 
@@ -23,6 +25,7 @@
 | [10](wbs/phase-10-testing.md) | Testing | 35 | 40h | Unit (15), Integration (8), OPA, E2E (3), Infrastructure (8) |
 | [11](wbs/phase-11-cicd.md) | CI/CD | 12 | 8h | CI pipeline, Release pipeline, Release checklist |
 | [12](wbs/phase-12-docs.md) | Documentation | 27 | 16h | Code docs, Operator docs, API reference, Deployment guide |
+| [OSS](wbs/phase-oss-prep.md) | Open Source Preparation | 10 | 12h | Community profile, README badges, governance, release automation, docs site, security scanning, health files |
 
 ## Task Format
 
@@ -55,7 +58,8 @@ P0 (Scaffolding) ──► P1 (Database) ──► P2 (MCP Client) ──► P3 
                                                                                     │
                           P9 (Admin UI) ──────────────────────────────────────────┘
                                                                                     │
-                          P10 (Testing) ── runs alongside P1-P9 ──────────────────┘
+                           P10 (Testing) ─── runs alongside P1-P9 ─────────────────┘
+                           OSS (OSS Prep) ── runs alongside all phases ───────────┘
                                                                                     │
                           P11 (CI/CD) ──► P12 (Docs) ──► v0.1.0 Release ────────────┘
 ```
@@ -68,4 +72,4 @@ Status indicators per task:
 - `[x]` Complete
 - `[!]` Blocked
 
-Link back to GitHub issues when created: `(#123)`
+All tasks linked to GitHub issues. See each phase file for issue numbers.
