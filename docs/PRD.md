@@ -201,6 +201,170 @@ Agents stop thinking in terms of arbitrary server sprawl and instead receive a c
 
 ---
 
+### Journey 5: Agent Onboards and Gets Its Capability Surface
+
+**Persona:** A new incident response agent ("Igor v2") being deployed for the first time into production.
+
+**Scenario:** The team has built a new agent to handle deployment-health monitoring. It needs access to deployment status, service metrics, and incident tools — but not vulnerability or cost data. Before it can make any capability requests, it must connect to Fabric and get assigned an identity class.
+
+**Step by Step:**
+
+1. The agent starts up with a pre-shared identity token (API key or signed JWT embedded in its deployment config).
+2. Agent calls Fabric's connect endpoint with its identity token and declared role: `{ intent: "deployment-health-monitor" }`.
+3. Fabric validates the token against the identity store. The token maps to the pre-registered agent identity `agent:deploy-monitor`.
+4. Fabric looks up the agent class `agent:deploy-monitor` and resolves its assigned capability pack.
+5. Fabric returns the agent's capability surface — a curated list of capabilities it can request:
+   - `deployment:status` (trusted)
+   - `service:health-metrics` (trusted)
+   - `incident:create` (trusted)
+   - `incident:get` (trusted)
+6. The agent parses its capability surface and is ready to operate within those boundaries.
+7. On its first capability request — `deployment:status` — Fabric checks the agent class, confirms `trusted` policy, routes the call, and logs it.
+8. On a later request for `vulnerability:scan` — Fabric denies it (not in the assigned capability pack) and logs the denial.
+
+**Outcome:** The agent connected with zero manual server configuration. It received a capability surface scoped exactly to its role. No risky tools are accidentally exposed. The journey from deploy → connect → operate takes seconds and requires no platform engineer intervention beyond the initial agent class setup.
+
+---
+
+### Journey 6: Server Failure — Graceful Degradation and Transparent Fallback
+
+**Persona:** Igor the incident response agent (from Journey 2), mid-incident at 2 AM.
+
+**Scenario:** A production incident is in progress. Igor has been routing capability requests through Fabric for 20 minutes. The Code Search server suddenly becomes unresponsive — a network partition in the hosting cluster. Igor must not fail.
+
+**Step by Step:**
+
+1. Igor requests `code:blameless-diff` for the payment API to identify recent changes.
+2. Fabric routes the request to the Code Search server — primary choice based on best capability match, trusted policy, and historical low latency.
+3. The request times out after 5 seconds. Fabric retries once — same result.
+4. Fabric marks Code Search as `degraded` in the registry, increments its failure counter, and timestamps the event.
+5. Fabric checks its fallback chain for `code:blameless-diff`. The Git History server advertises `code:diff` — a partial match but sufficient for recent-change analysis.
+6. Policy check: Git History is `trusted` for Igor's agent class `agent:incident-responder`.
+7. Fabric routes the request to Git History. The response shape differs from Code Search (commit-level instead of line-level detail), but Fabric normalizes it to the standard `code:blameless-diff` output schema.
+8. Fabric logs the full event: primary server failed, fallback server used, normalization applied, latency delta (+800ms).
+9. Fabric triggers an alert: "Code Search server degraded — failover count 3 in last 5 minutes. Notify platform-oncall."
+10. The platform on-call engineer receives the alert and begins investigating the Code Search outage.
+11. Igor continues its incident response using Git History for code diffs. The user never sees the failure.
+
+**Outcome:** A server failure at 2 AM didn't block the incident response. Fabric handled fallback, normalization, and alerting transparently. The platform team was notified without the agent or its user needing to know the route changed. The pathway from failure → fallback → alert → investigation is fully captured in audit.
+
+---
+
+### Journey 7: Approval-Gated Capability — Human-in-the-Loop Review
+
+**Persona:** CRBot, a code review agent that suggests fixes. Priya, the platform engineer responsible for deployment gates.
+
+**Scenario:** CRBot has completed a code review and identified a safe configuration change to fix a feature flag misconfiguration. It wants to promote the change to staging. The deployment capability is `approval-gated` for CRBot's agent class — a human must approve before Fabric routes the call.
+
+**Step by Step:**
+
+1. CRBot finishes its review. It determines the fix is low-risk: a feature flag toggle in staging. It requests capability `deployment:promote` with parameters `{ service: "config-api", env: "staging", change: "toggle feature flag enable-new-checkout" }`.
+2. Fabric checks the policy layer. `deployment:promote` is tagged `approval-gated` for agent class `agent:code-reviewer`.
+3. Fabric does not route the request. Instead, it creates a pending approval record with full context:
+   - Agent: CRBot (code-reviewer)
+   - Capability: deployment:promote
+   - Parameters: config-api, staging, feature flag toggle
+   - Server: Deployment Server v2.1
+   - Timestamp
+4. Fabric sends a notification to the deployment approver group: "CRBot requests deployment:promote — review in admin UI."
+5. Priya receives the notification. She opens the admin UI and reviews the request. She sees it's a low-risk staging toggle from a trusted reviewer agent.
+6. Priya clicks "Approve." Fabric logs the approval decision and immediately routes the request to the Deployment Server.
+7. The Deployment Server executes the promote action and returns the result. Fabric normalizes the response and passes it back to CRBot with the approval trail attached.
+8. If Priya had clicked "Deny," Fabric would return a standardized denial to CRBot with the reason she provided, log the denial, and close the approval record.
+
+**Outcome:** Sensitive capabilities are gated behind human approval without blocking agent workflows entirely. The approval flow is fast, auditable, and doesn't require the agent to know the mechanism — it just waits for a response. Every approval or denial is captured for compliance.
+
+---
+
+### Journey 8: OSS Contributor Self-Hosts and Tests End-to-End
+
+**Persona:** Taylor, an open-source developer who builds MCP servers and wants to try MCP Fabric.
+
+**Scenario:** Taylor found MCP Fabric on GitHub. She has two local MCP servers running: a filesystem server and a git server. She wants to see if Fabric makes them feel like a single coherent platform. She has 10 minutes to get a first impression.
+
+**Step by Step:**
+
+1. Taylor clones the repo and reads the README. One command: `docker-compose up`.
+2. She runs it. Docker pulls images and within 60 seconds the admin UI is at `http://localhost:8000/admin`.
+3. Taylor opens the admin UI. The server registry is empty — she's the first user of this instance.
+4. She clicks "Register Server" and enters her filesystem server endpoint: `http://localhost:3001`. She adds metadata: "Local FS Server," owner "taylor-dev," labels `filesystem`, `local`.
+5. Fabric inspects the server, pulls its tool list (`read_file`, `write_file`, `list_directory`, `search_files`), and displays them with auto-detected schemas.
+6. Taylor repeats for her git server on `http://localhost:3002`. Fabric imports `git_diff`, `git_log`, `git_status`.
+7. Taylor navigates to the Capability Catalog. She maps the imported tools to capabilities: filesystem tools → `fs:read`, `fs:write`, `fs:list`, `fs:search`; git tools → `code:diff`, `code:log`, `code:status`.
+8. She creates an agent class `agent:developer` and assigns both servers as `trusted`.
+9. Taylor opens a terminal and sends a test request via curl: `POST /capability/request { "capability": "code:diff", "params": { "repo": ".", "since": "1h" } }`. She includes the agent identity header.
+10. Fabric routes to the git server, returns the diff normalized, and logs the call. The response is clean and consistent.
+11. Taylor checks the Audit Log in the admin UI — her test call is there with routing detail, latency, and server chosen.
+12. Total time from clone to first successful capability request: under 8 minutes.
+
+**Outcome:** Taylor validated the full Fabric flow — registry, capability mapping, routing, audit — entirely locally with her own MCP servers. No cloud dependencies. No configuration files to hand-edit. She's now positioned to contribute, extend, or integrate Fabric with her own ecosystem. The OSS onboarding experience is measured in single-digit minutes.
+
+---
+
+### Journey 9: Capability Conflict Resolution — Two Servers Claim the Same Thing
+
+**Persona:** Priya, platform engineer (from Journey 1), managing a growing server ecosystem.
+
+**Scenario:** The platform now has 14 MCP servers. During registration of a new code intelligence server, Fabric detects that `code:search` is now claimed by two different servers. Priya must decide which server handles which kind of search request — or whether both can coexist with routing rules.
+
+**Step by Step:**
+
+1. Priya finishes registering the new Code Intelligence server (v0.9). Fabric inspects its tools and maps them to capabilities automatically.
+2. During capability mapping, Fabric shows a conflict banner: "Capability `code:search` is claimed by 2 servers — review routing."
+3. Priya opens the conflict resolution view. A side-by-side comparison appears:
+
+   | | Code Search (v1.2) | Code Intelligence (v0.9) |
+   |---|---|---|
+   | Capability | code:search | code:search |
+   | Input params | query, file_pattern, max_results | query, scope, include_tests |
+   | Output | lines[] | results[] with relevance ranking |
+   | Latency (avg) | 400ms | 200ms |
+   | Trust level | trusted | trusted |
+
+4. Priya notes that Code Intelligence is faster and returns ranked results, but doesn't support `file_pattern` filtering. Code Search is slower but supports file-pattern-based scoping.
+5. Priya sets a routing rule:
+   - **Primary:** Code Intelligence for general `code:search` (faster, ranked results).
+   - **Fallback/Override:** Code Search when `params.file_pattern` is present in the request.
+6. She saves the routing rule. Fabric now routes `code:search` requests based on parameter presence — no agent needs to know which server handles which request.
+7. Fabric logs the conflict resolution: who resolved it, when, what rules were set. This is visible to Jordan in future audits.
+
+**Outcome:** Two servers with overlapping capabilities coexist with clear, inspectable routing logic. Priya resolved the conflict in minutes without removing either server. Agents get the best tool for each specific request without knowing the behind-the-scenes server selection. The decision is auditable.
+
+---
+
+### Journey 10: Server Upgrade with Schema Diff — Breaking Change Review
+
+**Persona:** Priya managing a version upgrade of a critical MCP server.
+
+**Scenario:** The Code Search server team ships v2.0. The `search_code` tool now requires a new `context_lines` parameter, drops `file_pattern`, and returns structured results instead of raw text lines. Priya needs to update Fabric's registry without breaking agents that expect the old schema.
+
+**Step by Step:**
+
+1. Priya opens the Code Search server entry in the admin UI and clicks "Re-inspect."
+2. Fabric re-fetches the tool list from the server's `/tools/list` endpoint.
+3. Fabric compares the new tool definitions against the stored previous version and shows a schema diff:
+
+   ```
+   search_code:
+     + context_lines (required, int) — new required parameter
+     - file_pattern (was optional, string) — removed
+     ~ output format: lines[] → results[] {line, score, snippet}
+   
+   search_symbols:
+     + (new tool) — no previous version
+   ```
+
+4. Fabric flags the `search_code` changes as **potentially breaking** — removed parameter, changed output schema. It warns that agents expecting the old schema may get errors.
+5. Priya reviews the diff. She updates the capability mapping for `code:search` to reflect the new `context_lines` parameter in the normalized input schema. She sets the parameter as required in the catalog so agents discover the change when they query capabilities.
+6. She registers the new `search_symbols` tool and maps it to capability `code:symbol-search`.
+7. She activates the updated server entry. Fabric now routes `code:search` with the v2 schema.
+8. Priya also toggles a deprecation banner on the previous capability mapping: "Schema changed 2026-08-15 — see updated `code:search` input contract." Agents that list capabilities before making requests will see this.
+9. Jordan (the security admin from Journey 4) will see the schema change recorded in the audit log — which server changed, what changed, when, and who approved it.
+
+**Outcome:** Server upgrades don't create silent breakage. Fabric diffs old and new schemas, flags breaking changes for human review, and lets the platform engineer activate with full context. Agents can self-discover schema changes through the capability catalog. The change is auditable.
+
+---
+
 ## Feature Catalog
 
 ### 1. Registry
@@ -277,6 +441,21 @@ A web interface for managing the fabric.
 | Audit viewer | Filterable log viewer for requests, denials, and policy changes |
 | Trust posture | At-a-glance view of unreviewed servers, policy exceptions, and risk signals |
 
+### 7. Alerting
+
+Proactive notifications for events that require platform team attention.
+
+| Feature | Description |
+|---|---|
+| Health degradation alerts | Notify when a server fails N consecutive health checks or failover count spikes |
+| Unreviewed server alert | Notify when a server remains unreviewed beyond a configurable threshold (default 48 hours) |
+| Denial rate spike alert | Notify when an agent class experiences a sudden increase in denied capability requests |
+| Schema change notification | Notify admins when a server's tool schema changes after re-inspection |
+| Notification channels | Email, webhook, Slack — configurable per alert type |
+| Alert history | Browse and filter past alerts alongside audit logs |
+
+These alerts surface naturally in existing journeys — Jordan (Journey 4) gets proactive alerts instead of purely manual review, and the platform team is notified automatically during server failures (Journey 6).
+
 ---
 
 ## Success Metrics
@@ -326,3 +505,37 @@ A: A proxy relays calls. MCP Fabric models capabilities, enforces policy, resolv
 **Q: What makes the MVP good enough?**
 
 A: If an agent connected through the fabric has a cleaner, safer, more understandable tool experience than the same agent connected directly to raw server sprawl, the MVP is meaningful.
+
+---
+
+## Future Considerations
+
+Scenarios and features explicitly deferred from v0.1.0 — important, but not in the initial build scope.
+
+### Multi-Environment Separation (dev / staging / prod)
+
+A production incident response agent should not see dev servers, and a dev agent should never route through production servers. Currently, Fabric trusts the platform engineer to label servers correctly. A first-class environment tag with enforced isolation (servers tagged `env:prod` are invisible to agents tagged `env:dev` and vice versa) is a natural v0.2.0 addition.
+
+### Rate Limiting and Quota
+
+There is no mechanism today to prevent an agent from flooding the fabric with capability requests. Rate limiting per agent class, per capability, and per server — with configurable quotas and burst allowances — belongs in the routing engine as a policy extension.
+
+### API and CLI Access for CI/CD
+
+All journeys are UI-driven. Platform teams running automated tests or CI pipelines need programmatic access: register servers, update policies, and query audit logs via API or CLI. The admin API exists internally — exposing it with stable endpoints and authentication is a v0.2.0+ item.
+
+### PII and Sensitive Data Controls in Audit Logs
+
+Tool responses may contain sensitive data (code, configuration, customer identifiers). The audit pipeline today logs routed calls with full response payloads. A configurable redaction or sampling policy for audit log content — or the ability to log only metadata (capability, server, latency) without the response body — should be added before production deployment.
+
+### Horizontal Scaling of Fabric Itself
+
+Fabric is a central routing layer. As server count and request volume grow, Fabric itself becomes a bottleneck. The current architecture assumes a single Fabric instance. Multi-instance Fabric with shared registry state, leader election for health checks, and distributed routing is a future scaling concern.
+
+### API Versioning for the Fabric Protocol
+
+The capability request format, agent identity format, and normalized response schema will evolve. A versioned Fabric API (`/v1/capability/request` vs `/v2/`) lets clients and agents adopt changes without breakage. This should be designed before the first external integration lands.
+
+### Multi-Organization / Federation
+
+Two organizations each running their own Fabric instance may want to share select capabilities (e.g., a partner team's docs search server). Cross-fabric federation — capability sharing, trust delegation, and audit across Fabric instances — is a long-term platform vision.
