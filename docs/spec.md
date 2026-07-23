@@ -970,33 +970,52 @@ testpaths = ["tests"]
 
 ## 13. Milestone Breakdown (Updated)
 
-### v0.1.0 — Core Routing (Weeks 1-4)
+### v0.1.0 — Core Platform (Weeks 1-6)
+
+**Goal:** A complete routing + governance platform. Agent routes a capability request through Fabric, gets a correct policy-checked audited response, and platform team has full lifecycle management of servers and capabilities.
 
 **Deliverables:**
-- [x] Server registry — register, inspect, list, get (Journey 1)
-- [x] Capability catalog — create, map tools, list, aliases (Journey 27)
-- [x] Routing engine — single + batch capability request (Journeys 2, 23)
-- [x] OPA policy engine — allow/deny/approve-gated, Rego policies (Journey 2)
-- [x] Agent auth — token create, connect, capability surface (Journeys 5, 21, 29)
-- [x] Capability discovery — agent gets full schema at startup (Journey 22)
-- [x] Error handling — structured errors for all scenarios (Journey 13)
-- [x] Audit pipeline — log requests/denials/policy changes (Journey 4)
-- [x] Admin UI — server inventory, capability browser, basic audit viewer (Journeys 1, 8)
-- [x] Health endpoint + Prometheus metrics + OpenTelemetry traces (Journey 28)
-- [x] SQLite for local dev, PostgreSQL for production
-- [x] Docker Compose + Poetry + Makefile
-- [x] Test suite (P0 scenarios)
 
-### v0.2.0 — Governance (Weeks 5-8)
+| # | Feature | Journey | Acceptance |
+|---|---|---|---|
+| 1 | Server registry — register, inspect, list, get, decommission | 1, 11 | Server registered with auto-inspected tools. Phased decommission works. |
+| 2 | Schema diff on re-inspect | 10 | Breaking changes flagged, diff visible in UI. History stored in tool_versions. |
+| 3 | Capability catalog — create, map, list, aliases, deprecate | 12, 27 | Capability created, tool mapped, alias resolved. Deprecation returns 410 with guidance. |
+| 4 | Conflict detection | 9 | Two servers mapping to same capability → flag in UI. Resolution deferred to v0.2.0. |
+| 5 | Routing engine — single + batch capability request | 2, 23 | Request routed → policy checked → response normalized. Batch handles parallel execution. |
+| 6 | Fallback chain | 6 | Primary server timeout → fallback server → degradation logged → alert triggered. |
+| 7 | OPA policy engine — allow/deny/approval-gated | 2, 7 | Rego policies evaluate. Denied requests return 403. Gated requests create approval. |
+| 8 | Approval-gated workflow | 7 | Agent requests gated capability → approval created → human reviews → approve/deny → audit. |
+| 9 | Agent auth — token create, rotate, revoke, connect, capability surface | 5, 21, 29 | Token lifecycle complete. Agent connects → receives scoped capability surface. |
+| 10 | Admin auth — login, MFA, session, logout | 26, 29 | Admin logs in with password+MFA → JWT session → role-based UI access. |
+| 11 | Capability discovery — full schema + change webhooks | 22 | Agent queries /capabilities/available → gets schemas + deprecation notices. |
+| 12 | Error handling — 12 structured error types | 13 | Every error returns code + message + details + request_id. |
+| 13 | Audit pipeline — log, query, export | 4, 18 | All events captured. Queryable by type/actor/date. Export to JSON/CSV. |
+| 14 | Admin UI — dashboard, servers, capabilities, audit, approvals, agent classes, alerts, users, trust posture | 1, 4, 8, 17 | All 12 pages functional with loading/empty/error/populated states. |
+| 15 | Health endpoints — /health, /health/ready, /health/live | — | Readiness/liveness probes. Graceful shutdown. |
+| 16 | Telemetry — Prometheus metrics, OpenTelemetry traces, structlog | 28 | All 15 metric families exported. Request lifecycle traced. Structured JSON logs. |
+| 17 | Celery workers — health checks, alerts, approval notifications, audit export, retention cleanup | 6, 7, 18 | Tasks execute, retry, and report completion. |
+| 18 | SQLite (local dev) + PostgreSQL (production) | 8 | Zero-config SQLite. Identical behavior with PostgreSQL via config swap. |
+| 19 | Docker Compose + Poetry + Makefile + CI/CD | 8, 22 | `docker-compose up` works. `make test` passes. GitHub Actions CI green. |
+| 20 | Test suite — 75% unit, 20% integration, 5% E2E. OPA policy tests. | — | All P0+P1 scenarios pass. Coverage >80%. |
+| 21 | Capability packs — create, assign, edit, clone | 3 | Pack created → capabilities selected → assigned to class → agent sees scoped surface. |
+| 22 | Basic routing rules — priority-based ordering | 9 | ORDER BY priority on capability mappings. Explicit "prefer Server A" without conditions. |
+| 23 | Multi-team namespaces — row-level filtering, team-scoped admin roles | 20 | TenantMiddleware enforces namespace on all queries. Editor role scoped to team. |
+| 24 | Admin user management — invite, roles, MFA, deactivate | 26 | Full admin lifecycle: invite → setup → login+MFA → session → deactivate → revoke. |
 
-- [ ] Capability packs — create, assign to classes (Journey 3)
-- [ ] Conflict detection + resolution (Journey 9)
-- [ ] Routing rules — explicit preferences (Journey 9)
-- [ ] Server decommission — phased sunset (Journey 11)
-- [ ] Capability deprecation — grace period (Journey 12)
-- [ ] Schema diff on re-inspect (Journey 10)
-- [ ] Policy sandbox — shadow evaluation (Journey 19)
-- [ ] Incremental migration support (Journey 15)
+### v0.2.0 — Hardening (Weeks 7-12)
+
+**Goal:** Production readiness — safe change management, migration tooling, disaster recovery, and validated performance.
+
+| # | Feature | Journey | Acceptance |
+|---|---|---|---|
+| 1 | Policy sandbox — shadow evaluation | 19 | New trust rule evaluated against real traffic for 48h → side-by-side results → activate or discard. |
+| 2 | Conditional routing rules | 9 | Rules with parameter-based conditions (e.g., "when `file_pattern` present, route to Server A"). |
+| 3 | Incremental migration — dual-mode routing | 15 | Agent config specifies per-capability mode (fabric/direct). Migration status API. Validation checklist. |
+| 4 | Fabric backup/restore — CLI tooling | 24 | `fabric-admin backup` + `fabric-admin restore` with PITR support. Validate after restore. |
+| 5 | Fabric version upgrade — blue-green | 25 | Zero-downtime upgrade. API backward compatibility verified. Rollback tested. |
+| 6 | Performance benchmark suite | — | Load tests validate v0.1.0 targets. Chaos tests for DB/Redis/OPA failures. Bottlenecks resolved. |
+| 7 | Reference MCP server integrations | — | Tested with 5+ popular OSS MCP servers. Integration guide published. |
 
 ### v0.3.0 — Scale (Weeks 9-12)
 
@@ -2905,4 +2924,369 @@ poetry run celery -A api.tasks beat --loglevel=info
 
 # Start OPA (separate terminal — or use docker-compose)
 opa run --server --addr localhost:8181 policies/
+```
+
+---
+
+## 30. Dockerfile Specification
+
+### 30.1 API Dockerfile
+
+```dockerfile
+# Stage 1: Build
+FROM python:3.12-slim-bookworm AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install poetry==1.8.3
+
+WORKDIR /app
+COPY pyproject.toml poetry.lock ./
+RUN poetry config virtualenvs.create false \
+    && poetry install --only main --no-interaction --no-ansi
+
+# Stage 2: Runtime
+FROM python:3.12-slim-bookworm AS runtime
+
+RUN groupadd --system fabric && useradd --system --gid fabric --no-create-home fabric
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+WORKDIR /app
+COPY --chown=fabric:fabric . .
+
+USER fabric
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health/ready || exit 1
+
+ENTRYPOINT ["uvicorn", "api.main:app"]
+CMD ["--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+```
+
+### 30.2 UI Dockerfile
+
+```dockerfile
+# Stage 1: Build
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+COPY ui/package.json ui/package-lock.json ./
+RUN npm ci
+
+COPY ui/ ./
+RUN npm run build
+
+# Stage 2: Serve
+FROM nginx:1.27-alpine
+
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY ui/nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD curl -f http://localhost:3000/ || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+### 30.3 Image Security
+
+```bash
+# Scan images before pushing
+docker scan mcp-fabric:latest          # Docker Scout / Snyk
+trivy image mcp-fabric:latest          # Aqua Trivy (OSS)
+
+# Base image considerations:
+# - python:3.12-slim-bookworm: ~50MB smaller than full image, fewer CVEs
+# - nginx:1.27-alpine: ~5MB, minimal attack surface
+# - Non-root user (fabric) for API — no privilege escalation
+# - No dev dependencies in runtime image (Poetry --only main)
+# - apt cache cleaned in builder stage
+```
+
+---
+
+## 31. Middleware Pipeline Order
+
+The order is critical — each middleware depends on the previous.
+
+```python
+# api/main.py — middleware registration order
+app = FastAPI()
+
+# 1. CORS (outermost — must run before auth for preflight OPTIONS)
+app.add_middleware(CORSMiddleware, allow_origins=[...])
+
+# 2. Request ID (assigns unique ID to every request for tracing)
+app.add_middleware(RequestIDMiddleware)
+
+# 3. Tracing (starts OpenTelemetry span, includes request_id)
+app.add_middleware(TracingMiddleware)
+
+# 4. Authentication (validates Bearer token or admin session)
+#    Must run BEFORE rate limiting — unauthenticated requests should hit auth, not rate limit
+#    Rate limiting for unauthenticated requests is handled at the network/LB level
+app.add_middleware(AuthMiddleware)
+
+# 5. Tenant scoping (reads agent_class → sets namespace filter)
+#    Must run AFTER auth — depends on request.state.agent_identity
+app.add_middleware(TenantMiddleware)
+
+# 6. Rate limiting (per-agent, after identity is known)
+app.add_middleware(RateLimitMiddleware)
+
+# 7. Audit (logs request start/end — wraps the entire handler)
+#    Runs as a background task after the response to avoid adding latency
+app.add_middleware(AuditMiddleware)
+```
+
+**Rationale for this order:**
+
+| Position | Middleware | Why this position |
+|---|---|---|
+| 1 | CORS | Must handle preflight OPTIONS before any auth/rate limiting |
+| 2 | Request ID | Earliest possible — every subsequent middleware/log gets the ID |
+| 3 | Tracing | Starts span as early as possible to capture full request duration |
+| 4 | Auth | Validates identity before letting the request consume rate limit budget |
+| 5 | Tenant | Depends on auth result (agent_class → namespace) |
+| 6 | Rate Limit | After identity is known — per-agent counters |
+| 7 | Audit | Outermost after handler — captures full request + response |
+
+**Anti-patterns avoided:**
+- Rate limit before auth → attackers can DoS with bogus tokens, consuming rate limit counters
+- Tenant before auth → no identity to scope by
+- Audit before handler → adds latency to every request (use background task instead)
+
+---
+
+## 32. Pydantic Models (Core Schemas)
+
+### 32.1 Capability Request
+
+```python
+# api/models/capability.py
+from pydantic import BaseModel, Field
+from typing import Any
+from uuid import UUID
+
+class CapabilityRequest(BaseModel):
+    capability: str = Field(..., pattern=r"^[a-z]+:[a-z][a-z-]*$",
+        examples=["code:search", "incident:get"])
+    params: dict[str, Any] = Field(default_factory=dict,
+        examples=[{"query": "deployment", "max_results": 5}])
+
+class BatchCapabilityRequest(BaseModel):
+    requests: list[BatchRequestItem] = Field(..., min_length=1, max_length=10)
+
+class BatchRequestItem(BaseModel):
+    id: str = Field(..., min_length=1, max_length=50)
+    capability: str = Field(..., pattern=r"^[a-z]+:[a-z][a-z-]*$")
+    params: dict[str, Any] = Field(default_factory=dict)
+
+class CapabilityResponse(BaseModel):
+    status: str  # "success" | "approval_pending" | "error"
+    data: dict[str, Any] | None = None
+    server: str | None = None
+    routing_reason: str | None = None
+    fallback_used: bool = False
+    latency_ms: int | None = None
+
+class BatchResponse(BaseModel):
+    results: list[BatchResultItem]
+
+class BatchResultItem(BaseModel):
+    id: str
+    status: str
+    data: dict[str, Any] | None = None
+    server: str | None = None
+    error: str | None = None
+    latency_ms: int | None = None
+```
+
+### 32.2 Server
+
+```python
+# api/models/server.py
+class ServerCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    endpoint: str = Field(..., pattern=r"^https?://")
+    owner_team: str | None = None
+    description: str | None = None
+    labels: list[str] = Field(default_factory=list)
+    team_namespace: str | None = None
+
+class ServerResponse(BaseModel):
+    id: UUID
+    name: str
+    endpoint: str
+    owner_team: str | None
+    description: str | None
+    labels: list[str]
+    trust_level: str  # "unreviewed" | "trusted" | "restricted" | "approval-gated"
+    health_status: str  # "healthy" | "degraded" | "unhealthy" | "unknown"
+    last_health_check: datetime | None
+    team_namespace: str | None
+    tools: list[ToolResponse] = Field(default_factory=list)
+    registered_at: datetime
+    decommissioned_at: datetime | None = None
+
+class ServerInspectResponse(ServerResponse):
+    tools_added: list[ToolResponse] = Field(default_factory=list)
+    tools_removed: list[ToolResponse] = Field(default_factory=list)
+    tools_changed: list[ToolChange] = Field(default_factory=list)
+
+class ToolChange(BaseModel):
+    tool_name: str
+    changes: dict[str, Any]  # added_params, removed_params, changed_output
+    is_breaking: bool
+```
+
+### 32.3 Error
+
+```python
+# api/models/error.py
+class FabricError(BaseModel):
+    error: str  # error code: "invalid_parameter", "capability_not_found", etc.
+    message: str  # human-readable description
+    details: dict[str, Any] = Field(default_factory=dict)  # context-specific
+    request_id: str
+
+    # Optional hints for agent self-correction
+    suggestion: str | None = None  # e.g., "Did you mean 'vulnerability:scan'?"
+    retry_after: int | None = None  # seconds for rate limit / degradation
+```
+
+### 32.4 Agent Identity
+
+```python
+# api/models/agent.py
+class AgentIdentityCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    agent_class_id: UUID
+    rate_limit_per_min: int = Field(default=100, ge=1, le=10000)
+    expires_in_days: int | None = Field(default=90, ge=1, le=365)
+
+class AgentIdentityResponse(BaseModel):
+    id: UUID
+    name: str
+    agent_class_id: UUID
+    agent_class_name: str
+    token_prefix: str  # first 4 chars only — never the full token
+    status: str
+    rate_limit_per_min: int
+    expires_at: datetime | None
+    created_at: datetime
+
+class AgentConnectResponse(BaseModel):
+    agent_id: str
+    agent_class: str
+    capability_surface: list[CapabilitySurfaceItem]
+
+class CapabilitySurfaceItem(BaseModel):
+    name: str
+    trust_level: str
+    requires_approval: bool = False
+    deprecated: bool = False
+```
+
+### 32.5 Audit Event
+
+```python
+# api/models/audit.py
+class AuditEventResponse(BaseModel):
+    id: UUID
+    event_type: str
+    actor_type: str
+    actor_id: str | None
+    target_type: str | None
+    target_id: str | None
+    details: dict[str, Any]
+    created_at: datetime
+
+class AuditExportRequest(BaseModel):
+    from_date: date
+    to_date: date
+    event_types: list[str] | None = None
+    agent_classes: list[str] | None = None
+    format: str = Field(default="json", pattern="^(json|csv)$")
+```
+
+---
+
+## 33. SLO Definitions
+
+### 33.1 Service Level Objectives
+
+| SLO | Target | Measurement Window | Error Budget (monthly) |
+|---|---|---|---|
+| **Availability** | 99.9% | 30 days | 43m 12s downtime |
+| **Latency (p95)** | < 500ms for capability requests | 30 days | 5% of requests may exceed |
+| **Latency (p99)** | < 2s for capability requests | 30 days | 1% of requests may exceed |
+| **Correctness** | > 99.5% of routed requests go to correct server | 30 days | 0.5% may be misrouted |
+| **Freshness** | Server health state stale by < 60s | Rolling 5m | Health checks every 30s |
+| **Durability** | < 30s data loss on PostgreSQL failure | Per incident | WAL archiving continuous |
+
+### 33.2 SLI Measurement
+
+```python
+# Availability SLI
+#   Measured: (successful_requests / total_requests) over 30d window
+#   "Successful" = 2xx or 4xx (client errors are not Fabric's fault)
+#   5xx = Fabric's fault → counts against error budget
+
+# Latency SLI
+#   Measured: histogram_quantile(0.95, fabric_request_duration_seconds) over 30d
+#   Latency = total time from request receipt to response sent
+#   Includes: routing + policy + server call + normalization
+
+# Correctness SLI
+#   Measured: manual evaluation of 100 random requests/week
+#   Human evaluator checks: was the correct server chosen?
+#   Automated in v0.2.0 via golden test set
+```
+
+### 33.3 Error Budget Policy
+
+```
+When error budget remaining > 50%:
+  → Normal operations. Ship features freely.
+
+When error budget remaining 20-50%:
+  → Caution. Postpone risky deployments. Focus on reliability.
+
+When error budget remaining < 20%:
+  → Freeze all non-critical deployments.
+  → All engineering time goes to reliability improvements.
+  → Escalate to platform lead.
+
+When error budget exhausted (0%):
+  → Incident declared.
+  → Feature freeze until SLO is met again for 7 consecutive days.
+```
+
+### 33.4 Alerting Thresholds (tied to SLOs)
+
+| Alert | Threshold | Severity | Action |
+|---|---|---|---|
+| Error budget burn rate > 5x | Burned 10% in 1 hour | P0 | Page on-call immediately |
+| Error budget burn rate > 2x | Burned 5% in 6 hours | P1 | Page on-call, investigate |
+| p95 latency > 1s for 10 min | 2x SLO target | P1 | Page on-call |
+| Availability drops below 99% | 30m window | P0 | Page on-call immediately |
+| Error budget < 10% remaining | End of month projection | P2 | Notify platform lead, freeze deployments |
+```
+
+---
+
+## 34. Development Setup
 ```
