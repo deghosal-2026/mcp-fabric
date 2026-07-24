@@ -49,14 +49,19 @@ from api.schemas.routing import (
     RoutingRuleCreate,
 )
 from api.schemas.server import (
+    DecommissionTimeline,
+    RoutingRuleResponse,
     ServerCreate,
+    ServerDetail,
     ServerInspectResponse,
     ServerResponse,
     ToolChange,
     ToolResponse,
+    ToolVersionResponse,
 )
 
 PaginatedServers.model_rebuild()
+ServerDetail.model_rebuild()
 
 __all__ = [
     "ServerCreate",
@@ -64,6 +69,10 @@ __all__ = [
     "ToolResponse",
     "ToolChange",
     "ServerInspectResponse",
+    "ServerDetail",
+    "ToolVersionResponse",
+    "RoutingRuleResponse",
+    "DecommissionTimeline",
     "PaginationMeta",
     "PaginatedServers",
     "PaginatedAudit",

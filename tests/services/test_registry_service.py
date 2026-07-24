@@ -329,6 +329,59 @@ class TestInspect:
             await registry_service.inspect(registered_server.id)
 
 
+class TestGetServer:
+    async def test_get_server_returns_full_detail(
+        self,
+        registry_service: RegistryService,
+        db_session: AsyncSession,
+        mock_server_url: str,
+    ) -> None:
+        params = ServerCreate(
+            name="detail-test",
+            endpoint=mock_server_url,
+            owner_team="platform",
+            labels=["test"],
+        )
+        created = await registry_service.register(params)
+        result = await registry_service.get_server(created.id)
+
+        assert result.id == created.id
+        assert result.name == "detail-test"
+        assert result.owner_team == "platform"
+        assert result.labels == ["test"]
+        assert len(result.tools) == 2
+        assert result.decommission_timeline is None
+
+    async def test_get_server_with_decommission_timeline(
+        self,
+        registry_service: RegistryService,
+        mock_server_url: str,
+    ) -> None:
+        params = ServerCreate(name="decom-test", endpoint=mock_server_url)
+        created = await registry_service.register(params)
+        server = (
+            await registry_service.db.execute(
+                select(MCPServer).where(MCPServer.id == created.id)
+            )
+        ).scalar_one()
+        server.decommission_phase = "grace_period"
+        server.decommissioned_at = dt(2026, 8, 1, 12, 0, 0)
+        await registry_service.db.commit()
+
+        result = await registry_service.get_server(created.id)
+        assert result.decommission_timeline is not None
+        assert result.decommission_timeline.phase == "grace_period"
+        assert result.decommission_timeline.decommissioned_at is not None
+        assert result.decommission_timeline.status == "grace_period"
+
+    async def test_get_server_not_found(
+        self,
+        registry_service: RegistryService,
+    ) -> None:
+        with pytest.raises(ServerNotFoundError):
+            await registry_service.get_server(uuid4())
+
+
 class TestListServers:
     @pytest_asyncio.fixture(autouse=True)
     async def _seed_servers(

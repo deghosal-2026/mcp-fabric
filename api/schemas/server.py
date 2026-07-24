@@ -9,6 +9,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from api.schemas.agent import TrustAssignmentResponse
+from api.schemas.capability import CapabilityMappingResponse
+
 
 class ServerCreate(BaseModel):
     """Request body for registering a new MCP server."""
@@ -69,3 +72,52 @@ class ServerInspectResponse(ServerResponse):
     tools_added: list[ToolResponse] = []
     tools_removed: list[ToolResponse] = []
     tools_changed: list[ToolChange] = []
+
+
+class ToolVersionResponse(BaseModel):
+    """A historical snapshot of a tool's schema."""
+
+    id: UUID
+    tool_name: str
+    input_schema: dict
+    output_schema: dict | None = None
+    is_breaking: bool
+    detected_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class RoutingRuleResponse(BaseModel):
+    """A priority-ordered routing rule for capability dispatch."""
+
+    id: UUID
+    capability_id: UUID
+    server_id: UUID
+    priority: int = 0
+    condition: dict | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DecommissionTimeline(BaseModel):
+    """Decommission status and phase timeline for a server."""
+
+    phase: str | None = None
+    decommissioned_at: datetime | None = None
+    status: str = "active"
+
+
+class ServerDetail(ServerResponse):
+    """Full server detail with all related entities eagerly loaded."""
+
+    tool_versions: list[ToolVersionResponse] = []
+    trust_assignments: list[TrustAssignmentResponse] = []
+    capability_mappings: list[CapabilityMappingResponse] = []
+    routing_rules: list[RoutingRuleResponse] = []
+    decommission_timeline: DecommissionTimeline | None = None
+
+
+ServerDetail.model_rebuild()
+RoutingRuleResponse.model_rebuild()
+ToolVersionResponse.model_rebuild()

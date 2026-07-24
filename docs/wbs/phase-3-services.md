@@ -46,10 +46,10 @@
 ### P3-04: Get Server Detail (#236)
 **Effort:** 1h | **Deps:** P3-01
 **Checklist:**
-- [ ] `get_server(server_id) -> ServerDetail`
-- [ ] Eager load: tools, tool_versions (latest), trust_assignments, capability_mappings, routing_rules
-- [ ] Include decommission timeline if decommissioned
-- [ ] Not found → 404
+- [x] `get_server(server_id) -> ServerDetail`
+- [x] Eager load: tools, tool_versions (latest), trust_assignments, capability_mappings, routing_rules
+- [x] Include decommission timeline if decommissioned
+- [x] Not found → 404
 
 **Success Criteria:** Full detail in one query (no N+1). Decommissioned servers show timeline.
 

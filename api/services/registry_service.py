@@ -13,12 +13,18 @@ from sqlalchemy.orm import selectinload
 
 from api.mcp import MCPClient, MCPError, ToolDefinition, compare_tool_definitions
 from api.models import MCPServer, ServerTool, ToolVersion
+from api.schemas.agent import TrustAssignmentResponse
+from api.schemas.capability import CapabilityMappingResponse
 from api.schemas.common import PaginatedServers, PaginationMeta
 from api.schemas.server import (
+    DecommissionTimeline,
+    RoutingRuleResponse,
     ServerCreate,
+    ServerDetail,
     ServerInspectResponse,
     ServerResponse,
     ToolResponse,
+    ToolVersionResponse,
 )
 from api.schemas.server import (
     ToolChange as ToolChangeSchema,
@@ -292,4 +298,56 @@ class RegistryService:
                 per_page=per_page,
                 total=total,
             ),
+        )
+
+    async def get_server(self, server_id: UUID) -> ServerDetail:
+        result = await self.db.execute(
+            select(MCPServer)
+            .options(
+                selectinload(MCPServer.tools),
+                selectinload(MCPServer.tool_versions),
+                selectinload(MCPServer.trust_assignments),
+                selectinload(MCPServer.mappings),
+                selectinload(MCPServer.routing_rules),
+            )
+            .where(MCPServer.id == server_id)
+        )
+        server = result.scalar_one_or_none()
+        if server is None:
+            raise ServerNotFoundError(str(server_id))
+
+        timeline = None
+        if server.decommissioned_at is not None or server.decommission_phase is not None:
+            timeline = DecommissionTimeline(
+                phase=server.decommission_phase,
+                decommissioned_at=server.decommissioned_at,
+                status=server.decommission_phase or "active",
+            )
+
+        return ServerDetail(
+            id=server.id,
+            name=server.name,
+            endpoint=server.endpoint,
+            owner_team=server.owner_team,
+            description=server.description,
+            labels=server.labels,
+            trust_level=server.trust_level,
+            health_status=server.health_status,
+            version=server.version,
+            team_namespace=server.team_namespace,
+            created_at=server.created_at,
+            updated_at=server.updated_at,
+            decommissioned_at=server.decommissioned_at,
+            tools=[ToolResponse.model_validate(t) for t in server.tools],
+            tool_versions=[ToolVersionResponse.model_validate(v) for v in server.tool_versions],
+            trust_assignments=[
+                TrustAssignmentResponse.model_validate(a) for a in server.trust_assignments
+            ],
+            capability_mappings=[
+                CapabilityMappingResponse.model_validate(m) for m in server.mappings
+            ],
+            routing_rules=[
+                RoutingRuleResponse.model_validate(r) for r in server.routing_rules
+            ],
+            decommission_timeline=timeline,
         )
