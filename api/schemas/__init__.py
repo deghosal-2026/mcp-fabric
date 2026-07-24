@@ -56,6 +56,8 @@ from api.schemas.server import (
     ToolResponse,
 )
 
+PaginatedServers.model_rebuild()
+
 __all__ = [
     "ServerCreate",
     "ServerResponse",

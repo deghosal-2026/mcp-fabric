@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import base64
+import json
 import logging
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from api.mcp import MCPClient, MCPError, ToolDefinition
 from api.models import MCPServer, ServerTool, ToolVersion
+from api.schemas.common import PaginatedServers, PaginationMeta
 from api.schemas.server import (
     ServerCreate,
     ServerInspectResponse,
@@ -219,4 +222,74 @@ class RegistryService:
             tools_added=added_responses,
             tools_removed=removed_responses,
             tools_changed=changed_schema,
+        )
+
+    async def list_servers(
+        self,
+        team: str | None = None,
+        trust: str | None = None,
+        health: str | None = None,
+        search: str | None = None,
+        cursor: str | None = None,
+        per_page: int = 50,
+    ) -> PaginatedServers:
+        query = select(MCPServer).options(selectinload(MCPServer.tools))
+
+        if team is not None:
+            query = query.where(MCPServer.team_namespace == team)
+        if trust is not None:
+            query = query.where(MCPServer.trust_level == trust)
+        if health is not None:
+            query = query.where(MCPServer.health_status == health)
+        if search is not None:
+            query = query.where(MCPServer.name.ilike(f"%{search}%"))
+
+        count_query = select(func.count()).select_from(query.subquery())
+        total_result = await self.db.execute(count_query)
+        total = total_result.scalar() or 0
+
+        if cursor is not None:
+            try:
+                raw = base64.urlsafe_b64decode(cursor.encode()).decode()
+                parts = json.loads(raw)
+                cursor_dt = datetime.fromisoformat(parts["t"])
+                cursor_id = UUID(parts["i"])
+            except (ValueError, Exception):
+                cursor_dt = None
+                cursor_id = None
+            if cursor_dt is not None and cursor_id is not None:
+                query = query.where(
+                    or_(
+                        MCPServer.created_at < cursor_dt,
+                        (MCPServer.created_at == cursor_dt) & (MCPServer.id < cursor_id),
+                    )
+                )
+
+        query = query.order_by(
+            MCPServer.created_at.desc(), MCPServer.id.desc()
+        ).limit(per_page + 1)
+
+        result = await self.db.execute(query)
+        servers = list(result.scalars().all())
+
+        has_more = len(servers) > per_page
+        if has_more:
+            servers = servers[:per_page]
+
+        next_cursor: str | None = None
+        if has_more and servers:
+            last = servers[-1]
+            payload = json.dumps(
+                {"t": last.created_at.isoformat(), "i": str(last.id)}
+            ).encode()
+            next_cursor = base64.urlsafe_b64encode(payload).decode()
+
+        return PaginatedServers(
+            servers=[ServerResponse.model_validate(s) for s in servers],
+            pagination=PaginationMeta(
+                next_cursor=next_cursor,
+                has_more=has_more,
+                per_page=per_page,
+                total=total,
+            ),
         )

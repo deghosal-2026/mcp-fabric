@@ -326,3 +326,122 @@ class TestInspect:
 
         with pytest.raises(ServerUnreachableError):
             await registry_service.inspect(registered_server.id)
+
+
+class TestListServers:
+    @pytest_asyncio.fixture(autouse=True)
+    async def _seed_servers(
+        self,
+        registry_service: RegistryService,
+    ) -> None:
+        apps: list[tuple[str, str, str, str]] = [
+            ("srv-a", "team-x", "trusted", "healthy"),
+            ("srv-b", "team-x", "unreviewed", "healthy"),
+            ("srv-c", "team-y", "trusted", "degraded"),
+            ("srv-d", "team-y", "blocked", "down"),
+            ("srv-e", "team-z", "trusted", "healthy"),
+        ]
+        for i, (name, team, trust, health) in enumerate(apps):
+            app = create_mock_mcp_server()
+            async with async_mock_server(app) as url:
+                result = await registry_service.register(
+                    ServerCreate(
+                        name=name, endpoint=url,
+                        owner_team=team, team_namespace=team,
+                    )
+                )
+                srv = (await registry_service.db.execute(
+                    select(MCPServer).where(MCPServer.id == result.id)
+                )).scalar_one()
+                srv.trust_level = trust
+                srv.health_status = health
+                srv.created_at = __import__("datetime").datetime(
+                    2026, 7, 24, 0, 0, i
+                )
+                await registry_service.db.commit()
+
+    async def test_list_all(
+        self,
+        registry_service: RegistryService,
+    ) -> None:
+        result = await registry_service.list_servers()
+        names = {s.name for s in result.servers}
+        assert names == {"srv-a", "srv-b", "srv-c", "srv-d", "srv-e"}
+        assert result.pagination.total == 5
+
+    async def test_list_empty_result(
+        self,
+        registry_service: RegistryService,
+    ) -> None:
+        result = await registry_service.list_servers(team="nonexistent")
+        assert len(result.servers) == 0
+        assert result.pagination.total == 0
+        assert result.pagination.has_more is False
+
+    async def test_filter_by_team(
+        self,
+        registry_service: RegistryService,
+    ) -> None:
+        result = await registry_service.list_servers(team="team-x")
+        names = {s.name for s in result.servers}
+        assert names == {"srv-a", "srv-b"}
+        assert result.pagination.total == 2
+
+    async def test_filter_by_trust(
+        self,
+        registry_service: RegistryService,
+    ) -> None:
+        result = await registry_service.list_servers(trust="trusted")
+        names = {s.name for s in result.servers}
+        assert names == {"srv-a", "srv-c", "srv-e"}
+        assert result.pagination.total == 3
+
+    async def test_filter_by_health(
+        self,
+        registry_service: RegistryService,
+    ) -> None:
+        result = await registry_service.list_servers(health="healthy")
+        names = {s.name for s in result.servers}
+        assert names == {"srv-a", "srv-b", "srv-e"}
+        assert result.pagination.total == 3
+
+    async def test_search_by_name(
+        self,
+        registry_service: RegistryService,
+    ) -> None:
+        result = await registry_service.list_servers(search="srv-a")
+        assert len(result.servers) == 1
+        assert result.servers[0].name == "srv-a"
+        assert result.pagination.total == 1
+
+    async def test_combined_filters(
+        self,
+        registry_service: RegistryService,
+    ) -> None:
+        result = await registry_service.list_servers(
+            team="team-x", trust="trusted", health="healthy"
+        )
+        names = {s.name for s in result.servers}
+        assert names == {"srv-a"}
+        assert result.pagination.total == 1
+
+    async def test_cursor_pagination(
+        self,
+        registry_service: RegistryService,
+    ) -> None:
+        result = await registry_service.list_servers(per_page=2)
+        assert len(result.servers) == 2
+        assert result.pagination.has_more is True
+        assert result.pagination.next_cursor is not None
+        assert result.pagination.total == 5
+
+        next_cursor = result.pagination.next_cursor
+        result2 = await registry_service.list_servers(per_page=2, cursor=next_cursor)
+        assert len(result2.servers) == 2
+        assert result2.pagination.has_more is True
+
+        next_cursor2 = result2.pagination.next_cursor
+        result3 = await registry_service.list_servers(per_page=2, cursor=next_cursor2)
+        assert len(result3.servers) == 1
+        assert result3.pagination.has_more is False
+        assert result3.pagination.next_cursor is None
