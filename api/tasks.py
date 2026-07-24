@@ -1,12 +1,10 @@
-"""Celery async task definitions and beat schedule.
-
-Registered tasks are auto-discovered by the Celery worker.
-Beat schedule is driven by Settings.celery_beat_schedule.
-"""
-
+import asyncio
 import logging
+from datetime import UTC, datetime
 
 from celery import Celery, Task
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from api.config import settings
 
@@ -36,6 +34,85 @@ class NotifyTask(Task):
     autoretry_for = (Exception,)
     max_retries = 3
     default_retry_delay = 60
+
+
+def _run_async(coro):
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+@celery_app.task(bind=True, max_retries=2, default_retry_delay=10)
+def health_check_server(self, server_id: str, endpoint: str) -> dict:
+    from api.mcp.client import MCPClient
+
+    async def _check():
+        client = MCPClient()
+        try:
+            tools = await client.list_tools(endpoint, timeout=5)
+            return {"server_id": server_id, "status": "healthy", "tool_count": len(tools)}
+        except Exception as exc:
+            logger.warning("Health check failed for %s: %s", endpoint, exc)
+            raise self.retry(exc=exc) from exc
+
+    return _run_async(_check())
+
+
+@celery_app.task(bind=True)
+def health_check_all_servers(self):
+    from api.mcp.client import MCPClient
+    from api.models.server import MCPServer
+
+    async def _check_all():
+        engine = create_async_engine(settings.database_url, echo=False)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as db:
+            stmt = select(MCPServer).where(MCPServer.decommissioned_at.is_(None))
+            result = await db.execute(stmt)
+            servers = result.scalars().all()
+            results = []
+            for srv in servers:
+                try:
+                    client = MCPClient()
+                    tools = await client.list_tools(srv.endpoint, timeout=5)
+                    results.append({
+                        "server_id": str(srv.id), "status": "healthy", "tools": len(tools),
+                    })
+                except Exception as exc:
+                    results.append({
+                        "server_id": str(srv.id), "status": "unhealthy", "error": str(exc),
+                    })
+        await engine.dispose()
+        return results
+
+    return _run_async(_check_all())
+
+
+@celery_app.task(bind=True)
+def cleanup_audit_logs(self):
+    from api.models.audit import AuditEvent
+
+    async def _cleanup():
+        engine = create_async_engine(settings.database_url, echo=False)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as db:
+            before = datetime.now(UTC)
+            stmt = delete(AuditEvent).where(AuditEvent.created_at < before)
+            result = await db.execute(stmt)
+            await db.commit()
+            count = result.rowcount or 0
+        await engine.dispose()
+        return {"deleted": count}
+
+    return _run_async(_cleanup())
+
+
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+def check_alert_thresholds(self):
+    logger.info("Alert threshold check: no rules configured yet (v0.1.0)")
+    return {"checked": 0}
 
 
 @celery_app.task(base=NotifyTask, bind=True)
