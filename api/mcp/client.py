@@ -109,7 +109,15 @@ def _extract_tool_list(data: Any, endpoint: str) -> list[dict[str, Any]]:
     if isinstance(data, list):
         maybe = data
     elif isinstance(data, dict):
-        maybe = data.get("tools") or data.get("result")
+        maybe = data.get("tools")
+        if maybe is None:
+            # Older or custom MCP servers may wrap tools under "result" instead of "tools"
+            maybe = data.get("result")
+        if maybe is None:
+            raise MCPServerError(
+                200, endpoint,
+                "Unexpected /tools/list response: missing 'tools' or 'result' key",
+            )
     else:
         raise MCPServerError(
             200, endpoint,
@@ -252,6 +260,7 @@ class MCPClient:
             raise MCPServerError(response.status_code, endpoint, response.text)
 
         data = response.json()
+        # MCP servers may respond with "result" (standard) or "content" (content-oriented tools)
         if "result" in data:
             result = data["result"]
         elif "content" in data:
