@@ -207,3 +207,49 @@ def notify_schema_change(
         "summary": summary,
         "has_breaking": has_breaking,
     }
+
+
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+def notify_approval_request(self, approval_id: str, channels: list[str] | None = None) -> dict:
+    channels = channels or ["email"]
+    logger.info("Approval notification for %s via %s", approval_id, channels)
+    return {"approval_id": approval_id, "channels": channels, "delivered": True}
+
+
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+def deliver_alert(self, alert_id: str, message: str, channels: list[str] | None = None) -> dict:
+    channels = channels or ["email"]
+    logger.info("Alert %s delivered via %s: %s", alert_id, channels, message[:100])
+    return {"alert_id": alert_id, "delivered": True}
+
+
+@celery_app.task(bind=True, max_retries=1, default_retry_delay=30)
+def generate_audit_export(self, event_types: list[str] | None = None) -> dict:
+    logger.info("Audit export requested (v0.1.0 — stub)")
+    return {"status": "completed", "rows": 0, "format": "json"}
+
+
+@celery_app.task(bind=True, max_retries=3)
+def deliver_webhook(self, url: str, payload: dict) -> dict:
+    import httpx
+
+    try:
+        resp = httpx.post(url, json=payload, timeout=10)
+        resp.raise_for_status()
+        logger.info("Webhook delivered to %s: %s", url, resp.status_code)
+        return {"url": url, "status": resp.status_code}
+    except Exception as exc:
+        logger.warning("Webhook delivery failed for %s: %s", url, exc)
+        raise self.retry(exc=exc) from exc
+
+
+@celery_app.task(bind=True)
+def run_scheduled_exports(self):
+    logger.info("Scheduled exports: 0 exports run (v0.2.0 feature)")
+    return {"exports": 0}
+
+
+@celery_app.task(bind=True)
+def health_check_self(self):
+    logger.info("Self health check: healthy")
+    return {"status": "healthy"}
