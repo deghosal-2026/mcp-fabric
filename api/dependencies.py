@@ -1,69 +1,21 @@
-"""FastAPI dependency injection utilities.
+from collections.abc import AsyncGenerator
 
-Provides reusable dependencies for API version negotiation,
-request ID tracking, tenant scope extraction, and auth.
-"""
+from fastapi import Depends, Request
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-import re
-from uuid import uuid4
-
-from fastapi import Depends, HTTPException, Request
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-
-security = HTTPBearer(auto_error=False)
+from api.mcp import MCPClient
+from api.services.registry_service import RegistryService
 
 
-def get_api_version(request: Request) -> str:
-    """Extract API version from Accept header (defaults to v1)."""
-    accept = request.headers.get("Accept", "")
-    match = re.search(r"application/vnd\.fabric\.(v\d+)\+json", accept)
-    if match:
-        return match.group(1)
-    return "v1"
+async def get_db_session(request: Request) -> AsyncGenerator[AsyncSession, None]:
+    engine = request.app.state.db_engine
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        yield session
 
 
-def get_request_id(request: Request) -> str:
-    """Return or generate a unique request ID, preferring Fabric-Request-Id header."""
-    if not hasattr(request.state, "request_id"):
-        request.state.request_id = request.headers.get("Fabric-Request-Id", str(uuid4()))
-    return request.state.request_id
-
-
-def get_tenant_scope(request: Request) -> str | None:
-    """Extract tenant namespace from request state (set by auth middleware)."""
-    return getattr(request.state, "tenant_namespace", None)
-
-
-def _get_security() -> HTTPBearer:
-    """Return the shared HTTPBearer instance (wrapped for Depends injection)."""
-    return security
-
-
-async def get_current_agent(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_get_security),
-) -> dict:
-    """Authenticate and return the current agent from the bearer token."""
-    if credentials is None:
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "error": "invalid_token",
-                "message": "Missing authorization header",
-            },
-        )
-    return {"token": credentials.credentials}
-
-
-async def get_current_admin(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_get_security),
-) -> dict:
-    """Authenticate and return the current admin from the bearer token."""
-    if credentials is None:
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "error": "invalid_token",
-                "message": "Missing authorization header",
-            },
-        )
-    return {"token": credentials.credentials}
+async def get_registry_service(
+    db: AsyncSession = Depends(get_db_session),
+) -> RegistryService:
+    client = MCPClient()
+    return RegistryService(db=db, mcp_client=client)

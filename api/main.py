@@ -20,6 +20,7 @@ from api.middleware import (
     TracingMiddleware,
 )
 from api.middleware.cors import CORS_CONFIG
+from api.routers.registry import router as registry_router
 from api.seeders import run_seeders
 from api.services.health import check_database, check_opa, check_redis
 from api.telemetry.instrumentation import instrument_engine
@@ -70,6 +71,7 @@ app.add_middleware(TenantMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(AuditMiddleware)
 
+app.include_router(registry_router)
 
 @app.get("/health")
 async def health(request: Request):
