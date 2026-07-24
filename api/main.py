@@ -21,7 +21,6 @@ from api.middleware import (
 from api.middleware.cors import CORS_CONFIG
 from api.seeders import run_seeders
 from api.telemetry.logging import logger
-from api.telemetry.tracing import instrument_fastapi
 
 
 @asynccontextmanager
@@ -50,8 +49,6 @@ app = FastAPI(
     contact={"name": "Debashish Ghosal", "email": "debashish@ghosal.dev"},
     license_info={"name": "MIT", "identifier": "MIT"},
 )
-
-instrument_fastapi(app)
 
 app.add_middleware(CORSMiddleware, **CORS_CONFIG)
 app.add_middleware(APIVersionMiddleware)

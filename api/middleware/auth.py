@@ -8,11 +8,12 @@ role into request.state for downstream middleware and route handlers.
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
 from api.middleware.constants import HEALTH_PATHS
 from api.services.auth_service import AuthService, InvalidTokenError
+from api.telemetry.logging import logger
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -20,17 +21,24 @@ class AuthMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.auth = auth_service or AuthService()
 
-    async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
+    async def dispatch(self, request: Request, call_next) -> Response:
         if request.url.path in HEALTH_PATHS:
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
+            logger.warning("auth:missing_token", path=request.url.path, method=request.method)
             return JSONResponse(
                 status_code=401,
                 content={
                     "error": "invalid_token",
                     "message": "Missing or invalid Authorization header",
+                },
+                headers={
+                    "WWW-Authenticate": (
+                        'Bearer error="invalid_token",'
+                        ' error_description="Missing or invalid Authorization header"'
+                    ),
                 },
             )
 
@@ -38,9 +46,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
         try:
             payload = self.auth.validate_token(token)
         except InvalidTokenError:
+            logger.warning("auth:invalid_token", path=request.url.path, method=request.method)
             return JSONResponse(
                 status_code=401,
                 content={"error": "invalid_token", "message": "Token is invalid or expired"},
+                headers={
+                    "WWW-Authenticate": (
+                        'Bearer error="invalid_token",'
+                        ' error_description="Token is invalid or expired"'
+                    ),
+                },
             )
 
         request.state.agent_id = payload.get("sub")

@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+from starlette.responses import Response
 from starlette.types import ASGIApp
 
 from api.middleware.constants import HEALTH_PATHS
@@ -19,7 +20,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp):
         super().__init__(app)
 
-    async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
+    async def dispatch(self, request: Request, call_next) -> Response:
         if request.url.path in HEALTH_PATHS:
             return await call_next(request)
 

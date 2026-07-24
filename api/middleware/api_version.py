@@ -10,7 +10,7 @@ import re
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
 SUPPORTED_API_VERSIONS = {"1"}
@@ -20,7 +20,7 @@ class APIVersionMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp):
         super().__init__(app)
 
-    async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
+    async def dispatch(self, request: Request, call_next) -> Response:
         version = _parse_version(request)
         if version and version not in SUPPORTED_API_VERSIONS:
             return JSONResponse(
@@ -40,12 +40,15 @@ class APIVersionMiddleware(BaseHTTPMiddleware):
 
 
 VERSION_PATTERN = re.compile(r"version=([\w\.]+)")
+VENDOR_PATTERN = re.compile(r"application/vnd\.fabric\.v?(\d+)\+json")
 
 
 def _parse_version(request: Request) -> str | None:
     accept = request.headers.get("Accept", "")
     accept += "," + request.headers.get("Accept-Version", "")
     accept += "," + (request.query_params.get("api_version") or "")
+    if match := VENDOR_PATTERN.search(accept):
+        return match.group(1)
     if match := VERSION_PATTERN.search(accept):
         return match.group(1)
     return None
