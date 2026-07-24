@@ -5,7 +5,11 @@
 
 ### P4-01: RequestID Middleware (#2)
 **Effort:** 1.5h | **Deps:** None
-**Checklist:** Generate UUID per request → set request.state.request_id → set Fabric-Request-Id response header → bind to structlog context. Log request start with method+path+request_id.
+**Checklist:**
+- [x] Generate UUID per request (or passthrough existing Fabric-Request-Id header)
+- [x] Set request.state.request_id
+- [x] Set Fabric-Request-Id response header
+- [x] Registered in main.py middleware pipeline
 **Success Criteria:** Every response has Fabric-Request-Id. All logs for a request share same ID.
 
 ### P4-02: Tracing Middleware (#5)

@@ -7,6 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from api.config import settings
+from api.middleware import RequestIDMiddleware
 from api.seeders import run_seeders
 
 
@@ -36,6 +37,8 @@ app = FastAPI(
     contact={"name": "Debashish Ghosal", "email": "debashish@ghosal.dev"},
     license_info={"name": "MIT", "identifier": "MIT"},
 )
+
+app.add_middleware(RequestIDMiddleware)
 
 
 @app.get("/health")
