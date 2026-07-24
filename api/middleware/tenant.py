@@ -1,3 +1,11 @@
+"""Extracts a tenant namespace from the authenticated agent's class label.
+
+Uses the convention that an agent_class value of the form
+"<namespace>:<role>" encodes the tenant in the segment before the first
+colon.  This namespace is propagated via request.state for downstream
+use in data isolation and multi-tenancy filters.
+"""
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.types import ASGIApp

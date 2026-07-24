@@ -1,3 +1,10 @@
+"""Emits a structured audit log entry for every authenticated request.
+
+Records the method, path, status code, agent identity, and request ID
+so operators can trace who did what.  Health-check paths are skipped to
+keep the audit log focused on business operations.
+"""
+
 from datetime import UTC, datetime
 
 from starlette.middleware.base import BaseHTTPMiddleware

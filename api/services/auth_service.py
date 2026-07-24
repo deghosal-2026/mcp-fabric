@@ -1,3 +1,10 @@
+"""JWT-based authentication with bcrypt password hashing.
+
+Provides token creation and validation for both agent and admin
+identities, plus password hashing/verification using bcrypt directly
+(not the passlib wrapper which has bcrypt compatibility issues).
+"""
+
 from datetime import UTC, datetime, timedelta
 
 import bcrypt

@@ -1,3 +1,10 @@
+"""Append-only audit event log backed by the AuditEvent model.
+
+Provides log_event for recording actions with actor/target metadata,
+query for retrieving events with optional filters, and cleanup for
+removing events older than the configured retention period.
+"""
+
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, select

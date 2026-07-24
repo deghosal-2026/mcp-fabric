@@ -1,3 +1,14 @@
+"""Lazy-initialized OpenTelemetry tracer with configurable export.
+
+Uses lru_cache so the TracerProvider and its processors are created
+only once, on first access.  In production with an otel_endpoint set,
+spans are exported via OTLP HTTP; otherwise only the SDK default
+(no-op) exporter is active, keeping test output clean.
+
+The instrument_fastapi helper wires auto-instrumentation into a
+FastAPI app for automatic span creation on every route handler.
+"""
+
 from __future__ import annotations
 
 from functools import lru_cache

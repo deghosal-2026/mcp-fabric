@@ -1,3 +1,11 @@
+"""In-memory sliding-window rate limiter keyed by agent identity and path.
+
+Uses per-instance state (not global) so each FastAPI app gets its own
+rate-limit bucket, and the lock ensures correctness under concurrent
+requests.  Stale entries are cleaned up every 5 minutes to cap memory
+usage.  Health-check and metrics paths bypass rate limiting entirely.
+"""
+
 import asyncio
 import time
 

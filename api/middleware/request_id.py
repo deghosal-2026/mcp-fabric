@@ -1,3 +1,11 @@
+"""Assigns a unique request ID to every HTTP request.
+
+Uses the Fabric-Request-Id header if the caller provides one (for
+distributed trace correlation), otherwise generates a new UUID.  The ID
+is echoed back on the response header so callers can correlate requests
+with server-side logs.
+"""
+
 from uuid import uuid4
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint

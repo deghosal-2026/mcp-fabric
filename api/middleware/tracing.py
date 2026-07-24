@@ -1,3 +1,11 @@
+"""Creates an OpenTelemetry span for every HTTP request.
+
+Span attributes capture the HTTP method, URL, status code, and request
+ID so that each request's end-to-end lifecycle is visible in the trace
+backend.  The tracer is obtained lazily from the telemetry module to
+avoid import-time side effects.
+"""
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.types import ASGIApp

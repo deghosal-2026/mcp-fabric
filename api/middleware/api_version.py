@@ -1,3 +1,11 @@
+"""Negotiates API version from the Accept / Accept-Version header or query parameter.
+
+Defaults to version "1" when no version is specified.  Returns 406 Not
+Acceptable for unsupported versions so callers get immediate feedback.
+The negotiated version is set on request.state and echoed in the
+Fabric-API-Version response header.
+"""
+
 import re
 
 from starlette.middleware.base import BaseHTTPMiddleware

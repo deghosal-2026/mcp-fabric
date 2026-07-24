@@ -1,3 +1,11 @@
+"""Validates Bearer tokens for every non-health request.
+
+Skips health-check and metrics endpoints so monitoring tools and
+load balancers do not need credentials.  Uses AuthService internally
+to validate JWT tokens and extract agent identity, agent class, and
+role into request.state for downstream middleware and route handlers.
+"""
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
