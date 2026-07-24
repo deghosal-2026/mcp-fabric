@@ -4,7 +4,7 @@ import base64
 import json
 import logging
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from redis.asyncio import Redis
@@ -231,7 +231,7 @@ class RegistryService:
 
         if added_names or removed_names or changed_schema:
             try:
-                notify_schema_change.delay(
+                cast(Any, notify_schema_change).delay(
                     server_id=str(server.id),
                     server_name=server.name,
                     tools_added=list(added_names),

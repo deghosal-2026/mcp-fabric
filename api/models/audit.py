@@ -1,28 +1,26 @@
-"""ORM models for audit logging, approvals, and alerting.
+import uuid
+from datetime import datetime
+from typing import Any
 
-Tracks every action (AuditEvent), pending approval requests
-(ApprovalRequest), alert rule definitions (AlertRule), and fired
-alert events (AlertEvent).
-"""
-
-from sqlalchemy import JSON, UUID, Boolean, Column, DateTime, ForeignKey, Index, String, Text, func
-from sqlalchemy.orm import relationship
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, String, Text, func
+from sqlalchemy import UUID as SAUUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from api.models.base import Base, UUIDMixin
 
 
 class AuditEvent(UUIDMixin, Base):
-    """Immutable record of an action performed in the fabric."""
-
     __tablename__ = "audit_events"
 
-    event_type = Column(String(100), nullable=False)
-    actor_type = Column(String(50), nullable=False)
-    actor_id = Column(String(255), nullable=False)
-    target_type = Column(String(50), nullable=True)
-    target_id = Column(String(255), nullable=True)
-    details = Column(JSON, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    actor_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    target_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    target_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
     __table_args__ = (
         Index("idx_audit_type", "event_type"),
@@ -33,28 +31,28 @@ class AuditEvent(UUIDMixin, Base):
 
 
 class ApprovalRequest(UUIDMixin, Base):
-    """A pending approval for a gated capability invocation."""
-
     __tablename__ = "approval_requests"
 
-    agent_identity_id = Column(
-        UUID(as_uuid=True), ForeignKey("agent_identities.id", ondelete="CASCADE"), nullable=False
+    agent_identity_id: Mapped[uuid.UUID] = mapped_column(
+        SAUUID(as_uuid=True), ForeignKey("agent_identities.id", ondelete="CASCADE"), nullable=False
     )
-    capability_id = Column(
-        UUID(as_uuid=True), ForeignKey("capabilities.id", ondelete="CASCADE"), nullable=False
+    capability_id: Mapped[uuid.UUID] = mapped_column(
+        SAUUID(as_uuid=True), ForeignKey("capabilities.id", ondelete="CASCADE"), nullable=False
     )
-    server_id = Column(
-        UUID(as_uuid=True), ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=False
+    server_id: Mapped[uuid.UUID] = mapped_column(
+        SAUUID(as_uuid=True), ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=False
     )
-    request_params = Column(JSON, nullable=True)
-    status = Column(String(50), default="pending")
-    approver_id = Column(
-        UUID(as_uuid=True), ForeignKey("admin_users.id", ondelete="SET NULL"), nullable=True
+    request_params: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[str | None] = mapped_column(String(50), default="pending")
+    approver_id: Mapped[uuid.UUID | None] = mapped_column(
+        SAUUID(as_uuid=True), ForeignKey("admin_users.id", ondelete="SET NULL"), nullable=True
     )
-    approver_note = Column(Text, nullable=True)
-    requested_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    resolved_at = Column(DateTime(timezone=True), nullable=True)
-    expires_at = Column(DateTime(timezone=True), nullable=False)
+    approver_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     agent_identity = relationship("AgentIdentity")
     capability = relationship("Capability")
@@ -68,16 +66,16 @@ class ApprovalRequest(UUIDMixin, Base):
 
 
 class AlertRule(UUIDMixin, Base):
-    """A configurable rule that triggers AlertEvents on condition match."""
-
     __tablename__ = "alert_rules"
 
-    name = Column(String(255), nullable=False)
-    alert_type = Column(String(100), nullable=False)
-    condition = Column(JSON, nullable=False)
-    channels = Column(JSON, nullable=False)
-    enabled = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    alert_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    condition: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    channels: Mapped[list[Any]] = mapped_column(JSON, nullable=False)
+    enabled: Mapped[bool | None] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
     __table_args__ = (
         Index("idx_alertrules_enabled", "enabled"),
@@ -86,17 +84,19 @@ class AlertRule(UUIDMixin, Base):
 
 
 class AlertEvent(UUIDMixin, Base):
-    """A fired alert linked to a rule, optionally acknowledged by an admin."""
-
     __tablename__ = "alert_events"
 
-    rule_id = Column(UUID(as_uuid=True), ForeignKey("alert_rules.id"), nullable=False)
-    message = Column(Text, nullable=False)
-    details = Column(JSON, nullable=True)
-    fired_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    acknowledged_at = Column(DateTime(timezone=True), nullable=True)
-    acknowledged_by = Column(
-        UUID(as_uuid=True), ForeignKey("admin_users.id", ondelete="SET NULL"), nullable=True
+    rule_id: Mapped[uuid.UUID] = mapped_column(
+        SAUUID(as_uuid=True), ForeignKey("alert_rules.id"), nullable=False
+    )
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    details: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    fired_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    acknowledged_by: Mapped[uuid.UUID | None] = mapped_column(
+        SAUUID(as_uuid=True), ForeignKey("admin_users.id", ondelete="SET NULL"), nullable=True
     )
 
     rule = relationship("AlertRule")

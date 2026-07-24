@@ -1,26 +1,21 @@
-"""Declarative base and reusable ORM mixins.
-
-All models inherit from Base (DeclarativeBase) and optionally from
-TimestampMixin (created_at) and UUIDMixin (UUID primary key).
-"""
-
 import uuid
+from datetime import datetime
 
-from sqlalchemy import UUID, Column, DateTime, func
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy import UUID, DateTime, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
-    """SQLAlchemy declarative base for all ORM models."""
+    pass
 
 
 class TimestampMixin:
-    """Adds a server-default created_at timestamp column."""
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class UUIDMixin:
-    """Adds a UUID primary key column with auto-generated values."""
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )

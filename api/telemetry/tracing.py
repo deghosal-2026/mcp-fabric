@@ -10,8 +10,7 @@ def _get_tracer() -> trace.Tracer:
     from api.config import settings
 
     existing = trace.get_tracer_provider()
-    default = trace._DefaultTracerProvider
-    if not isinstance(existing, default):
+    if isinstance(existing, TracerProvider):
         return trace.get_tracer("mcp-fabric")
 
     resource = Resource.create({"service.name": "mcp-fabric"})

@@ -102,7 +102,7 @@ def cleanup_audit_logs(self):
             stmt = delete(AuditEvent).where(AuditEvent.created_at < before)
             result = await db.execute(stmt)
             await db.commit()
-            count = result.rowcount or 0
+            count = getattr(result, "rowcount", 0) or 0
         await engine.dispose()
         return {"deleted": count}
 
@@ -128,7 +128,7 @@ def cleanup_expired_tokens(self):
             result = await db.execute(stmt)
             await db.commit()
         await engine.dispose()
-        return {"expired": result.rowcount or 0}
+        return {"expired": getattr(result, "rowcount", 0) or 0}
 
     return _run_async(_run())
 
@@ -152,7 +152,7 @@ def cleanup_expired_approvals(self):
             result = await db.execute(stmt)
             await db.commit()
         await engine.dispose()
-        return {"expired": result.rowcount or 0}
+        return {"expired": getattr(result, "rowcount", 0) or 0}
 
     return _run_async(_run())
 

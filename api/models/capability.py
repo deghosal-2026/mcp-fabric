@@ -1,30 +1,27 @@
-"""ORM models for normalized capabilities and their aliases.
+import uuid
+from datetime import datetime
+from typing import Any
 
-A Capability is a vendor-neutral tool description with normalized
-schemas. CapabilityAlias provides alternative names for discovery.
-"""
-
-from sqlalchemy import JSON, UUID, Column, DateTime, ForeignKey, Index, Integer, String, Text, func
-from sqlalchemy.orm import relationship
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import UUID as SAUUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from api.models.base import Base, TimestampMixin, UUIDMixin
 
 
 class Capability(UUIDMixin, TimestampMixin, Base):
-    """A normalized, server-agnostic capability with input/output schemas."""
-
     __tablename__ = "capabilities"
 
-    name = Column(String(255), unique=True, nullable=False)
-    domain = Column(String(100), nullable=True)
-    normalized_input_schema = Column(JSON, nullable=True)
-    normalized_output_schema = Column(JSON, nullable=True)
-    description = Column(Text, nullable=True)
-    status = Column(String(50), default="active")
-    deprecated_at = Column(DateTime(timezone=True), nullable=True)
-    grace_period_days = Column(Integer, default=14)
-    migration_guidance = Column(Text, nullable=True)
-    created_by = Column(String(255), nullable=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    domain: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    normalized_input_schema: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    normalized_output_schema: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str | None] = mapped_column(String(50), default="active")
+    deprecated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    grace_period_days: Mapped[int | None] = mapped_column(Integer, default=14)
+    migration_guidance: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     mappings = relationship(
         "CapabilityMapping", back_populates="capability", cascade="all, delete-orphan"
@@ -46,15 +43,15 @@ class Capability(UUIDMixin, TimestampMixin, Base):
 
 
 class CapabilityAlias(UUIDMixin, Base):
-    """An alternative name pointing to a canonical Capability."""
-
     __tablename__ = "capability_aliases"
 
-    capability_id = Column(
-        UUID(as_uuid=True), ForeignKey("capabilities.id", ondelete="CASCADE"), nullable=False
+    capability_id: Mapped[uuid.UUID] = mapped_column(
+        SAUUID(as_uuid=True), ForeignKey("capabilities.id", ondelete="CASCADE"), nullable=False
     )
-    alias = Column(String(255), unique=True, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    alias: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
     capability = relationship("Capability", back_populates="aliases")
 

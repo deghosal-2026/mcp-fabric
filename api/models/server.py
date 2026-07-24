@@ -1,48 +1,30 @@
-"""ORM models for MCP server registration, tools, and routing.
+import uuid
+from datetime import datetime
+from typing import Any
 
-Core entities: MCPServer (registered MCP servers), ServerTool
-(individual tool endpoints), ToolVersion (schema change tracking),
-CapabilityMapping (server-to-capability bridge), and RoutingRule
-(priority-based capability routing).
-"""
-
-from sqlalchemy import (
-    JSON,
-    UUID,
-    Boolean,
-    Column,
-    DateTime,
-    Float,
-    ForeignKey,
-    Index,
-    Integer,
-    String,
-    Text,
-    func,
-)
-from sqlalchemy.orm import relationship
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import UUID as SAUUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from api.models.base import Base, TimestampMixin, UUIDMixin
 
 
 class MCPServer(UUIDMixin, TimestampMixin, Base):
-    """A registered MCP server known to the fabric."""
-
     __tablename__ = "mcp_servers"
 
-    name = Column(String(255), nullable=False)
-    endpoint = Column(String(1024), nullable=False)
-    owner_team = Column(String(255), nullable=True)
-    description = Column(Text, nullable=True)
-    labels = Column(JSON, default=lambda: [])
-    trust_level = Column(String(50), default="unreviewed")
-    health_status = Column(String(50), default="unknown")
-    last_health_check = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
-    version = Column(String(50), nullable=True)
-    team_namespace = Column(String(100), nullable=True)
-    decommissioned_at = Column(DateTime(timezone=True), nullable=True)
-    decommission_phase = Column(String(50), nullable=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    endpoint: Mapped[str] = mapped_column(String(1024), nullable=False)
+    owner_team: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    labels: Mapped[list[Any] | None] = mapped_column(JSON, default=lambda: [])
+    trust_level: Mapped[str | None] = mapped_column(String(50), default="unreviewed")
+    health_status: Mapped[str | None] = mapped_column(String(50), default="unknown")
+    last_health_check: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    team_namespace: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    decommissioned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decommission_phase: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     tools = relationship("ServerTool", back_populates="server", cascade="all, delete-orphan")
     tool_versions = relationship(
@@ -60,17 +42,15 @@ class MCPServer(UUIDMixin, TimestampMixin, Base):
 
 
 class ServerTool(UUIDMixin, Base):
-    """A single tool exposed by an MCP server."""
-
     __tablename__ = "server_tools"
 
-    server_id = Column(
-        UUID(as_uuid=True), ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=False
+    server_id: Mapped[uuid.UUID] = mapped_column(
+        SAUUID(as_uuid=True), ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=False
     )
-    tool_name = Column(String(255), nullable=False)
-    description = Column(Text, nullable=True)
-    input_schema = Column(JSON, nullable=False)
-    output_schema = Column(JSON, nullable=True)
+    tool_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    input_schema: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    output_schema: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     server = relationship("MCPServer", back_populates="tools")
 
@@ -81,18 +61,18 @@ class ServerTool(UUIDMixin, Base):
 
 
 class ToolVersion(UUIDMixin, Base):
-    """Historical snapshot of a tool's schema for change detection."""
-
     __tablename__ = "tool_versions"
 
-    server_id = Column(
-        UUID(as_uuid=True), ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=False
+    server_id: Mapped[uuid.UUID] = mapped_column(
+        SAUUID(as_uuid=True), ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=False
     )
-    tool_name = Column(String(255), nullable=False)
-    input_schema = Column(JSON, nullable=False)
-    output_schema = Column(JSON, nullable=True)
-    is_breaking = Column(Boolean, default=False)
-    detected_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    tool_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    input_schema: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    output_schema: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    is_breaking: Mapped[bool | None] = mapped_column(default=False)
+    detected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
     server = relationship("MCPServer", back_populates="tool_versions")
 
@@ -100,22 +80,22 @@ class ToolVersion(UUIDMixin, Base):
 
 
 class CapabilityMapping(UUIDMixin, Base):
-    """Bridges a normalized capability to a concrete server tool."""
-
     __tablename__ = "capability_mappings"
 
-    capability_id = Column(
-        UUID(as_uuid=True), ForeignKey("capabilities.id", ondelete="CASCADE"), nullable=False
+    capability_id: Mapped[uuid.UUID] = mapped_column(
+        SAUUID(as_uuid=True), ForeignKey("capabilities.id", ondelete="CASCADE"), nullable=False
     )
-    server_id = Column(
-        UUID(as_uuid=True), ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=False
+    server_id: Mapped[uuid.UUID] = mapped_column(
+        SAUUID(as_uuid=True), ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=False
     )
-    tool_name = Column(String(255), nullable=False)
-    input_mapping = Column(JSON, nullable=True)
-    output_mapping = Column(JSON, nullable=True)
-    is_primary = Column(Boolean, default=True)
-    routing_weight = Column(Float, default=1.0)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    tool_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    input_mapping: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    output_mapping: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    is_primary: Mapped[bool | None] = mapped_column(default=True)
+    routing_weight: Mapped[float | None] = mapped_column(Float, default=1.0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
     capability = relationship("Capability", back_populates="mappings")
     server = relationship("MCPServer", back_populates="mappings")
@@ -128,20 +108,20 @@ class CapabilityMapping(UUIDMixin, Base):
 
 
 class RoutingRule(UUIDMixin, Base):
-    """Priority-ordered routing rule for capability dispatch."""
-
     __tablename__ = "routing_rules"
 
-    capability_id = Column(
-        UUID(as_uuid=True), ForeignKey("capabilities.id", ondelete="CASCADE"), nullable=False
+    capability_id: Mapped[uuid.UUID] = mapped_column(
+        SAUUID(as_uuid=True), ForeignKey("capabilities.id", ondelete="CASCADE"), nullable=False
     )
-    server_id = Column(
-        UUID(as_uuid=True), ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=False
+    server_id: Mapped[uuid.UUID] = mapped_column(
+        SAUUID(as_uuid=True), ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=False
     )
-    priority = Column(Integer, default=0)
-    condition = Column(JSON, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    created_by = Column(String(255), nullable=True)
+    priority: Mapped[int | None] = mapped_column(Integer, default=0)
+    condition: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    created_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     capability = relationship("Capability", back_populates="routing_rules")
     server = relationship("MCPServer", back_populates="routing_rules")

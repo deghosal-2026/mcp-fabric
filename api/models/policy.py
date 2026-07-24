@@ -1,22 +1,20 @@
-"""ORM model for OPA Rego policy version tracking.
+from datetime import datetime
 
-Maintains a history of deployed Rego bundles for audit and rollback.
-"""
-
-from sqlalchemy import Column, DateTime, Index, String, Text, func
+from sqlalchemy import DateTime, Index, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column
 
 from api.models.base import Base, UUIDMixin
 
 
 class OPAPolicyVersion(UUIDMixin, Base):
-    """A versioned snapshot of deployed OPA Rego policy."""
-
     __tablename__ = "opa_policy_versions"
 
-    version = Column(String(50), nullable=False)
-    bundle_hash = Column(String(64), nullable=True)
-    deployed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    deployed_by = Column(String(255), nullable=True)
-    rego_content = Column(Text, nullable=False)
+    version: Mapped[str] = mapped_column(String(50), nullable=False)
+    bundle_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    deployed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    deployed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    rego_content: Mapped[str] = mapped_column(Text, nullable=False)
 
     __table_args__ = (Index("idx_opapolicy_version", "version"),)

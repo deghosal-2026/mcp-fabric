@@ -41,7 +41,24 @@ Agents stop thinking in terms of arbitrary server sprawl and instead receive a *
 
 ## Quick Start
 
-*Coming soon.*
+```bash
+# Install dependencies
+poetry install
+
+# Run database migrations
+alembic upgrade head
+
+# Start the API server (development)
+uvicorn api.main:app --reload
+
+# Or run the full stack with Docker Compose (API, Postgres, Redis, Celery worker/beat)
+docker-compose up --build
+
+# Run tests
+poetry run pytest tests/ -v
+```
+
+The API will be available at `http://localhost:8000`. Health check: `GET /health`. Metrics: `GET /v1/metrics`.
 
 ## Stack
 
