@@ -330,6 +330,51 @@ class TestInspect:
             await registry_service.inspect(registered_server.id)
 
 
+class TestHealth:
+    async def test_update_and_get_server_health(
+        self,
+        registry_service: RegistryService,
+        mock_server_url: str,
+    ) -> None:
+        params = ServerCreate(name="health-test", endpoint=mock_server_url)
+        created = await registry_service.register(params)
+
+        await registry_service.update_health(created.id, "healthy")
+        status = await registry_service.get_server_health(created.id)
+        assert status == "healthy"
+
+    async def test_get_all_health_statuses(
+        self,
+        registry_service: RegistryService,
+        db_session: AsyncSession,
+    ) -> None:
+        urls: list[str] = []
+        for name in ["h-a", "h-b", "h-c"]:
+            app = create_mock_mcp_server()
+            async with async_mock_server(app) as url:
+                urls.append(url)
+                params = ServerCreate(name=name, endpoint=url)
+                created = await registry_service.register(params)
+                await registry_service.update_health(created.id, "healthy")
+        statuses = await registry_service.get_all_health_statuses()
+        assert len(statuses) >= 3
+        assert all(v == "healthy" for v in statuses.values())
+
+    async def test_update_health_not_found(
+        self,
+        registry_service: RegistryService,
+    ) -> None:
+        with pytest.raises(ServerNotFoundError):
+            await registry_service.update_health(uuid4(), "healthy")
+
+    async def test_get_server_health_not_found(
+        self,
+        registry_service: RegistryService,
+    ) -> None:
+        with pytest.raises(ServerNotFoundError):
+            await registry_service.get_server_health(uuid4())
+
+
 class TestDecommission:
     async def test_decommission_grace_period(
         self,

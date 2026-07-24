@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+from redis.asyncio import Redis
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -60,10 +61,12 @@ class RegistryService:
         db: AsyncSession,
         mcp_client: MCPClient,
         audit_service: Any | None = None,
+        redis_client: Redis | None = None,
     ) -> None:
         self.db = db
         self.mcp = mcp_client
         self.audit = audit_service
+        self.redis = redis_client
 
     async def register(self, params: ServerCreate) -> ServerResponse:
         result = await self.db.execute(
@@ -447,3 +450,53 @@ class RegistryService:
                 status=server.decommission_phase or "active",
             ),
         )
+
+    async def update_health(self, server_id: UUID, status: str) -> None:
+        now = datetime.now(UTC)
+        result = await self.db.execute(
+            select(MCPServer).where(MCPServer.id == server_id)
+        )
+        server = result.scalar_one_or_none()
+        if server is None:
+            raise ServerNotFoundError(str(server_id))
+        server.health_status = status
+        server.last_health_check = now
+        await self.db.commit()
+
+        if self.redis is not None:
+            key = f"health:{server_id}"
+            await self.redis.set(key, status, ex=60)
+
+    async def get_server_health(self, server_id: UUID) -> str | None:
+        if self.redis is not None:
+            cached = await self.redis.get(f"health:{server_id}")
+            if cached is not None:
+                return cached.decode()
+        result = await self.db.execute(
+            select(MCPServer.health_status).where(MCPServer.id == server_id)
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            raise ServerNotFoundError(str(server_id))
+        return row
+
+    async def get_all_health_statuses(self) -> dict[str, str]:
+        if self.redis is not None:
+            cursor = 0
+            pattern = "health:*"
+            results: dict[str, str] = {}
+            while True:
+                cursor, keys = await self.redis.scan(cursor=cursor, match=pattern, count=100)
+                if keys:
+                    values = await self.redis.mget(*keys)
+                    for key, val in zip(keys, values, strict=False):
+                        if val is not None:
+                            sid = key.decode().split(":", 1)[1]
+                            results[sid] = val.decode()
+                if cursor == 0:
+                    break
+            return results
+        result = await self.db.execute(
+            select(MCPServer.id, MCPServer.health_status)
+        )
+        return {str(row[0]): row[1] for row in result.all()}

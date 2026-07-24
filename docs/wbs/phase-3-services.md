@@ -70,9 +70,10 @@
 ### P3-06: Health Status Management (#81)
 **Effort:** 1h | **Deps:** P3-01
 **Checklist:**
-- [ ] `update_health(server_id, status)` → updates Redis + DB
-- [ ] `get_server_health(server_id)` → reads from Redis (hot path)
-- [ ] `get_all_health_statuses()` → returns {server_id: status} from Redis
+- [x] `update_health(server_id, status)` → updates Redis + DB
+- [x] `get_server_health(server_id)` → reads from Redis (hot path), falls back to DB
+- [x] `get_all_health_statuses()` → returns {server_id: status} from Redis/DB
+- [x] Redis client injected via constructor, gracefully degraded without Redis
 
 **Success Criteria:** Health reads < 1ms from Redis. DB syncs on async write.
 
