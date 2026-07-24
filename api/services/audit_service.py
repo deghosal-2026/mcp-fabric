@@ -38,6 +38,14 @@ class AuditService:
         self.db.add(event)
         await self.db.commit()
         await self.db.refresh(event)
+        from api.telemetry.logging import logger
+
+        logger.info(
+            "audit:event_created",
+            audit_event_id=str(event.id),
+            event_type=event_type,
+            actor_id=actor_id,
+        )
         return event
 
     async def query(

@@ -22,6 +22,7 @@ from api.middleware import (
 from api.middleware.cors import CORS_CONFIG
 from api.seeders import run_seeders
 from api.services.health import check_database, check_opa, check_redis
+from api.telemetry.instrumentation import instrument_engine
 from api.telemetry.logging import logger
 from api.telemetry.metrics import fabric_info
 
@@ -32,6 +33,7 @@ async def lifespan(app: FastAPI):
 
     app.state.readiness = "healthy"
     app.state.db_engine = create_async_engine(settings.database_url, echo=False)
+    instrument_engine(app.state.db_engine)
     fabric_info.info({"version": "0.1.0", "environment": settings.environment})
     await run_seeders()
     loop = asyncio.get_running_loop()

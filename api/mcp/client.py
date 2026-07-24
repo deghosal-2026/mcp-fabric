@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+from opentelemetry.propagate import inject
 
 
 class MCPError(Exception):
@@ -217,6 +218,11 @@ class MCPClient:
             )
         return self._clients[endpoint]
 
+    def _trace_headers(self) -> dict[str, str]:
+        headers: dict[str, str] = {}
+        inject(headers)
+        return headers
+
     async def list_tools(
         self, endpoint: str, timeout: float | None = None
     ) -> list[ToolDefinition]:
@@ -239,6 +245,7 @@ class MCPClient:
         try:
             response = await client.get(
                 "/tools/list",
+                headers=self._trace_headers(),
                 timeout=httpx.Timeout(effective_timeout, connect=self.connect_timeout),
             )
         except httpx.TimeoutException:
@@ -292,6 +299,7 @@ class MCPClient:
             response = await client.post(
                 "/tools/call",
                 json=payload,
+                headers=self._trace_headers(),
                 timeout=httpx.Timeout(effective_timeout, connect=self.connect_timeout),
             )
         except httpx.TimeoutException:
