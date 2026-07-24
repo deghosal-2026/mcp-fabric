@@ -92,6 +92,37 @@ class ToolDiff:
     tools_changed: list[ToolChange] = field(default_factory=list)
 
 
+def _extract_tool_list(data: Any, endpoint: str) -> list[dict[str, Any]]:
+    """Extract a list of tool dicts from an MCP /tools/list response.
+
+    Args:
+        data: Parsed JSON response body.
+        endpoint: The server URL (for error messages).
+
+    Returns:
+        List of raw tool dicts.
+
+    Raises:
+        MCPServerError: The response does not contain a tool list.
+    """
+    maybe: Any
+    if isinstance(data, list):
+        maybe = data
+    elif isinstance(data, dict):
+        maybe = data.get("tools") or data.get("result")
+    else:
+        raise MCPServerError(
+            200, endpoint,
+            f"Unexpected /tools/list response type: {type(data).__name__}",
+        )
+    if not isinstance(maybe, list):
+        raise MCPServerError(
+            200, endpoint,
+            "Unexpected /tools/list response: missing array of tools",
+        )
+    return maybe
+
+
 class MCPClient:
     """Async HTTP client for interacting with MCP servers.
 
@@ -166,7 +197,7 @@ class MCPClient:
             raise MCPServerError(response.status_code, endpoint, response.text)
 
         data = response.json()
-        tools = data if isinstance(data, list) else data.get("tools", data.get("result", []))
+        tools = _extract_tool_list(data, endpoint)
         return [
             ToolDefinition(
                 name=t.get("name", ""),
@@ -221,8 +252,17 @@ class MCPClient:
             raise MCPServerError(response.status_code, endpoint, response.text)
 
         data = response.json()
+        if "result" in data:
+            result = data["result"]
+        elif "content" in data:
+            result = data["content"]
+        else:
+            raise MCPServerError(
+                200, endpoint,
+                "Unexpected /tools/call response: missing 'result' or 'content'",
+            )
         return ToolResponse(
-            result=data.get("result", data.get("content", data)),
+            result=result,
             metadata=data.get("metadata", {}),
             server_name=endpoint,
             tool_name=tool_name,

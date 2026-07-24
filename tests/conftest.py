@@ -7,6 +7,7 @@ from api.models import Base
 from api.models.agent import AgentClass, CapabilityPack
 from api.models.capability import Capability
 from api.models.server import MCPServer, ServerTool
+from tests.fixtures.mcp_server import async_mock_server, create_mock_mcp_server
 
 TEST_DATABASE_URL = "sqlite+aiosqlite://"
 
@@ -87,3 +88,13 @@ async def pack(db_session: AsyncSession) -> CapabilityPack:
     await db_session.commit()
     await db_session.refresh(p)
     return p
+
+
+@pytest_asyncio.fixture
+async def mock_mcp_server() -> AsyncGenerator[str, None]:
+    """Start a mock MCP server on a random port for MCPClient tests.
+
+    Yields the server URL. Server is shut down after the test.
+    """
+    async with async_mock_server(create_mock_mcp_server()) as url:
+        yield url

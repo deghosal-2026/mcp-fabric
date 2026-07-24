@@ -1,19 +1,17 @@
 """Tests for the MCP Client layer.
 
 Covers list_tools, call_tool, diff_tools, error types, timeout
-handling, and the mock MCP server fixture.
+handling, malformed response validation, and the mock MCP server fixture.
 """
 
 from __future__ import annotations
 
-import asyncio
-import socket
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager, suppress
+from typing import Any
 
 import pytest
 import pytest_asyncio
-from uvicorn import Config, Server
+from fastapi import Body, FastAPI
 
 from api.mcp.client import (
     MCPClient,
@@ -23,29 +21,7 @@ from api.mcp.client import (
     MCPToolError,
     ToolDefinition,
 )
-from tests.fixtures.mcp_server import create_mock_mcp_server
-
-pytest_plugins = ("tests.fixtures.mcp_server",)
-
-
-@asynccontextmanager
-async def _mock_server(app):
-    """Context manager that starts a mock MCP server and yields its URL."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        port = s.getsockname()[1]
-    config = Config(app=app, host="127.0.0.1", port=port, log_level="critical")
-    server = Server(config=config)
-    task = asyncio.create_task(server.serve())
-    await asyncio.sleep(0.05)
-    url = f"http://127.0.0.1:{port}"
-    try:
-        yield url
-    finally:
-        await server.shutdown()
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
+from tests.fixtures.mcp_server import async_mock_server, create_mock_mcp_server
 
 
 @pytest_asyncio.fixture
@@ -86,7 +62,7 @@ class TestListTools:
         assert tool.output_schema == expected_output
 
     async def test_list_tools_server_error(self, client: MCPClient) -> None:
-        async with _mock_server(create_mock_mcp_server(fail_list=True)) as url:
+        async with async_mock_server(create_mock_mcp_server(fail_list=True)) as url:
             with pytest.raises(MCPServerError) as exc:
                 await client.list_tools(url)
             assert exc.value.status_code == 500
@@ -94,6 +70,32 @@ class TestListTools:
     async def test_list_tools_connection_error(self, client: MCPClient) -> None:
         with pytest.raises(MCPConnectionError):
             await client.list_tools("http://127.0.0.1:1")
+
+    async def test_list_tools_malformed_dict_response(self, client: MCPClient) -> None:
+        """Server returns a dict without a 'tools' key."""
+        app = FastAPI()
+
+        @app.get("/tools/list")
+        async def list_tools():
+            return {"not_tools": "oops"}
+
+        async with async_mock_server(app) as url:
+            with pytest.raises(MCPServerError) as exc:
+                await client.list_tools(url)
+            assert "missing" in str(exc.value).lower()
+
+    async def test_list_tools_malformed_non_list_non_dict(self, client: MCPClient) -> None:
+        """Server returns a string instead of a list or dict."""
+        app = FastAPI()
+
+        @app.get("/tools/list")
+        async def list_tools():
+            return "just a string"
+
+        async with async_mock_server(app) as url:
+            with pytest.raises(MCPServerError) as exc:
+                await client.list_tools(url)
+            assert "unexpected" in str(exc.value).lower()
 
 
 class TestCallTool:
@@ -115,7 +117,7 @@ class TestCallTool:
         assert response.metadata == {"count": 2}
 
     async def test_call_tool_not_found(self, client: MCPClient) -> None:
-        async with _mock_server(
+        async with async_mock_server(
             create_mock_mcp_server(fail_call="nonexistent")
         ) as url:
             with pytest.raises(MCPToolError) as exc:
@@ -123,13 +125,38 @@ class TestCallTool:
             assert "nonexistent" in str(exc.value)
 
     async def test_call_tool_timeout(self, client: MCPClient) -> None:
-        async with _mock_server(
+        async with async_mock_server(
             create_mock_mcp_server(call_delay=0.5)
         ) as url:
             c = MCPClient(default_timeout=0.1, connect_timeout=0.1)
             with pytest.raises(MCPTimeoutError):
                 await c.call_tool(url, "test_tool")
             await c.close()
+
+    async def test_call_tool_content_key(self, client: MCPClient) -> None:
+        """Server responds with 'content' key (MCP content-based response)."""
+        app = FastAPI()
+
+        @app.post("/tools/call")
+        async def call_tool(body: dict[str, Any] = Body(...)):
+            return {"content": [{"type": "text", "text": "hello world"}]}
+
+        async with async_mock_server(app) as url:
+            response = await client.call_tool(url, "test", {})
+            assert response.result == [{"type": "text", "text": "hello world"}]
+
+    async def test_call_tool_unexpected_response(self, client: MCPClient) -> None:
+        """Server returns a dict without 'result' or 'content' keys."""
+        app = FastAPI()
+
+        @app.post("/tools/call")
+        async def call_tool(body: dict[str, Any] = Body(...)):
+            return {"something_else": 42}
+
+        async with async_mock_server(app) as url:
+            with pytest.raises(MCPServerError) as exc:
+                await client.call_tool(url, "test", {})
+            assert "missing" in str(exc.value).lower()
 
 
 class TestDiffTools:
