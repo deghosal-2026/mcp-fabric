@@ -13,6 +13,7 @@ from api.middleware import (
     APIVersionMiddleware,
     AuditMiddleware,
     AuthMiddleware,
+    IPRateLimitMiddleware,
     RateLimitMiddleware,
     RequestIDMiddleware,
     TenantMiddleware,
@@ -59,6 +60,7 @@ app.add_middleware(CORSMiddleware, **CORS_CONFIG)
 app.add_middleware(APIVersionMiddleware)
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(TracingMiddleware)
+app.add_middleware(IPRateLimitMiddleware)
 app.add_middleware(AuthMiddleware)
 app.add_middleware(TenantMiddleware)
 app.add_middleware(RateLimitMiddleware)
