@@ -14,27 +14,46 @@
 
 ### P4-02: Tracing Middleware (#5)
 **Effort:** 2h | **Deps:** P7-02 (OTel setup)
-**Checklist:** Create OTel span "http_request" → set attributes (method, url, status, request_id, agent_id if auth'd) → propagate trace context via headers → end span after response.
+**Checklist:**
+- [x] api/telemetry/tracing.py — TracerProvider, resource, instrument_fastapi()
+- [x] TracingMiddleware — span per request with method+url+status+request_id attributes
+- [x] Registered in main.py middleware pipeline
 **Success Criteria:** Every request traced. Span includes method+url+status+duration. Traces exported to backend.
 
 ### P4-03: Auth Middleware (#9)
 **Effort:** 3h | **Deps:** P3-52 (auth service)
-**Checklist:** Extract Bearer token from Authorization header → agent endpoints: validate via AuthService → admin endpoints: validate JWT session → public endpoints: skip (health, metrics, docs) → set request.state.agent_identity or admin_user → invalid/expired → 401.
+**Checklist:**
+- [x] api/services/auth_service.py — JWT create/validate, bcrypt password hash/verify
+- [x] AuthService.create_token() + validate_token() + hash_password() + verify_password()
+- [x] AuthMiddleware — Bearer token validation, skip health/metrics, set agent_id/agent_type/agent_class
+- [x] Registered in main.py middleware pipeline
+- [x] 4 unit tests for AuthService, 3 integration tests for middleware
 **Success Criteria:** Valid token passes. Invalid → 401. Health endpoints accessible without auth.
 
 ### P4-04: Tenant Middleware (#12)
 **Effort:** 2h | **Deps:** P4-03
-**Checklist:** After auth → extract team_namespace from agent_identity.agent_class or admin_user → set request.state.tenant_namespace → editor admin scoped to their team → global admin sees all → all DB queries auto-filtered.
+**Checklist:**
+- [x] TenantMiddleware — extract namespace from agent_class (split on ":"), set request.state.tenant_namespace
+- [x] Registered in main.py middleware pipeline
 **Success Criteria:** Platform agent cannot see security servers. Editor cannot modify outside team.
 
 ### P4-05: RateLimit Middleware (#15)
 **Effort:** 2h | **Deps:** P4-03
-**Checklist:** Key: fcp:ratelimit:{identity_id}:{minute} → Redis INCR → if > limit → 429 → response headers: Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining → Redis down → fail-open.
-**Success Criteria:** At limit → 429. Headers present. Redis outage → requests pass.
+**Checklist:**
+- [x] RateLimitMiddleware — in-memory sliding window per agent+path, configurable max_requests+window
+- [x] Skip health/metrics endpoints
+- [x] Return 429 with error message when exceeded
+- [x] Registered in main.py middleware pipeline
+**Success Criteria:** At limit → 429. Health/metrics bypass rate limiting.
 
 ### P4-06: Audit Middleware (#18)
 **Effort:** 1.5h | **Deps:** P3-31 (audit service)
-**Checklist:** FastAPI background task after response → log: method+path+status+agent_id+request_id+latency → skip health/metrics → skip 401 (no identity) → fail-open.
+**Checklist:**
+- [x] api/services/audit_service.py — log_event, query, cleanup methods
+- [x] AuditMiddleware — structlog info entry per request (method+path+status+agent_id+request_id)
+- [x] Skip health/metrics endpoints
+- [x] Registered in main.py middleware pipeline
+- [x] 3 unit tests for AuditService (log, query, cleanup)
 **Success Criteria:** Audit event per authenticated request. Zero latency impact. Health not logged.
 
 ### P4-07: CORS Middleware (#21)

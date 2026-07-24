@@ -8,7 +8,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.config import settings
-from api.middleware import APIVersionMiddleware, RequestIDMiddleware
+from api.middleware import (
+    APIVersionMiddleware,
+    AuditMiddleware,
+    AuthMiddleware,
+    RateLimitMiddleware,
+    RequestIDMiddleware,
+    TenantMiddleware,
+    TracingMiddleware,
+)
 from api.middleware.cors import CORS_CONFIG
 from api.seeders import run_seeders
 
@@ -43,6 +51,11 @@ app = FastAPI(
 app.add_middleware(CORSMiddleware, **CORS_CONFIG)
 app.add_middleware(APIVersionMiddleware)
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(TracingMiddleware)
+app.add_middleware(AuthMiddleware)
+app.add_middleware(TenantMiddleware)
+app.add_middleware(RateLimitMiddleware)
+app.add_middleware(AuditMiddleware)
 
 
 @app.get("/health")

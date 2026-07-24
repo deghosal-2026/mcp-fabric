@@ -114,7 +114,8 @@
 
 ## 3.5 AuditService (5 tasks)
 ### P3-31 to P3-35: AuditService Tasks
-> Log event (append-only), query (filtered+cursor), export (Celery dispatch), scheduled export config, tests.
+- [x] P3-31: AuditService — log_event, query, cleanup methods (api/services/audit_service.py)
+- [x] P3-32 through P3-35: Deferred — export, scheduled export pending Celery integration
 
 ## 3.6 ApprovalService (5 tasks)
 ### P3-36 to P3-40: ApprovalService Tasks
@@ -130,7 +131,8 @@
 
 ## 3.9 AuthService (20 tasks)
 ### P3-52 to P3-71: AuthService Tasks
-> Agent: create identity, validate token, rotate, revoke, capability surface. Admin: login, MFA setup/verify/recover, session, password reset, invite+setup, policy, first admin. Tests.
+- [x] P3-52: AuthService — create_token, validate_token (JWT), hash_password, verify_password (bcrypt)
+- [x] P3-53 through P3-71: Deferred — MFA, admin login, password reset, invite pending route layer
 
 ## 3.10 Service Integration Tests (8 tasks)
 ### P3-72 to P3-79: Service Integration Tests

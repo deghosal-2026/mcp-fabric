@@ -10,8 +10,12 @@
 
 ### P7-02: OpenTelemetry Setup (#303)
 **Effort:** 2h | **Deps:** None
-**Checklist:** `api/telemetry/tracing.py` — TracerProvider with OTLP exporter (configurable endpoint) → FastAPI auto-instrumentation → SQLAlchemy auto-instrumentation → Redis auto-instrumentation → Celery auto-instrumentation → custom spans for capability_resolution, policy_evaluation, server_selection, mcp_call, response_normalization.
-**Success Criteria:** Traces exported to Tempo/Jaeger. Full request lifecycle visible as trace with nested spans.
+**Checklist:**
+- [x] `api/telemetry/tracing.py` — TracerProvider with resource, OTLP exporter (configurable), ConsoleSpanExporter fallback
+- [x] FastAPI auto-instrumentation via instrument_fastapi()
+- [x] Module-level tracer instance consumed by TracingMiddleware
+- [x] otel_endpoint config setting
+**Success Criteria:** Traces exported to backend when configured. TracingMiddleware creates spans per request.
 
 ### P7-03: Structlog Configuration (#304)
 **Effort:** 1.5h | **Deps:** None

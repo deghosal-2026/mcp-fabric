@@ -5,6 +5,8 @@ database, and other services. Each service class accepts its
 dependencies via constructor injection for testability.
 """
 
+from api.services.audit_service import AuditService
+from api.services.auth_service import AuthService, InvalidTokenError
 from api.services.exceptions import (
     DecommissionError,
     DuplicateServerError,
@@ -15,6 +17,9 @@ from api.services.exceptions import (
 from api.services.registry_service import RegistryService
 
 __all__ = [
+    "AuditService",
+    "AuthService",
+    "InvalidTokenError",
     "RegistryService",
     "ServiceError",
     "DecommissionError",
