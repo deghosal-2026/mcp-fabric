@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from datetime import datetime as dt
+from typing import Any
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -10,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.mcp import MCPClient
-from api.models import MCPServer, ServerTool, ToolVersion
+from api.models import Capability, CapabilityMapping, MCPServer, ServerTool, ToolVersion
 from api.schemas.server import ServerCreate
 from api.services import (
     DecommissionError,
@@ -28,6 +30,22 @@ async def registry_service(
 ) -> RegistryService:
     client = MCPClient()
     return RegistryService(db=db_session, mcp_client=client)
+
+
+@pytest_asyncio.fixture
+def mock_audit_service() -> Any:
+    return AsyncMock()
+
+
+@pytest_asyncio.fixture
+async def registry_service_with_audit(
+    db_session: AsyncSession,
+    mock_audit_service: Any,
+) -> RegistryService:
+    client = MCPClient()
+    return RegistryService(
+        db=db_session, mcp_client=client, audit_service=mock_audit_service
+    )
 
 
 @pytest_asyncio.fixture
@@ -144,6 +162,35 @@ class TestRegister:
         with pytest.raises(ServerUnreachableError) as exc:
             await registry_service.register(params)
         assert bad_url in str(exc.value)
+
+    async def test_register_with_audit_logging(
+        self,
+        registry_service_with_audit: RegistryService,
+        mock_audit_service: Any,
+        mock_server_url: str,
+    ) -> None:
+        params = ServerCreate(name="audit-test", endpoint=mock_server_url)
+        result = await registry_service_with_audit.register(params)
+        mock_audit_service.log_event.assert_awaited_once_with(
+            event_type="server_registered",
+            actor="system",
+            resource_id=str(result.id),
+            metadata={"name": result.name, "endpoint": result.endpoint},
+        )
+
+    async def test_register_audit_failure_does_not_block(
+        self,
+        db_session: AsyncSession,
+        mock_server_url: str,
+    ) -> None:
+        audit_mock = AsyncMock()
+        audit_mock.log_event.side_effect = Exception("audit down")
+        svc = RegistryService(
+            db=db_session, mcp_client=MCPClient(), audit_service=audit_mock
+        )
+        params = ServerCreate(name="audit-fail", endpoint=mock_server_url)
+        result = await svc.register(params)
+        assert result.name == "audit-fail"
 
 
 class TestInspect:
@@ -329,6 +376,65 @@ class TestInspect:
         with pytest.raises(ServerUnreachableError):
             await registry_service.inspect(registered_server.id)
 
+    async def test_inspect_logs_audit_event(
+        self,
+        registry_service_with_audit: RegistryService,
+        mock_audit_service: Any,
+        db_session: AsyncSession,
+    ) -> None:
+        original_tools = [
+            {"name": "tool_x", "input_schema": {"type": "object", "properties": {}}},
+        ]
+        new_tools = [
+            {"name": "tool_x", "input_schema": {"type": "object", "properties": {}}},
+            {"name": "tool_y", "input_schema": {"type": "object", "properties": {}}},
+        ]
+        app = create_mock_mcp_server(tools=original_tools)
+        async with async_mock_server(app) as url:
+            reg = await registry_service_with_audit.register(
+                ServerCreate(name="inspect-audit", endpoint=url)
+            )
+            srv = (await db_session.execute(
+                select(MCPServer).where(MCPServer.id == reg.id)
+            )).scalar_one()
+            app2 = create_mock_mcp_server(tools=new_tools)
+            async with async_mock_server(app2) as url2:
+                srv.endpoint = url2
+                await db_session.commit()
+                result = await registry_service_with_audit.inspect(srv.id)
+        assert len(result.tools_added) == 1
+        mock_audit_service.log_event.assert_awaited()
+
+    async def test_inspect_audit_failure_does_not_block(
+        self,
+        db_session: AsyncSession,
+    ) -> None:
+        audit_mock = AsyncMock()
+        audit_mock.log_event.side_effect = Exception("audit down")
+        svc = RegistryService(
+            db=db_session, mcp_client=MCPClient(), audit_service=audit_mock
+        )
+        original_tools = [
+            {"name": "tool_old", "input_schema": {"type": "object", "properties": {}}},
+        ]
+        new_tools = [
+            {"name": "tool_new", "input_schema": {"type": "object", "properties": {}}},
+        ]
+        app = create_mock_mcp_server(tools=original_tools)
+        async with async_mock_server(app) as url:
+            created = await svc.register(
+                ServerCreate(name="inspect-audit-fail", endpoint=url)
+            )
+            srv = (await db_session.execute(
+                select(MCPServer).where(MCPServer.id == created.id)
+            )).scalar_one()
+            app2 = create_mock_mcp_server(tools=new_tools)
+            async with async_mock_server(app2) as url2:
+                srv.endpoint = url2
+                await db_session.commit()
+                result = await svc.inspect(srv.id)
+        assert result.health_status == "reachable"
+
 
 class TestHealth:
     async def test_update_and_get_server_health(
@@ -373,6 +479,58 @@ class TestHealth:
     ) -> None:
         with pytest.raises(ServerNotFoundError):
             await registry_service.get_server_health(uuid4())
+
+    async def test_update_health_with_redis(
+        self,
+        registry_service: RegistryService,
+        mock_server_url: str,
+    ) -> None:
+        redis_mock = AsyncMock()
+        redis_mock.set = AsyncMock()
+        svc = RegistryService(
+            db=registry_service.db,
+            mcp_client=MCPClient(),
+            redis_client=redis_mock,
+        )
+        params = ServerCreate(name="redis-health", endpoint=mock_server_url)
+        created = await svc.register(params)
+        await svc.update_health(created.id, "healthy")
+        redis_mock.set.assert_awaited_once_with(
+            f"health:{created.id}", "healthy", ex=60
+        )
+
+    async def test_get_server_health_from_redis(
+        self,
+        registry_service: RegistryService,
+        mock_server_url: str,
+    ) -> None:
+        redis_mock = AsyncMock()
+        redis_mock.get = AsyncMock(return_value=b"healthy")
+        svc = RegistryService(
+            db=registry_service.db,
+            mcp_client=MCPClient(),
+            redis_client=redis_mock,
+        )
+        params = ServerCreate(name="redis-get", endpoint=mock_server_url)
+        created = await svc.register(params)
+        status = await svc.get_server_health(created.id)
+        assert status == "healthy"
+        redis_mock.get.assert_awaited_once_with(f"health:{created.id}")
+
+    async def test_get_all_health_statuses_uses_redis_scan(
+        self,
+        registry_service: RegistryService,
+    ) -> None:
+        redis_mock = AsyncMock()
+        redis_mock.scan = AsyncMock(return_value=(0, [b"health:srv-a"]))
+        redis_mock.mget = AsyncMock(return_value=[b"healthy"])
+        svc = RegistryService(
+            db=registry_service.db,
+            mcp_client=MCPClient(),
+            redis_client=redis_mock,
+        )
+        statuses = await svc.get_all_health_statuses()
+        assert statuses == {"srv-a": "healthy"}
 
 
 class TestDecommission:
@@ -422,6 +580,161 @@ class TestDecommission:
         result = await registry_service.decommission(created.id, phase="sunset")
 
         assert result.phase == "sunset"
+
+    async def test_decommission_migration_with_replacement(
+        self,
+        registry_service: RegistryService,
+        db_session: AsyncSession,
+    ) -> None:
+        app1 = create_mock_mcp_server()
+        app2 = create_mock_mcp_server()
+        async with async_mock_server(app1) as url1, async_mock_server(app2) as url2:
+            old_srv = await registry_service.register(
+                ServerCreate(name="old", endpoint=url1)
+            )
+            replacement = await registry_service.register(
+                ServerCreate(name="replacement", endpoint=url2)
+            )
+            await registry_service.decommission(old_srv.id, phase="grace_period")
+            await registry_service.decommission(
+                old_srv.id, phase="migration", replacement_id=replacement.id
+            )
+
+            old_obj = (
+                await db_session.execute(
+                    select(MCPServer).where(MCPServer.id == old_srv.id)
+                )
+            ).scalar_one()
+            assert old_obj.decommission_phase == "migration"
+
+    async def test_decommission_first_phase_must_be_grace_period(
+        self,
+        registry_service: RegistryService,
+        mock_server_url: str,
+    ) -> None:
+        params = ServerCreate(name="first-phase", endpoint=mock_server_url)
+        created = await registry_service.register(params)
+        with pytest.raises(DecommissionError, match="grace_period"):
+            await registry_service.decommission(created.id, phase="migration")
+
+    async def test_decommission_skip_from_grace_period_to_sunset(
+        self,
+        registry_service: RegistryService,
+        mock_server_url: str,
+    ) -> None:
+        params = ServerCreate(name="skip-to-sunset", endpoint=mock_server_url)
+        created = await registry_service.register(params)
+        await registry_service.decommission(created.id, phase="grace_period")
+        with pytest.raises(DecommissionError, match="migration"):
+            await registry_service.decommission(created.id, phase="sunset")
+
+    async def test_decommission_logs_audit_event(
+        self,
+        registry_service_with_audit: RegistryService,
+        mock_audit_service: Any,
+        mock_server_url: str,
+    ) -> None:
+        params = ServerCreate(name="decom-audit", endpoint=mock_server_url)
+        created = await registry_service_with_audit.register(params)
+        await registry_service_with_audit.decommission(created.id, phase="grace_period")
+        mock_audit_service.log_event.assert_awaited_with(
+            event_type="server_decommissioned",
+            actor="system",
+            resource_id=str(created.id),
+            metadata={
+                "name": "decom-audit",
+                "phase": "grace_period",
+                "replacement_id": None,
+            },
+        )
+
+    async def test_decommission_audit_failure_does_not_block(
+        self,
+        db_session: AsyncSession,
+        mock_server_url: str,
+    ) -> None:
+        audit_mock = AsyncMock()
+        audit_mock.log_event.side_effect = Exception("audit down")
+        svc = RegistryService(
+            db=db_session, mcp_client=MCPClient(), audit_service=audit_mock
+        )
+        params = ServerCreate(name="decom-audit-fail", endpoint=mock_server_url)
+        created = await svc.register(params)
+        result = await svc.decommission(created.id, phase="grace_period")
+        assert result.phase == "grace_period"
+
+    async def test_decommission_migration_redirects_mappings(
+        self,
+        registry_service: RegistryService,
+        db_session: AsyncSession,
+    ) -> None:
+        app1 = create_mock_mcp_server()
+        app2 = create_mock_mcp_server()
+        async with async_mock_server(app1) as url1, async_mock_server(app2) as url2:
+            old_srv = await registry_service.register(
+                ServerCreate(name="migrate-map", endpoint=url1)
+            )
+            old_obj = (
+                await db_session.execute(
+                    select(MCPServer).where(MCPServer.id == old_srv.id)
+                )
+            ).scalar_one()
+            cap = Capability(name="test:cap", status="active")
+            db_session.add(cap)
+            await db_session.flush()
+            mapping = CapabilityMapping(
+                capability_id=cap.id, server_id=old_obj.id, tool_name="test_tool"
+            )
+            db_session.add(mapping)
+            await db_session.commit()
+
+            replacement = await registry_service.register(
+                ServerCreate(name="replacement2", endpoint=url2)
+            )
+            await registry_service.decommission(old_srv.id, phase="grace_period")
+            await registry_service.decommission(
+                old_srv.id, phase="migration", replacement_id=replacement.id
+            )
+        mapping_check = (
+            await db_session.execute(
+                select(CapabilityMapping).where(CapabilityMapping.id == mapping.id)
+            )
+        ).scalar_one()
+        assert mapping_check.server_id == replacement.id
+
+    async def test_decommission_sunset_deletes_mappings(
+        self,
+        registry_service: RegistryService,
+        db_session: AsyncSession,
+    ) -> None:
+        app = create_mock_mcp_server()
+        async with async_mock_server(app) as url:
+            srv = await registry_service.register(
+                ServerCreate(name="sunset-map", endpoint=url)
+            )
+            srv_obj = (
+                await db_session.execute(
+                    select(MCPServer).where(MCPServer.id == srv.id)
+                )
+            ).scalar_one()
+            cap = Capability(name="test:sunset-cap", status="active")
+            db_session.add(cap)
+            await db_session.flush()
+            mapping = CapabilityMapping(
+                capability_id=cap.id, server_id=srv_obj.id, tool_name="test_tool"
+            )
+            db_session.add(mapping)
+            await db_session.commit()
+
+            await registry_service.decommission(srv.id, phase="grace_period")
+            await registry_service.decommission(srv.id, phase="migration")
+            await registry_service.decommission(srv.id, phase="sunset")
+        remaining = (
+            await db_session.execute(
+                select(CapabilityMapping).where(CapabilityMapping.server_id == srv.id)
+            )
+        ).scalars().all()
+        assert len(remaining) == 0
 
     async def test_decommission_skip_phase_raises_error(
         self,
@@ -632,3 +945,10 @@ class TestListServers:
         assert len(result3.servers) == 1
         assert result3.pagination.has_more is False
         assert result3.pagination.next_cursor is None
+
+    async def test_list_servers_invalid_cursor(
+        self,
+        registry_service: RegistryService,
+    ) -> None:
+        result = await registry_service.list_servers(cursor="not-a-valid-cursor")
+        assert len(result.servers) <= 5

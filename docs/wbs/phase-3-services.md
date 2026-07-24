@@ -90,14 +90,14 @@
 ### P3-08: RegistryService Tests (#85)
 **Effort:** 2h | **Deps:** P3-01 through P3-07
 **Checklist:**
-- [ ] Register success + failure modes
-- [ ] Inspect with changes + without
-- [ ] List with all filter combinations
-- [ ] Decommission full lifecycle (grace → migration → sunset)
-- [ ] Health status updates
-- [ ] Edge: duplicate endpoint, unreachable server, concurrent decommission
+- [x] Register: create, read-only trust, duplicate, unreachable, empty tools, audit logging, audit failure resilience
+- [x] Inspect: no changes, added, removed, changed, archived, not found, unreachable, audit logging, audit failure resilience
+- [x] List: all, empty, team filter, trust filter, health filter, search, combined, cursor pagination, invalid cursor
+- [x] GetServer: full detail, decommission timeline, not found
+- [x] Decommission: grace_period, migration, sunset, skip phase, invalid phase, already sunset, first phase migration, migration with replacement, redirect mappings, sunset deletes mappings, audit logging, audit failure resilience
+- [x] Health: update + get, get all, not found, Redis write path, Redis read path, Redis scan path
 
-**Success Criteria:** 12+ tests. All pass. Covers P0 scenarios from spec test matrix.
+**Success Criteria:** 50 tests. 100% line coverage. All pass.
 
 ## 3.2 CapabilityService (8 tasks)
 
