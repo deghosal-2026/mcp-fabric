@@ -49,7 +49,7 @@ def create_mock_mcp_server(
         A configured FastAPI application.
     """
     app = FastAPI()
-    tool_list = tools or [
+    tool_list = tools if tools is not None else [
         {
             "name": "test_tool",
             "description": "A test tool",
