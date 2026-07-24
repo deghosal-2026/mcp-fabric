@@ -69,7 +69,13 @@ class RoutingService:
             arguments=request.params,
         )
 
-        latency_ms = int((time.monotonic() - start) * 1000)
+        latency_s = time.monotonic() - start
+        latency_ms = int(latency_s * 1000)
+        from api.telemetry.metrics import fabric_routing_overhead_seconds
+
+        fabric_routing_overhead_seconds.labels(
+            server_id=str(mapping.server_id),
+        ).observe(latency_s)
         return RouteResult(
             result=response.result,
             server=mapping.server.name,
