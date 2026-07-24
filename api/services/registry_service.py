@@ -3,14 +3,28 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from api.mcp import MCPClient, MCPError, ToolDefinition
-from api.models import MCPServer, ServerTool
-from api.schemas.server import ServerCreate, ServerResponse
-from api.services.exceptions import DuplicateServerError, ServerUnreachableError
+from api.models import MCPServer, ServerTool, ToolVersion
+from api.schemas.server import (
+    ServerCreate,
+    ServerInspectResponse,
+    ServerResponse,
+    ToolResponse,
+)
+from api.schemas.server import (
+    ToolChange as ToolChangeSchema,
+)
+from api.services.exceptions import (
+    DuplicateServerError,
+    ServerNotFoundError,
+    ServerUnreachableError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -94,3 +108,115 @@ class RegistryService:
                 logger.exception("Failed to log audit event for server registration")
 
         return ServerResponse.model_validate(server)
+
+    async def inspect(self, server_id: UUID) -> ServerInspectResponse:
+        result = await self.db.execute(
+            select(MCPServer)
+            .options(selectinload(MCPServer.tools))
+            .where(MCPServer.id == server_id)
+        )
+        server = result.scalar_one_or_none()
+        if server is None:
+            raise ServerNotFoundError(str(server_id))
+
+        try:
+            current_defs = await self.mcp.list_tools(server.endpoint)
+        except MCPError as exc:
+            raise ServerUnreachableError(server.endpoint) from exc
+
+        db_by_name = {t.tool_name: t for t in server.tools}
+        curr_by_name = {t.name: t for t in current_defs}
+
+        db_names = set(db_by_name)
+        curr_names = set(curr_by_name)
+
+        added_names = curr_names - db_names
+        removed_names = db_names - curr_names
+        common_names = db_names & curr_names
+
+        now = datetime.now(UTC)
+        removed_responses: list[ToolResponse] = []
+        changed_schema: list[ToolChangeSchema] = []
+
+        for name in removed_names:
+            tool = db_by_name[name]
+            removed_responses.append(ToolResponse(
+                id=tool.id, tool_name=tool.tool_name,
+                description=tool.description,
+                input_schema=tool.input_schema, output_schema=tool.output_schema,
+            ))
+            self.db.add(ToolVersion(
+                server_id=server.id, tool_name=tool.tool_name,
+                input_schema=tool.input_schema, output_schema=tool.output_schema,
+                is_breaking=True,
+            ))
+            await self.db.delete(tool)
+
+        for name in common_names:
+            db_tool = db_by_name[name]
+            curr_def = curr_by_name[name]
+            prev_def = ToolDefinition(
+                name=db_tool.tool_name,
+                description=db_tool.description,
+                input_schema=db_tool.input_schema,
+                output_schema=db_tool.output_schema,
+            )
+            change = self.mcp._compare_tool_definitions(prev_def, curr_def)
+            if change is not None:
+                self.db.add(ToolVersion(
+                    server_id=server.id, tool_name=db_tool.tool_name,
+                    input_schema=db_tool.input_schema, output_schema=db_tool.output_schema,
+                    is_breaking=change.is_breaking,
+                ))
+                db_tool.description = curr_def.description
+                db_tool.input_schema = curr_def.input_schema
+                db_tool.output_schema = curr_def.output_schema
+                changed_schema.append(ToolChangeSchema(
+                    tool_name=name, changes=change.changes, is_breaking=change.is_breaking,
+                ))
+
+        added_responses: list[ToolResponse] = []
+        for name in added_names:
+            curr_def = curr_by_name[name]
+            tool = ServerTool(
+                server_id=server.id, tool_name=curr_def.name,
+                description=curr_def.description,
+                input_schema=curr_def.input_schema,
+                output_schema=curr_def.output_schema,
+            )
+            self.db.add(tool)
+            await self.db.flush()
+            added_responses.append(ToolResponse(
+                id=tool.id, tool_name=tool.tool_name,
+                description=tool.description,
+                input_schema=tool.input_schema, output_schema=tool.output_schema,
+            ))
+
+        server.updated_at = now
+        server.health_status = "reachable"
+        await self.db.commit()
+        await self.db.refresh(server, ["tools"])
+
+        if self.audit is not None and (added_names or removed_names or changed_schema):
+            try:
+                await self.audit.log_event(
+                    event_type="schema_change_detected",
+                    actor="system",
+                    resource_id=str(server.id),
+                    metadata={
+                        "name": server.name,
+                        "tools_added": len(added_names),
+                        "tools_removed": len(removed_names),
+                        "tools_changed": len(changed_schema),
+                    },
+                )
+            except Exception:
+                logger.exception("Failed to log audit event for schema change")
+
+        base = ServerResponse.model_validate(server)
+        return ServerInspectResponse(
+            **base.model_dump(),
+            tools_added=added_responses,
+            tools_removed=removed_responses,
+            tools_changed=changed_schema,
+        )

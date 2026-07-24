@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from uuid import uuid4
 
 import pytest
 import pytest_asyncio
@@ -8,9 +9,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.mcp import MCPClient
-from api.models import MCPServer, ServerTool
+from api.models import MCPServer, ServerTool, ToolVersion
 from api.schemas.server import ServerCreate
-from api.services import DuplicateServerError, RegistryService, ServerUnreachableError
+from api.services import (
+    DuplicateServerError,
+    RegistryService,
+    ServerNotFoundError,
+    ServerUnreachableError,
+)
 from tests.fixtures.mcp_server import async_mock_server, create_mock_mcp_server
 
 
@@ -136,3 +142,187 @@ class TestRegister:
         with pytest.raises(ServerUnreachableError) as exc:
             await registry_service.register(params)
         assert bad_url in str(exc.value)
+
+
+class TestInspect:
+    @pytest_asyncio.fixture
+    async def registered_server(
+        self,
+        registry_service: RegistryService,
+    ) -> MCPServer:
+        async with async_mock_server(create_mock_mcp_server()) as url:
+            result = await registry_service.register(
+                ServerCreate(name="inspect-test", endpoint=url)
+            )
+            result2 = await registry_service.db.execute(
+                select(MCPServer).where(MCPServer.id == result.id)
+            )
+            return result2.scalar_one()
+
+    async def test_inspect_no_changes(
+        self,
+        registry_service: RegistryService,
+        registered_server: MCPServer,
+        db_session: AsyncSession,
+    ) -> None:
+        async with async_mock_server(create_mock_mcp_server()) as url:
+            registered_server.endpoint = url
+            await db_session.commit()
+
+            result = await registry_service.inspect(registered_server.id)
+        assert len(result.tools_added) == 0
+        assert len(result.tools_removed) == 0
+        assert len(result.tools_changed) == 0
+
+    async def test_inspect_detects_added_tool(
+        self,
+        registry_service: RegistryService,
+        registered_server: MCPServer,
+        db_session: AsyncSession,
+    ) -> None:
+        original_tools = [
+            {"name": "list_items", "input_schema": {"type": "object", "properties": {}}},
+        ]
+        new_tools = [
+            {"name": "list_items", "input_schema": {"type": "object", "properties": {}}},
+            {"name": "get_detail", "input_schema": {"type": "object", "properties": {}}},
+        ]
+        app = create_mock_mcp_server(tools=original_tools)
+        async with async_mock_server(app) as url:
+            reg_result = await registry_service.register(
+                ServerCreate(name="srv", endpoint=url)
+            )
+            server_obj = (await db_session.execute(
+                select(MCPServer).where(MCPServer.id == reg_result.id)
+            )).scalar_one()
+
+            app2 = create_mock_mcp_server(tools=new_tools)
+            async with async_mock_server(app2) as url2:
+                server_obj.endpoint = url2
+                await db_session.commit()
+
+                result = await registry_service.inspect(server_obj.id)
+        assert len(result.tools_added) == 1
+        assert result.tools_added[0].tool_name == "get_detail"
+        assert len(result.tools_removed) == 0
+        assert len(result.tools_changed) == 0
+
+    async def test_inspect_detects_removed_tool(
+        self,
+        registry_service: RegistryService,
+        registered_server: MCPServer,
+        db_session: AsyncSession,
+    ) -> None:
+        original_tools = [
+            {"name": "tool_a", "input_schema": {"type": "object", "properties": {}}},
+            {"name": "tool_b", "input_schema": {"type": "object", "properties": {}}},
+        ]
+        reduced_tools = [
+            {"name": "tool_a", "input_schema": {"type": "object", "properties": {}}},
+        ]
+        app = create_mock_mcp_server(tools=original_tools)
+        async with async_mock_server(app) as url:
+            reg_result = await registry_service.register(
+                ServerCreate(name="srv", endpoint=url)
+            )
+            server_obj = (await db_session.execute(
+                select(MCPServer).where(MCPServer.id == reg_result.id)
+            )).scalar_one()
+
+            app2 = create_mock_mcp_server(tools=reduced_tools)
+            async with async_mock_server(app2) as url2:
+                server_obj.endpoint = url2
+                await db_session.commit()
+
+                result = await registry_service.inspect(server_obj.id)
+        assert len(result.tools_removed) == 1
+        assert result.tools_removed[0].tool_name == "tool_b"
+
+    async def test_inspect_detects_changed_tool(
+        self,
+        registry_service: RegistryService,
+        registered_server: MCPServer,
+        db_session: AsyncSession,
+    ) -> None:
+        old_schema = {"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x"]}
+        new_schema = {
+            "type": "object",
+            "properties": {"x": {"type": "string"}, "y": {"type": "integer"}},
+        }
+        original_tools = [
+            {"name": "greet", "input_schema": old_schema},
+        ]
+        changed_tools = [
+            {"name": "greet", "input_schema": new_schema},
+        ]
+        app = create_mock_mcp_server(tools=original_tools)
+        async with async_mock_server(app) as url:
+            reg_result = await registry_service.register(
+                ServerCreate(name="srv", endpoint=url)
+            )
+            server_obj = (await db_session.execute(
+                select(MCPServer).where(MCPServer.id == reg_result.id)
+            )).scalar_one()
+
+            app2 = create_mock_mcp_server(tools=changed_tools)
+            async with async_mock_server(app2) as url2:
+                server_obj.endpoint = url2
+                await db_session.commit()
+
+                result = await registry_service.inspect(server_obj.id)
+        assert len(result.tools_changed) == 1
+        assert result.tools_changed[0].tool_name == "greet"
+
+    async def test_inspect_archives_removed_tool(
+        self,
+        registry_service: RegistryService,
+        db_session: AsyncSession,
+    ) -> None:
+        original_tools = [
+            {"name": "tool_a", "input_schema": {"type": "object", "properties": {}}},
+            {"name": "tool_b", "input_schema": {"type": "object", "properties": {}}},
+        ]
+        reduced_tools = [
+            {"name": "tool_a", "input_schema": {"type": "object", "properties": {}}},
+        ]
+        app = create_mock_mcp_server(tools=original_tools)
+        async with async_mock_server(app) as url:
+            reg_result = await registry_service.register(
+                ServerCreate(name="srv", endpoint=url)
+            )
+            server_obj = (await db_session.execute(
+                select(MCPServer).where(MCPServer.id == reg_result.id)
+            )).scalar_one()
+
+            app2 = create_mock_mcp_server(tools=reduced_tools)
+            async with async_mock_server(app2) as url2:
+                server_obj.endpoint = url2
+                await db_session.commit()
+                await registry_service.inspect(server_obj.id)
+
+        result = await db_session.execute(
+            select(ToolVersion).where(ToolVersion.server_id == server_obj.id)
+        )
+        versions = result.scalars().all()
+        assert len(versions) == 1
+        assert versions[0].tool_name == "tool_b"
+        assert versions[0].is_breaking is True
+
+    async def test_inspect_server_not_found(
+        self,
+        registry_service: RegistryService,
+    ) -> None:
+        with pytest.raises(ServerNotFoundError):
+            await registry_service.inspect(uuid4())
+
+    async def test_inspect_unreachable_server(
+        self,
+        registry_service: RegistryService,
+        registered_server: MCPServer,
+        db_session: AsyncSession,
+    ) -> None:
+        registered_server.endpoint = "http://127.0.0.1:1"
+        await db_session.commit()
+
+        with pytest.raises(ServerUnreachableError):
+            await registry_service.inspect(registered_server.id)
