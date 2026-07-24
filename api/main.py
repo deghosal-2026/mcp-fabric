@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from api.config import settings
 from api.middleware import (
@@ -23,6 +23,7 @@ from api.middleware.cors import CORS_CONFIG
 from api.seeders import run_seeders
 from api.services.health import check_database, check_opa, check_redis
 from api.telemetry.logging import logger
+from api.telemetry.metrics import fabric_info
 
 
 @asynccontextmanager
@@ -31,6 +32,7 @@ async def lifespan(app: FastAPI):
 
     app.state.readiness = "healthy"
     app.state.db_engine = create_async_engine(settings.database_url, echo=False)
+    fabric_info.info({"version": "0.1.0", "environment": settings.environment})
     await run_seeders()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -104,6 +106,13 @@ async def readiness(request: Request):
 @app.get("/health/live")
 async def liveness():
     return {"status": "alive"}
+
+
+@app.get("/v1/metrics")
+async def metrics():
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.exception_handler(RequestValidationError)
