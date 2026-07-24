@@ -4,10 +4,12 @@ from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.config import settings
-from api.middleware import RequestIDMiddleware
+from api.middleware import APIVersionMiddleware, RequestIDMiddleware
+from api.middleware.cors import CORS_CONFIG
 from api.seeders import run_seeders
 
 
@@ -38,6 +40,8 @@ app = FastAPI(
     license_info={"name": "MIT", "identifier": "MIT"},
 )
 
+app.add_middleware(CORSMiddleware, **CORS_CONFIG)
+app.add_middleware(APIVersionMiddleware)
 app.add_middleware(RequestIDMiddleware)
 
 

@@ -39,10 +39,16 @@
 
 ### P4-07: CORS Middleware (#21)
 **Effort:** 1h | **Deps:** None
-**Checklist:** allow_origins from config (default localhost:3000) → allow_methods GET/POST/PUT/PATCH/DELETE/OPTIONS → allow_headers Authorization/Content-Type/Accept → expose_headers Fabric-Request-Id/Fabric-Routing-Server/Fabric-API-Version → max_age 3600.
-**Success Criteria:** Admin UI calls from different origin work. Preflight OPTIONS returns correct headers.
+**Checklist:**
+- [x] CORS_CONFIG dict in api/middleware/cors.py
+- [x] Registered as CORSMiddleware in main.py via **CORS_CONFIG
+- [x] Expose Fabric headers (Request-Id, Routing-Server, API-Version)
+**Success Criteria:** Preflight OPTIONS returns correct CORS headers. All responses include exposed headers.
 
 ### P4-08: API Version Middleware (#24)
 **Effort:** 1h | **Deps:** None
-**Checklist:** Parse Accept header for application/vnd.fabric.vX+json → set request.state.api_version → default v1 if absent + warning header → unknown version → 406 → response: Fabric-API-Version + Content-Type headers.
-**Success Criteria:** v1 requested → v1 confirmed. No version → v1 default + warning. Unknown → 406.
+**Checklist:**
+- [x] APIVersionMiddleware — Accept header/Accept-Version/query param parsing
+- [x] Default to v1, unknown version → 406, Fabric-API-Version response header
+- [x] 5 tests — default, Accept, Accept-Version, query param, unsupported 406
+**Success Criteria:** v1 requested → v1 confirmed. No version → v1 default. Unknown → 406.

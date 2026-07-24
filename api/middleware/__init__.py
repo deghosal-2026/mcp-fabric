@@ -2,7 +2,8 @@
 
 Middleware are registered in api/main.py in the following order:
 1. CORSMiddleware — preflight OPTIONS handling
-2. RequestIDMiddleware — assign unique ID per request
+2. APIVersionMiddleware — Accept header version negotiation
+3. RequestIDMiddleware — assign unique ID per request
 3. TracingMiddleware — OpenTelemetry span
 4. AuthMiddleware — Bearer token / admin session validation
 5. TenantMiddleware — namespace filter from agent_class
@@ -10,8 +11,10 @@ Middleware are registered in api/main.py in the following order:
 7. AuditMiddleware — log request start/end via background task
 """
 
+from api.middleware.api_version import APIVersionMiddleware
 from api.middleware.request_id import RequestIDMiddleware
 
 __all__ = [
+    "APIVersionMiddleware",
     "RequestIDMiddleware",
 ]
