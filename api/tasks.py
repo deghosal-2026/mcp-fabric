@@ -109,6 +109,60 @@ def cleanup_audit_logs(self):
     return _run_async(_cleanup())
 
 
+@celery_app.task(bind=True)
+def cleanup_expired_tokens(self):
+    from api.models.agent import AgentIdentity
+
+    async def _run():
+        engine = create_async_engine(settings.database_url, echo=False)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as db:
+            from sqlalchemy import update
+
+            stmt = (
+                update(AgentIdentity)
+                .where(AgentIdentity.status == "active")
+                .where(AgentIdentity.expires_at < datetime.now(UTC))
+                .values(status="expired")
+            )
+            result = await db.execute(stmt)
+            await db.commit()
+        await engine.dispose()
+        return {"expired": result.rowcount or 0}
+
+    return _run_async(_run())
+
+
+@celery_app.task(bind=True)
+def cleanup_expired_approvals(self):
+    from api.models.audit import ApprovalRequest
+
+    async def _run():
+        engine = create_async_engine(settings.database_url, echo=False)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as db:
+            from sqlalchemy import update
+
+            stmt = (
+                update(ApprovalRequest)
+                .where(ApprovalRequest.status == "pending")
+                .where(ApprovalRequest.expires_at < datetime.now(UTC))
+                .values(status="expired")
+            )
+            result = await db.execute(stmt)
+            await db.commit()
+        await engine.dispose()
+        return {"expired": result.rowcount or 0}
+
+    return _run_async(_run())
+
+
+@celery_app.task(bind=True)
+def cleanup_expired_sessions(self):
+    logger.info("Session cleanup: 0 sessions cleaned (Redis TTL handles this)")
+    return {"cleaned": 0}
+
+
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
 def check_alert_thresholds(self):
     logger.info("Alert threshold check: no rules configured yet (v0.1.0)")
