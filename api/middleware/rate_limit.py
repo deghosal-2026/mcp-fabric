@@ -1,3 +1,4 @@
+import asyncio
 import time
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -6,8 +7,7 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp
 
 from api.config import settings
-
-_rates: dict[str, list[float]] = {}
+from api.middleware.constants import HEALTH_PATHS
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -15,9 +15,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.max_requests = max_requests or settings.default_rate_limit
         self.window = window
+        self._rates: dict[str, list[float]] = {}
+        self._lock = asyncio.Lock()
+        self._last_cleanup: float = 0
 
     async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
-        if request.url.path in ("/health", "/health/ready", "/health/live", "/v1/metrics"):
+        if request.url.path in HEALTH_PATHS:
             return await call_next(request)
 
         agent_id = (
@@ -27,19 +30,31 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         now = time.time()
         key = f"{agent_id}:{request.url.path}"
 
-        timestamps = _rates.get(key, [])
-        timestamps = [ts for ts in timestamps if now - ts < self.window]
-        if len(timestamps) >= self.max_requests:
-            return JSONResponse(
-                status_code=429,
-                content={
-                    "error": "rate_limit_exceeded",
-                    "message": (
-                        f"Rate limit of {self.max_requests} requests per {self.window}s exceeded"
-                    ),
-                },
-            )
+        async with self._lock:
+            if now - self._last_cleanup > 300:
+                stale = [
+                    k
+                    for k, ts in self._rates.items()
+                    if not ts or now - max(ts) > self.window
+                ]
+                for k in stale:
+                    self._rates.pop(k, None)
+                self._last_cleanup = now
 
-        timestamps.append(now)
-        _rates[key] = timestamps
+            timestamps = [ts for ts in self._rates.get(key, []) if now - ts < self.window]
+            if len(timestamps) >= self.max_requests:
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "error": "rate_limit_exceeded",
+                        "message": (
+                            f"Rate limit of {self.max_requests} requests per"
+                            f" {self.window}s exceeded"
+                        ),
+                    },
+                )
+
+            timestamps.append(now)
+            self._rates[key] = timestamps
+
         return await call_next(request)

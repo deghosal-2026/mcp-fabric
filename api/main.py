@@ -1,5 +1,6 @@
 import asyncio
 import signal
+import traceback
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
@@ -19,22 +20,24 @@ from api.middleware import (
 )
 from api.middleware.cors import CORS_CONFIG
 from api.seeders import run_seeders
+from api.telemetry.logging import logger
+from api.telemetry.tracing import instrument_fastapi
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.readiness = "healthy"
     await run_seeders()
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         with suppress(NotImplementedError):
-            loop.add_signal_handler(sig, lambda: asyncio.create_task(_shutdown()))
+            loop.add_signal_handler(sig, lambda: asyncio.create_task(_shutdown(app)))
     yield
     app.state.readiness = "shutting_down"
     await asyncio.sleep(5)
 
 
-async def _shutdown():
+async def _shutdown(app: FastAPI):
     app.state.readiness = "shutting_down"
     await asyncio.sleep(5)
 
@@ -47,6 +50,8 @@ app = FastAPI(
     contact={"name": "Debashish Ghosal", "email": "debashish@ghosal.dev"},
     license_info={"name": "MIT", "identifier": "MIT"},
 )
+
+instrument_fastapi(app)
 
 app.add_middleware(CORSMiddleware, **CORS_CONFIG)
 app.add_middleware(APIVersionMiddleware)
@@ -97,6 +102,13 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.error(
+        "unhandled_exception",
+        method=request.method,
+        path=request.url.path,
+        error=str(exc),
+        traceback=traceback.format_exc(),
+    )
     return JSONResponse(
         status_code=500,
         content={

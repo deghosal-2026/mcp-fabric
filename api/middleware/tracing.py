@@ -2,7 +2,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.types import ASGIApp
 
-from api.telemetry.tracing import tracer
+from api.telemetry.tracing import _get_tracer
 
 
 class TracingMiddleware(BaseHTTPMiddleware):
@@ -10,6 +10,7 @@ class TracingMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
 
     async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
+        tracer = _get_tracer()
         with tracer.start_as_current_span(
             f"{request.method} {request.url.path}"
         ) as span:

@@ -1,3 +1,5 @@
+import pytest
+
 from api.services.auth_service import AuthService, InvalidTokenError
 
 
@@ -13,8 +15,6 @@ def test_create_and_validate_token():
 
 def test_invalid_token_raises():
     svc = AuthService(secret_key="test-secret")
-    import pytest
-
     with pytest.raises(InvalidTokenError):
         svc.validate_token("invalid-token")
 

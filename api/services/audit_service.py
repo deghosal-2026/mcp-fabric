@@ -1,8 +1,9 @@
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.config import settings
 from api.models.audit import AuditEvent
 
 
@@ -52,11 +53,7 @@ class AuditService:
         return list(result.scalars().all())
 
     async def cleanup(self, before: datetime | None = None) -> int:
-        from sqlalchemy import delete
-
         if before is None:
-            from api.config import settings
-
             before = datetime.now(UTC) - timedelta(days=settings.audit_retention_days)
         stmt = delete(AuditEvent).where(AuditEvent.created_at < before)
         result = await self.db.execute(stmt)
