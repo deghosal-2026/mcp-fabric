@@ -16,6 +16,7 @@ from api.mcp.client import (
     ToolDefinition,
     ToolDiff,
     ToolResponse,
+    compare_tool_definitions,
 )
 
 __all__ = [
@@ -29,4 +30,5 @@ __all__ = [
     "ToolDefinition",
     "ToolDiff",
     "ToolResponse",
+    "compare_tool_definitions",
 ]

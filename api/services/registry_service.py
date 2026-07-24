@@ -11,7 +11,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from api.mcp import MCPClient, MCPError, ToolDefinition
+from api.mcp import MCPClient, MCPError, ToolDefinition, compare_tool_definitions
 from api.models import MCPServer, ServerTool, ToolVersion
 from api.schemas.common import PaginatedServers, PaginationMeta
 from api.schemas.server import (
@@ -164,7 +164,7 @@ class RegistryService:
                 input_schema=db_tool.input_schema,
                 output_schema=db_tool.output_schema,
             )
-            change = self.mcp._compare_tool_definitions(prev_def, curr_def)
+            change = compare_tool_definitions(prev_def, curr_def)
             if change is not None:
                 self.db.add(ToolVersion(
                     server_id=server.id, tool_name=db_tool.tool_name,
@@ -254,7 +254,7 @@ class RegistryService:
                 parts = json.loads(raw)
                 cursor_dt = datetime.fromisoformat(parts["t"])
                 cursor_id = UUID(parts["i"])
-            except (ValueError, Exception):
+            except (ValueError, KeyError, TypeError):
                 cursor_dt = None
                 cursor_id = None
             if cursor_dt is not None and cursor_id is not None:

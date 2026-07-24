@@ -131,6 +131,51 @@ def _extract_tool_list(data: Any, endpoint: str) -> list[dict[str, Any]]:
     return maybe
 
 
+def compare_tool_definitions(prev: ToolDefinition, curr: ToolDefinition) -> ToolChange | None:
+    """Compare two versions of the same tool and detect breaking changes.
+
+    Args:
+        prev: Previous version of the tool definition.
+        curr: Current version of the tool definition.
+
+    Returns:
+        A ToolChange if differences are found, None if identical.
+    """
+    changes: dict[str, Any] = {}
+    is_breaking = False
+
+    if prev.description != curr.description:
+        changes["description"] = {"old": prev.description, "new": curr.description}
+
+    prev_params = prev.input_schema.get("properties", {}) if prev.input_schema else {}
+    curr_params = curr.input_schema.get("properties", {}) if curr.input_schema else {}
+    prev_required = set(prev.input_schema.get("required", []) if prev.input_schema else [])
+    curr_required = set(curr.input_schema.get("required", []) if curr.input_schema else [])
+
+    added_params = set(curr_params) - set(prev_params)
+    removed_params = set(prev_params) - set(curr_params)
+    new_required = curr_required - prev_required
+
+    if added_params:
+        changes["params_added"] = list(added_params)
+    if removed_params:
+        changes["params_removed"] = list(removed_params)
+        is_breaking = True
+    if new_required:
+        changes["params_now_required"] = list(new_required)
+        is_breaking = True
+
+    if prev.output_schema != curr.output_schema:
+        changes["output_schema"] = {"old": prev.output_schema, "new": curr.output_schema}
+        if prev.output_schema is not None and curr.output_schema is not None:
+            is_breaking = True
+
+    if not changes:
+        return None
+
+    return ToolChange(tool_name=curr.name, changes=changes, is_breaking=is_breaking)
+
+
 class MCPClient:
     """Async HTTP client for interacting with MCP servers.
 
@@ -321,48 +366,7 @@ class MCPClient:
     def _compare_tool_definitions(
         self, prev: ToolDefinition, curr: ToolDefinition
     ) -> ToolChange | None:
-        """Compare two versions of the same tool and detect breaking changes.
-
-        Args:
-            prev: Previous version of the tool definition.
-            curr: Current version of the tool definition.
-
-        Returns:
-            A ToolChange if differences are found, None if identical.
-        """
-        changes: dict[str, Any] = {}
-        is_breaking = False
-
-        if prev.description != curr.description:
-            changes["description"] = {"old": prev.description, "new": curr.description}
-
-        prev_params = prev.input_schema.get("properties", {}) if prev.input_schema else {}
-        curr_params = curr.input_schema.get("properties", {}) if curr.input_schema else {}
-        prev_required = set(prev.input_schema.get("required", []) if prev.input_schema else [])
-        curr_required = set(curr.input_schema.get("required", []) if curr.input_schema else [])
-
-        added_params = set(curr_params) - set(prev_params)
-        removed_params = set(prev_params) - set(curr_params)
-        new_required = curr_required - prev_required
-
-        if added_params:
-            changes["params_added"] = list(added_params)
-        if removed_params:
-            changes["params_removed"] = list(removed_params)
-            is_breaking = True
-        if new_required:
-            changes["params_now_required"] = list(new_required)
-            is_breaking = True
-
-        if prev.output_schema != curr.output_schema:
-            changes["output_schema"] = {"old": prev.output_schema, "new": curr.output_schema}
-            if prev.output_schema is not None and curr.output_schema is not None:
-                is_breaking = True
-
-        if not changes:
-            return None
-
-        return ToolChange(tool_name=curr.name, changes=changes, is_breaking=is_breaking)
+        return compare_tool_definitions(prev, curr)
 
     async def close(self) -> None:
         """Close all cached HTTP clients and release connections."""

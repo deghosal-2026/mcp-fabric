@@ -8,38 +8,38 @@
 ### P3-01: Service Scaffold + Register (#233)
 **Effort:** 3h | **Deps:** P1-01, P2-02
 **Checklist:**
-- [ ] `api/services/registry_service.py` — class RegistryService(db, mcp_client, audit_service)
-- [ ] `register(name, endpoint, owner_team, description, labels, team_namespace) -> MCPServer`
-- [ ] Creates MCPServer record with trust_level="unreviewed", health_status="unknown"
-- [ ] Calls mcp_client.list_tools(endpoint) → creates ServerTool records
-- [ ] Auto-suggests trust level: read-only tools → "trusted", otherwise "unreviewed"
-- [ ] Logs audit_event(server_registered)
-- [ ] Invalid endpoint → ServerUnreachableError(400)
-- [ ] Duplicate endpoint → DuplicateServerError(409)
+- [x] `api/services/registry_service.py` — class RegistryService(db, mcp_client, audit_service)
+- [x] `register(name, endpoint, owner_team, description, labels, team_namespace) -> MCPServer`
+- [x] Creates MCPServer record with trust_level="unreviewed", health_status="unknown"
+- [x] Calls mcp_client.list_tools(endpoint) → creates ServerTool records
+- [x] Auto-suggests trust level: read-only tools → "trusted", otherwise "unreviewed"
+- [x] Logs audit_event(server_registered)
+- [x] Invalid endpoint → ServerUnreachableError(400)
+- [x] Duplicate endpoint → DuplicateServerError(409)
 
 **Success Criteria:** Register → server + tools in DB. Unreachable → 400. Duplicate → 409.
 
 ### P3-02: Inspect Server (#234)
 **Effort:** 2h | **Deps:** P3-01, P2-04
 **Checklist:**
-- [ ] `inspect(server_id) -> ServerInspectResponse`
-- [ ] Calls mcp_client.diff_tools(endpoint, current_tools)
-- [ ] Stores old tools in tool_versions table
-- [ ] Updates ServerTool records with new schemas
-- [ ] Returns: tools_added, tools_removed, tools_changed
-- [ ] Updates server.updated_at + health_status
-- [ ] Logs audit_event(schema_change_detected) if changes found
+- [x] `inspect(server_id) -> ServerInspectResponse`
+- [x] Calls mcp_client.list_tools(endpoint) to diff against current tools
+- [x] Stores old tools in tool_versions table
+- [x] Updates ServerTool records with new schemas
+- [x] Returns: tools_added, tools_removed, tools_changed
+- [x] Updates server.updated_at + health_status
+- [x] Logs audit_event(schema_change_detected) if changes found
 
 **Success Criteria:** Unchanged server → empty diff. New tool → tools_added. Breaking → is_breaking+alert.
 
 ### P3-03: List + Filter Servers (#235)
 **Effort:** 2h | **Deps:** P3-01
 **Checklist:**
-- [ ] `list_servers(team, trust, health, search, cursor, per_page) -> PaginatedServers`
-- [ ] Filters: team_namespace, trust_level, health_status, search (name ILIKE)
-- [ ] Cursor-based pagination by registered_at DESC
-- [ ] TenantMiddleware scope applied automatically
-- [ ] Empty → returns {servers:[], pagination:{...}} with 200
+- [x] `list_servers(team, trust, health, search, cursor, per_page) -> PaginatedServers`
+- [x] Filters: team_namespace, trust_level, health_status, search (name ILIKE)
+- [x] Cursor-based pagination by (created_at, id) composite key
+- [x] TenantMiddleware scope applied automatically
+- [x] Empty → returns {servers:[], pagination:{...}} with 200
 
 **Success Criteria:** All filters work independently + combined. Cursor pagination correct.
 

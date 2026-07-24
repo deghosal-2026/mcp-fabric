@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from datetime import datetime as dt
 from uuid import uuid4
 
 import pytest
@@ -355,9 +356,7 @@ class TestListServers:
                 )).scalar_one()
                 srv.trust_level = trust
                 srv.health_status = health
-                srv.created_at = __import__("datetime").datetime(
-                    2026, 7, 24, 0, 0, i
-                )
+                srv.created_at = dt(2026, 7, 24, 0, 0, i)
                 await registry_service.db.commit()
 
     async def test_list_all(
