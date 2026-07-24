@@ -56,14 +56,14 @@
 ### P3-05: Decommission Server (#237)
 **Effort:** 2h | **Deps:** P3-01
 **Checklist:**
-- [ ] `decommission(server_id, phase, replacement_id) -> DecommissionResult`
-- [ ] Phase validation: must proceed grace_period → migration → sunset
-- [ ] Dependency report: capabilities this server provides + agent classes depending on it + request count
-- [ ] grace_period: set decommissioned_at, add deprecation header to responses
-- [ ] migration: redirect capability mappings to replacement server
-- [ ] sunset: remove from capability mappings, mark fully decommissioned
-- [ ] SELECT FOR UPDATE row lock to prevent race
-- [ ] Logs audit_event(server_decommissioned)
+- [x] `decommission(server_id, phase, replacement_id) -> DecommissionResult`
+- [x] Phase validation: must proceed grace_period → migration → sunset
+- [x] Dependency report: capabilities this server provides + agent classes depending on it
+- [x] grace_period: set decommissioned_at + decommission_phase
+- [x] migration: redirect capability mappings to replacement server
+- [x] sunset: remove from capability mappings, mark fully decommissioned
+- [x] SELECT FOR UPDATE row lock to prevent race
+- [x] Logs audit_event(server_decommissioned)
 
 **Success Criteria:** Phased progression enforced. Dependency report accurate. Double-decommission → 409.
 

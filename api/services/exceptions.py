@@ -15,3 +15,8 @@ class DuplicateServerError(ServiceError):
 class ServerNotFoundError(ServiceError):
     def __init__(self, server_id: str) -> None:
         super().__init__(f"Server {server_id} not found")
+
+
+class DecommissionError(ServiceError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)

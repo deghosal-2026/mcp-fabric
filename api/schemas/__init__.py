@@ -49,7 +49,10 @@ from api.schemas.routing import (
     RoutingRuleCreate,
 )
 from api.schemas.server import (
+    DecommissionRequest,
+    DecommissionResult,
     DecommissionTimeline,
+    DependencyReport,
     RoutingRuleResponse,
     ServerCreate,
     ServerDetail,
@@ -73,6 +76,9 @@ __all__ = [
     "ToolVersionResponse",
     "RoutingRuleResponse",
     "DecommissionTimeline",
+    "DecommissionRequest",
+    "DecommissionResult",
+    "DependencyReport",
     "PaginationMeta",
     "PaginatedServers",
     "PaginatedAudit",

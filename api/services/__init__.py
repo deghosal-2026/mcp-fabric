@@ -6,6 +6,7 @@ dependencies via constructor injection for testability.
 """
 
 from api.services.exceptions import (
+    DecommissionError,
     DuplicateServerError,
     ServerNotFoundError,
     ServerUnreachableError,
@@ -16,6 +17,7 @@ from api.services.registry_service import RegistryService
 __all__ = [
     "RegistryService",
     "ServiceError",
+    "DecommissionError",
     "DuplicateServerError",
     "ServerNotFoundError",
     "ServerUnreachableError",

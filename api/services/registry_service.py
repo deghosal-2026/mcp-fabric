@@ -17,7 +17,9 @@ from api.schemas.agent import TrustAssignmentResponse
 from api.schemas.capability import CapabilityMappingResponse
 from api.schemas.common import PaginatedServers, PaginationMeta
 from api.schemas.server import (
+    DecommissionResult,
     DecommissionTimeline,
+    DependencyReport,
     RoutingRuleResponse,
     ServerCreate,
     ServerDetail,
@@ -30,6 +32,7 @@ from api.schemas.server import (
     ToolChange as ToolChangeSchema,
 )
 from api.services.exceptions import (
+    DecommissionError,
     DuplicateServerError,
     ServerNotFoundError,
     ServerUnreachableError,
@@ -350,4 +353,97 @@ class RegistryService:
                 RoutingRuleResponse.model_validate(r) for r in server.routing_rules
             ],
             decommission_timeline=timeline,
+        )
+
+    async def decommission(
+        self,
+        server_id: UUID,
+        phase: str,
+        replacement_id: UUID | None = None,
+    ) -> DecommissionResult:
+        valid_phases = ["grace_period", "migration", "sunset"]
+        if phase not in valid_phases:
+            raise DecommissionError(f"Invalid phase '{phase}'. Must be one of {valid_phases}")
+
+        result = await self.db.execute(
+            select(MCPServer)
+            .options(
+                selectinload(MCPServer.tools),
+                selectinload(MCPServer.trust_assignments),
+                selectinload(MCPServer.mappings),
+            )
+            .where(MCPServer.id == server_id)
+            .with_for_update()
+        )
+        server = result.scalar_one_or_none()
+        if server is None:
+            raise ServerNotFoundError(str(server_id))
+
+        current_phase = server.decommission_phase
+
+        if current_phase == "sunset":
+            raise DecommissionError(f"Server {server_id} is already fully decommissioned")
+
+        if current_phase is not None:
+            phase_order = {p: i for i, p in enumerate(valid_phases)}
+            if phase_order[phase] != phase_order[current_phase] + 1:
+                expected = valid_phases[phase_order[current_phase] + 1]
+                raise DecommissionError(
+                    f"Cannot transition from '{current_phase}' to '{phase}'. "
+                    f"Must proceed in order: {expected}"
+                )
+        elif phase != "grace_period":
+            raise DecommissionError(
+                f"First decommission phase must be 'grace_period', got '{phase}'"
+            )
+
+        agent_class_names = sorted({
+            a.agent_class.name for a in server.trust_assignments if a.agent_class
+        })
+        deps = DependencyReport(
+            capability_names=[m.capability.name for m in server.mappings if m.capability],
+            agent_class_names=agent_class_names,
+            trust_assignment_count=len(server.trust_assignments),
+            mapping_count=len(server.mappings),
+        )
+
+        if phase == "grace_period":
+            server.decommission_phase = "grace_period"
+            server.decommissioned_at = datetime.now(UTC)
+        elif phase == "migration":
+            if replacement_id is not None:
+                for mapping in server.mappings:
+                    mapping.server_id = replacement_id
+            server.decommission_phase = "migration"
+        elif phase == "sunset":
+            for mapping in list(server.mappings):
+                await self.db.delete(mapping)
+            server.decommission_phase = "sunset"
+
+        await self.db.commit()
+
+        if self.audit is not None:
+            try:
+                await self.audit.log_event(
+                    event_type="server_decommissioned",
+                    actor="system",
+                    resource_id=str(server.id),
+                    metadata={
+                        "name": server.name,
+                        "phase": phase,
+                        "replacement_id": str(replacement_id) if replacement_id else None,
+                    },
+                )
+            except Exception:
+                logger.exception("Failed to log audit event for server decommission")
+
+        return DecommissionResult(
+            server_id=server.id,
+            phase=phase,
+            dependencies=deps,
+            timeline=DecommissionTimeline(
+                phase=server.decommission_phase,
+                decommissioned_at=server.decommissioned_at,
+                status=server.decommission_phase or "active",
+            ),
         )

@@ -118,6 +118,31 @@ class ServerDetail(ServerResponse):
     decommission_timeline: DecommissionTimeline | None = None
 
 
+class DecommissionRequest(BaseModel):
+    """Request body for decommissioning an MCP server."""
+
+    phase: str = Field(pattern=r"^(grace_period|migration|sunset)$")
+    replacement_id: UUID | None = None
+
+
+class DependencyReport(BaseModel):
+    """Entities that depend on a server targeted for decommission."""
+
+    capability_names: list[str] = []
+    agent_class_names: list[str] = []
+    trust_assignment_count: int = 0
+    mapping_count: int = 0
+
+
+class DecommissionResult(BaseModel):
+    """Result of a decommission operation with before-state report."""
+
+    server_id: UUID
+    phase: str
+    dependencies: DependencyReport
+    timeline: DecommissionTimeline | None = None
+
+
 ServerDetail.model_rebuild()
 RoutingRuleResponse.model_rebuild()
 ToolVersionResponse.model_rebuild()

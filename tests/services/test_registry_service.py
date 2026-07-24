@@ -13,6 +13,7 @@ from api.mcp import MCPClient
 from api.models import MCPServer, ServerTool, ToolVersion
 from api.schemas.server import ServerCreate
 from api.services import (
+    DecommissionError,
     DuplicateServerError,
     RegistryService,
     ServerNotFoundError,
@@ -327,6 +328,95 @@ class TestInspect:
 
         with pytest.raises(ServerUnreachableError):
             await registry_service.inspect(registered_server.id)
+
+
+class TestDecommission:
+    async def test_decommission_grace_period(
+        self,
+        registry_service: RegistryService,
+        mock_server_url: str,
+    ) -> None:
+        params = ServerCreate(name="decom-srv", endpoint=mock_server_url)
+        created = await registry_service.register(params)
+        result = await registry_service.decommission(created.id, phase="grace_period")
+
+        assert result.phase == "grace_period"
+        assert result.timeline is not None
+        assert result.timeline.phase == "grace_period"
+        assert result.timeline.decommissioned_at is not None
+
+        server = (
+            await registry_service.db.execute(
+                select(MCPServer).where(MCPServer.id == created.id)
+            )
+        ).scalar_one()
+        assert server.decommission_phase == "grace_period"
+        assert server.decommissioned_at is not None
+
+    async def test_decommission_migration(
+        self,
+        registry_service: RegistryService,
+        mock_server_url: str,
+    ) -> None:
+        params = ServerCreate(name="migrate-srv", endpoint=mock_server_url)
+        created = await registry_service.register(params)
+        await registry_service.decommission(created.id, phase="grace_period")
+        result = await registry_service.decommission(created.id, phase="migration")
+
+        assert result.phase == "migration"
+
+    async def test_decommission_sunset(
+        self,
+        registry_service: RegistryService,
+        mock_server_url: str,
+    ) -> None:
+        params = ServerCreate(name="sunset-srv", endpoint=mock_server_url)
+        created = await registry_service.register(params)
+        await registry_service.decommission(created.id, phase="grace_period")
+        await registry_service.decommission(created.id, phase="migration")
+        result = await registry_service.decommission(created.id, phase="sunset")
+
+        assert result.phase == "sunset"
+
+    async def test_decommission_skip_phase_raises_error(
+        self,
+        registry_service: RegistryService,
+        mock_server_url: str,
+    ) -> None:
+        params = ServerCreate(name="skip-srv", endpoint=mock_server_url)
+        created = await registry_service.register(params)
+        with pytest.raises(DecommissionError, match="grace_period"):
+            await registry_service.decommission(created.id, phase="sunset")
+
+    async def test_decommission_invalid_phase(
+        self,
+        registry_service: RegistryService,
+        mock_server_url: str,
+    ) -> None:
+        params = ServerCreate(name="bad-phase", endpoint=mock_server_url)
+        created = await registry_service.register(params)
+        with pytest.raises(DecommissionError, match="Invalid phase"):
+            await registry_service.decommission(created.id, phase="invalid")
+
+    async def test_decommission_already_sunset(
+        self,
+        registry_service: RegistryService,
+        mock_server_url: str,
+    ) -> None:
+        params = ServerCreate(name="done-srv", endpoint=mock_server_url)
+        created = await registry_service.register(params)
+        await registry_service.decommission(created.id, phase="grace_period")
+        await registry_service.decommission(created.id, phase="migration")
+        await registry_service.decommission(created.id, phase="sunset")
+        with pytest.raises(DecommissionError, match="already fully decommissioned"):
+            await registry_service.decommission(created.id, phase="grace_period")
+
+    async def test_decommission_not_found(
+        self,
+        registry_service: RegistryService,
+    ) -> None:
+        with pytest.raises(ServerNotFoundError):
+            await registry_service.decommission(uuid4(), phase="grace_period")
 
 
 class TestGetServer:
