@@ -14,7 +14,7 @@
 |---|---|---|---|---|
 | [0](wbs/phase-0-scaffolding.md) | Scaffolding | 16 | 32h | Poetry, Makefile, Dockerfiles, Compose, Config, Main, Dependencies, Alembic, OPA, CI/CD, Repo Docs |
 | [1](wbs/phase-1-database.md) | Database & Models | 82 | 60h | 17 ORM models, 20+ Pydantic schema groups, migrations, model validation |
-| [2](wbs/phase-2-mcp-client.md) | MCP Client | 12 | 12h | MCPClient: list_tools, call_tool, diff_tools, timeout/retry, health integration |
+| [2](wbs/phase-2-mcp-client.md) | MCP Client | 12 | 12h | ✅ MCPClient: list_tools, call_tool, diff_tools, timeout/retry, connection pooling |
 | [3](wbs/phase-3-services.md) | Core Services | 95 | 72h | 9 services: Registry, Capability, Policy, Routing, Audit, Approval, Pack, Alert, Auth |
 | [4](wbs/phase-4-middleware.md) | Middleware | 8 | 16h | RequestID, Tracing, Auth, Tenant, RateLimit, Audit, CORS, API Version |
 | [5](wbs/phase-5-api-routes.md) | API Routes | 55 | 40h | 11 route groups: Registry, Capability, Routing, Policy, Approval, Audit, Pack, Auth, Admin, Health, Webhooks |
