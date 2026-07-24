@@ -1,0 +1,38 @@
+groups:
+  - name: mcp-fabric
+    rules:
+      - alert: HighErrorBudgetBurn
+        expr: rate(fabric_requests_total{status=~"5.."}[5m]) / rate(fabric_requests_total[5m]) > 0.05
+        for: 5m
+        labels: { severity: critical }
+        annotations: { summary: "Error budget burn rate exceeded 5x" }
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(fabric_request_duration_seconds_bucket[10m])) > 1
+        for: 10m
+        labels: { severity: critical }
+        annotations: { summary: "p95 latency > 1s for 10 minutes" }
+      - alert: LowAvailability
+        expr: (sum(rate(fabric_requests_total{status!~"5.."}[30m])) / sum(rate(fabric_requests_total[30m]))) < 0.99
+        for: 30m
+        labels: { severity: critical }
+        annotations: { summary: "Availability < 99% for 30 minutes" }
+      - alert: UnhealthyServers
+        expr: count(fabric_server_health == 0) > 2
+        for: 5m
+        labels: { severity: high }
+        annotations: { summary: "3+ servers unhealthy" }
+      - alert: HighDenialRate
+        expr: rate(fabric_policy_decisions_total{decision="deny"}[5m]) / rate(fabric_policy_decisions_total[5m]) > 0.1
+        for: 5m
+        labels: { severity: high }
+        annotations: { summary: "Denial rate > 10% for agent class" }
+      - alert: UnreviewedServer
+        expr: fabric_info{trust_level="unreviewed"} > 0
+        for: 48h
+        labels: { severity: warning }
+        annotations: { summary: "Unreviewed server older than 48h" }
+      - alert: APIErrorRate
+        expr: rate(fabric_requests_total{status=~"5.."}[5m]) > 0.01
+        for: 5m
+        labels: { severity: high }
+        annotations: { summary: "API error rate > 1% for 5 minutes" }
