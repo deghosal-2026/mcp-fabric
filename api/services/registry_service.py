@@ -38,6 +38,7 @@ from api.services.exceptions import (
     ServerNotFoundError,
     ServerUnreachableError,
 )
+from api.tasks import notify_schema_change
 
 logger = logging.getLogger(__name__)
 
@@ -227,6 +228,21 @@ class RegistryService:
                 )
             except Exception:
                 logger.exception("Failed to log audit event for schema change")
+
+        if added_names or removed_names or changed_schema:
+            try:
+                notify_schema_change.delay(
+                    server_id=str(server.id),
+                    server_name=server.name,
+                    tools_added=list(added_names),
+                    tools_removed=list(removed_names),
+                    tools_changed=[
+                        {"tool_name": t.tool_name, "is_breaking": t.is_breaking}
+                        for t in changed_schema
+                    ],
+                )
+            except Exception:
+                logger.exception("Failed to dispatch schema change notification")
 
         base = ServerResponse.model_validate(server)
         return ServerInspectResponse(

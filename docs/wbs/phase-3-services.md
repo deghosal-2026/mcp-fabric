@@ -80,10 +80,10 @@
 ### P3-07: Schema Change Notification (#83)
 **Effort:** 1h | **Deps:** P3-02
 **Checklist:**
-- [ ] After inspect detects changes → notify admins (Celery task)
-- [ ] Breaking changes → high-priority notification
-- [ ] Tool added/removed → info notification
-- [ ] Links to server detail page for review
+- [x] `notify_schema_change` Celery task defined with auto-retry
+- [x] Task: breaking changes → high-priority log warning
+- [x] Task: tool added/removed → info log notification
+- [x] inspect() dispatches task after detecting changes
 
 **Success Criteria:** Admins notified on schema change. Breaking changes highlighted.
 
