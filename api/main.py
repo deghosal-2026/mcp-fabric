@@ -20,12 +20,16 @@ from api.middleware import (
 )
 from api.middleware.cors import CORS_CONFIG
 from api.seeders import run_seeders
+from api.services.health import check_database, check_opa, check_redis
 from api.telemetry.logging import logger
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from sqlalchemy.ext.asyncio import create_async_engine
+
     app.state.readiness = "healthy"
+    app.state.db_engine = create_async_engine(settings.database_url, echo=False)
     await run_seeders()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -33,6 +37,7 @@ async def lifespan(app: FastAPI):
             loop.add_signal_handler(sig, lambda: asyncio.create_task(_shutdown(app)))
     yield
     app.state.readiness = "shutting_down"
+    await app.state.db_engine.dispose()
     await asyncio.sleep(5)
 
 
@@ -61,22 +66,36 @@ app.add_middleware(AuditMiddleware)
 
 
 @app.get("/health")
-async def health():
+async def health(request: Request):
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    engine = getattr(request.app.state, "db_engine", None) or create_async_engine(
+        settings.database_url, echo=False
+    )
+    db = await check_database(engine)
+    redis = await check_redis(settings.redis_url)
+    opa = await check_opa(settings.opa_url)
+    checks = {"database": db, "redis": redis, "opa": opa}
+    overall = "healthy" if all(v == "connected" for v in checks.values()) else "degraded"
     return {
-        "status": "healthy",
+        "status": overall,
         "version": "0.1.0",
-        "checks": {
-            "database": "connected" if not settings.is_sqlite else "connected",
-            "redis": "connected",
-            "opa": "connected",
-        },
+        "checks": checks,
     }
 
 
 @app.get("/health/ready")
-async def readiness():
+async def readiness(request: Request):
     if app.state.readiness == "shutting_down":
         return JSONResponse({"status": "shutting_down"}, status_code=503)
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    engine = getattr(request.app.state, "db_engine", None) or create_async_engine(
+        settings.database_url, echo=False
+    )
+    db = await check_database(engine)
+    if db != "connected":
+        return JSONResponse({"status": "not_ready", "checks": {"database": db}}, status_code=503)
     return {"status": "ready"}
 
 

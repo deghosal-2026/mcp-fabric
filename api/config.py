@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     audit_retention_days: int = 90
     server_health_interval: int = 30
     default_rate_limit: int = 100
+    jwt_issuer: str = "mcp-fabric"
+    jwt_audience: str = "mcp-fabric-api"
     otel_endpoint: str = ""
     cors_origins: list[str] = ["http://localhost:3000"]
     admin_session_ttl_hours: int = 8

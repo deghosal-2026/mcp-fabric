@@ -1,10 +1,3 @@
-"""JWT-based authentication with bcrypt password hashing.
-
-Provides token creation and validation for both agent and admin
-identities, plus password hashing/verification using bcrypt directly
-(not the passlib wrapper which has bcrypt compatibility issues).
-"""
-
 from datetime import UTC, datetime, timedelta
 
 import bcrypt
@@ -38,6 +31,8 @@ class AuthService:
             "role": role,
             "iat": now,
             "exp": now + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS),
+            "iss": settings.jwt_issuer,
+            "aud": settings.jwt_audience,
         }
         if agent_class:
             payload["agent_class"] = agent_class
@@ -45,7 +40,13 @@ class AuthService:
 
     def validate_token(self, token: str) -> dict:
         try:
-            payload = jwt.decode(token, self.secret, algorithms=[ALGORITHM])
+            payload = jwt.decode(
+                token,
+                self.secret,
+                algorithms=[ALGORITHM],
+                audience=settings.jwt_audience,
+                issuer=settings.jwt_issuer,
+            )
         except JWTError as exc:
             raise InvalidTokenError(str(exc)) from exc
         return payload
