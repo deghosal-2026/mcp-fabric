@@ -7,5 +7,7 @@ AUTH_PATHS = frozenset(
         "/v1/auth/login",
         "/v1/auth/connect",
         "/v1/auth/setup",
+        "/v1/auth/password-reset",
+        "/v1/auth/password-reset/complete",
     }
 )

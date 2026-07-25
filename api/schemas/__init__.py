@@ -49,6 +49,7 @@ from api.schemas.common import (
     PaginationMeta,
     PolicyDecision,
 )
+from api.schemas.dashboard import DashboardStats
 from api.schemas.pack import ClonePackRequest, PackAssignmentRequest, PackCreate, PackResponse
 from api.schemas.routing import (
     BatchCapabilityRequest,
@@ -74,6 +75,7 @@ from api.schemas.server import (
 
 PaginatedServers.model_rebuild()
 ServerDetail.model_rebuild()
+PaginatedAudit.model_rebuild()
 
 __all__ = [
     "ApprovalAction",

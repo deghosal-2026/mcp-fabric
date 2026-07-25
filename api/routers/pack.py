@@ -177,6 +177,19 @@ async def get_pack_usage(
         ) from exc
 
 
+# Assign a pack to an agent class. This links the pack's capabilities
+# to the agent class so its agents can use them. Returns 200 on success.
+@router.post("/{pack_id}/classes")
+async def assign_pack_to_class(
+    pack_id: UUID,
+    body: dict,
+    svc: PackService = Depends(get_pack_service),
+) -> dict:
+    class_id = UUID(body["agent_class_id"])
+    await svc.assign_to_class(pack_id, class_id)
+    return {"status": "assigned", "pack_id": str(pack_id), "class_id": str(class_id)}
+
+
 # Remove a pack assignment from an agent class. This does NOT delete the
 # pack itself — it only severs the assignment link. Returns 204 on success
 # (the pack may still exist and be assigned to other classes).

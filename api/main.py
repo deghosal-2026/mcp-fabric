@@ -46,6 +46,7 @@ from api.middleware import (
 )
 from api.middleware.cors import CORS_CONFIG
 from api.routers.admin import router as admin_router
+from api.routers.alert import router as alert_router
 from api.routers.approval import router as approval_router
 from api.routers.audit import router as audit_router
 from api.routers.auth import router as auth_router
@@ -145,6 +146,7 @@ app.add_middleware(RateLimitMiddleware)
 app.add_middleware(AuditMiddleware)
 
 app.include_router(admin_router)
+app.include_router(alert_router)
 app.include_router(registry_router)
 app.include_router(audit_router)
 app.include_router(auth_router)

@@ -75,8 +75,11 @@ export function TrustPosturePage() {
 
       <PageState query={servers}>
         {data => (
+          (() => {
+            const items = data.items ?? (data as any).servers ?? []
+            return (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {data.items.map((server: MCPServer) => (
+            {items.map((server: MCPServer) => (
               <div key={server.id} className={`rounded-xl p-6 shadow-sm border-l-4 ${trustColors[server.trust_level] || 'border-gray-300'}`}>
                 <div className="flex items-start justify-between mb-3">
                   <div>
@@ -105,6 +108,8 @@ export function TrustPosturePage() {
               </div>
             ))}
           </div>
+            )
+          })()
         )}
       </PageState>
     </div>

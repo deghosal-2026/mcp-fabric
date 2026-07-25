@@ -61,7 +61,7 @@ export function DashboardPage() {
           <PageState query={servers}>
             {data => (
               <div className="divide-y">
-                {data.items.map(s => (
+                {(data.items ?? (data as any).servers ?? []).map(s => (
                   <Link key={s.id} to={`/servers/${s.id}`} className="flex items-center justify-between px-6 py-3 hover:bg-gray-50">
                     <span className="font-medium">{s.name}</span>
                     <Badge label={s.health_status} />
@@ -80,16 +80,18 @@ export function DashboardPage() {
           <PageState query={approvals}>
             {data => (
               <div className="divide-y">
-                {data.items.length === 0 ? (
-                  <p className="px-6 py-4 text-gray-500 text-sm">No pending approvals</p>
-                ) : (
-                  data.items.map(a => (
+                {(() => {
+                  const items = data.items ?? (data as any).approvals ?? []
+                  if (items.length === 0) {
+                    return <p className="px-6 py-4 text-gray-500 text-sm">No pending approvals</p>
+                  }
+                  return items.map(a => (
                     <Link key={a.id} to="/approvals" className="block px-6 py-3 hover:bg-gray-50">
                       <div className="font-medium text-sm">{a.capability_name || a.capability_id}</div>
                       <div className="text-xs text-gray-500 mt-1">{a.agent_name || a.agent_identity_id}</div>
                     </Link>
                   ))
-                )}
+                })()}
               </div>
             )}
           </PageState>
@@ -103,7 +105,7 @@ export function DashboardPage() {
           <PageState query={audit}>
             {data => (
               <div className="divide-y">
-                {data.items.slice(0, 5).map(e => (
+                {(data.items ?? (data as any).events ?? []).slice(0, 5).map(e => (
                   <div key={e.id} className="px-6 py-3">
                     <div className="flex items-center justify-between">
                       <span className="font-medium text-sm">{e.event_type}</span>

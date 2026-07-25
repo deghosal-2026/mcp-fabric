@@ -1,0 +1,153 @@
+services:
+  # ── Infrastructure ────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: fabric
+      POSTGRES_PASSWORD: fabric
+      POSTGRES_DB: mcp_fabric
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fabric -d mcp_fabric"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+
+  opa:
+    image: openpolicyagent/opa:0.70.0-static
+    command: ["run", "--server", "--log-level=error", "--addr=:8181"]
+
+  # ── Application ───────────────────────────────────────────
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://fabric:fabric@postgres:5432/mcp_fabric
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - ENVIRONMENT=testing
+      - SECRET_KEY=test-secret-do-not-use-in-prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    command: >
+      sh -c "
+        alembic upgrade head &&
+        uvicorn api.main:app --host 0.0.0.0 --port 8000
+      "
+
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    environment:
+      - API_URL=http://api:8000
+    depends_on:
+      - api
+
+  # ── Test Services ────────────────────────────────────────
+
+  test-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://fabric:fabric@postgres:5432/mcp_fabric
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=testing
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      opa:
+        condition: service_started
+    command: >
+      sh -c "
+        pip install '.[dev]' --quiet &&
+        alembic upgrade head &&
+        pytest tests/test_errors.py tests/test_models.py tests/test_telemetry.py tests/middleware/ -v --tb=short --junitxml=/app/test-results/backend-quick.xml &&
+        pytest tests/services/ -m 'unit' -v --tb=short --junitxml=/app/test-results/backend-services.xml
+      "
+    volumes:
+      - test-results:/app/test-results
+
+  test-ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    environment:
+      - API_URL=http://api:8000
+      - CI=true
+    depends_on:
+      - api
+    command: >
+      sh -c "
+        npm test -- --run --reporter=junit --outputFile=/app/test-results/ui-vitest.xml
+      "
+    volumes:
+      - test-results:/app/test-results
+
+  test-e2e:
+    image: mcr.microsoft.com/playwright:v1.52.0-jammy
+    working_dir: /app
+    environment:
+      - PLAYWRIGHT_BASE_URL=http://ui:3000
+      - PLAYWRIGHT_LIVE_DOCKER=1
+    depends_on:
+      - ui
+    command: >
+      sh -c "
+        echo 'Waiting for UI to be ready...' &&
+        for i in \$(seq 1 30); do
+          curl -s http://ui:3000 >/dev/null && break;
+          sleep 2;
+        done &&
+        cd /app/ui &&
+        npx playwright test live-*.spec.ts docker-*.spec.ts --reporter=list --reporter=junit --output=../../test-results/playwright-junit.xml 2>&1 | tee /app/test-results/playwright-report.txt &&
+        mkdir -p /app/test-results/screenshots &&
+        cp -r test-results/screenshots/* /app/test-results/screenshots/ 2>/dev/null || true
+      "
+    volumes:
+      - .:/app
+      - test-results:/app/test-results
+
+  test-e2e-curl:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      api:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      - FABRIC_TEST_URL=http://api:8000
+    command: >
+      sh -c "
+        echo 'Waiting for API to be ready...' &&
+        for i in \$(seq 1 30); do
+          curl -s http://api:8000/health && break;
+          sleep 2;
+        done &&
+        tests/e2e/test_health.sh http://api:8000 &&
+        tests/e2e/test_auth_flow.sh http://api:8000 &&
+        tests/e2e/test_registration_flow.sh http://api:8000 &&
+        tests/e2e/test_capability_flow.sh http://api:8000 &&
+        tests/e2e/test_deployment_walkthrough.sh http://api:8000
+      "
+    volumes:
+      - test-results:/app/test-results
+
+volumes:
+  test-results:

@@ -51,13 +51,13 @@ class AgentIdentityCreate(BaseModel):
 
     Validation:
         name: 1-255 chars.
-        agent_class_id: must reference an existing AgentClass.
+        agent_class_id: must reference an existing AgentClass (set by the router from URL).
         rate_limit_per_min: 1-10000 (default 100).
         expires_at: optional absolute expiry datetime.
     """
 
     name: str = Field(min_length=1, max_length=255)
-    agent_class_id: UUID
+    agent_class_id: UUID | None = None
     rate_limit_per_min: int = Field(default=100, ge=1, le=10000)
     expires_at: datetime | None = None
 

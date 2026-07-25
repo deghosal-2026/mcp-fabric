@@ -1,4 +1,4 @@
-.PHONY: dev docker-build docker-up docker-down docker-logs \
+.PHONY: dev docker-build docker-up docker-down docker-logs seed-demo \
         test test-unit test-integration test-quick \
         test-ui test-ui-watch test-ui-e2e test-ui-e2e-headed \
         test-e2e-docker lint format typecheck \
@@ -15,6 +15,7 @@ help:
 	@echo "  make docker-up          Start all services (detached)"
 	@echo "  make docker-down        Stop all services"
 	@echo "  make docker-logs        Follow logs"
+	@echo "  make seed-demo          Load demo data into running Docker DB"
 	@echo "  make docker-setup       Run scripts/docker-setup.sh"
 	@echo ""
 	@echo "── Backend Tests ───────────────────────────────"
@@ -61,6 +62,13 @@ docker-down:
 
 docker-logs:
 	docker compose logs -f
+
+seed-demo:
+	docker compose down -v
+	docker compose up --build -d
+	docker compose exec api sh -c 'until curl -fsS http://localhost:8000/health/ready >/dev/null; do sleep 2; done'
+	sh -c 'until curl -fsS http://localhost:3000/login >/dev/null; do sleep 2; done'
+	docker compose exec api python -m api.seeders.demo_cli
 
 docker-setup:
 	./scripts/docker-setup.sh

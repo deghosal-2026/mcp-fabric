@@ -449,6 +449,18 @@ class RegistryService:
             ),
         )
 
+    async def count_by_health(self) -> dict[str, int]:
+        stmt = select(MCPServer.health_status, func.count(MCPServer.id)).group_by(MCPServer.health_status)
+        result = await self.db.execute(stmt)
+        counts: dict[str, int] = {"total": 0, "healthy": 0, "degraded": 0}
+        for status, count in result.all():
+            counts["total"] += count
+            if status == "healthy":
+                counts["healthy"] += count
+            elif status in {"degraded", "unhealthy"}:
+                counts["degraded"] += count
+        return counts
+
     async def get_server(self, server_id: UUID) -> ServerDetail:
         """Get detailed server information including all related data.
 

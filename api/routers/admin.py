@@ -28,9 +28,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.dependencies import get_auth_service
+from api.dependencies import get_approval_service, get_auth_service, get_registry_service
 from api.schemas.admin import AdminUserInvite, AdminUserResponse, AdminUserUpdate
+from api.schemas.dashboard import DashboardStats
+from api.services.approval_service import ApprovalService
 from api.services.auth_service import AuthService
+from api.services.registry_service import RegistryService
 
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
 
@@ -148,3 +151,19 @@ async def reset_admin_mfa(
             detail={"error": "not_found", "message": "Admin user not found"},
         )
     return result
+
+
+@router.get("/dashboard")
+async def dashboard_stats(
+    registry: RegistryService = Depends(get_registry_service),
+    approvals: ApprovalService = Depends(get_approval_service),
+) -> DashboardStats:
+    counts = await registry.count_by_health()
+    pending = await approvals.count_pending()
+
+    return DashboardStats(
+        server_count=counts.get("total", 0),
+        healthy_servers=counts.get("healthy", 0),
+        degraded_servers=counts.get("degraded", 0),
+        pending_approvals=pending,
+    )

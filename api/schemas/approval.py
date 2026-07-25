@@ -17,7 +17,7 @@ Endpoints:
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ApprovalRequestCreate(BaseModel):
@@ -67,12 +67,14 @@ class ApprovalRequestResponse(BaseModel):
 class ApprovalAction(BaseModel):
     """Request body for approving or denying an approval request.
 
-    Used by both PUT /api/v1/approvals/{id}/approve and /deny.
+    Fields:
+      - action: 'approved' or 'denied' (required).
       - approver_id: UUID of the admin making the decision.
-      - note: optional reason for the decision (stored in approver_note).
+      - note: optional reason for the decision.
     """
 
-    approver_id: UUID
+    action: str = Field(default="approved", pattern=r"^(approved|denied)$")
+    approver_id: UUID | None = None
     note: str | None = None
 
 

@@ -20,10 +20,13 @@ Execution order:
 """
 
 import asyncio
+import os
 
+from api.database import async_session
 from api.seeders.admin_bootstrap import bootstrap_admin_user
 from api.seeders.agent_classes import seed_agent_classes
 from api.seeders.alert_rules import seed_alert_rules
+from api.seeders.demo_data import seed_demo_data
 
 
 async def run_seeders():
@@ -36,3 +39,6 @@ async def run_seeders():
     """
     await asyncio.gather(seed_agent_classes(), seed_alert_rules())
     await bootstrap_admin_user()
+    if os.getenv("FABRIC_SEED_DEMO_DATA") == "1":
+        async with async_session() as session:
+            await seed_demo_data(session)

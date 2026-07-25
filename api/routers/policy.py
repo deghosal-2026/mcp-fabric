@@ -169,6 +169,26 @@ async def revoke_agent_token(
         ) from exc
 
 
+# List deployed policy versions for the admin UI.
+# Returns versions ordered by most recent deployment first.
+@router.get("/admin/policies")
+async def list_policy_versions(
+    svc: PolicyService = Depends(get_policy_service),
+) -> list[OPAPolicyVersionResponse]:
+    versions = await svc.get_policy_versions(limit=50)
+    return [
+        OPAPolicyVersionResponse(
+            id=v.id,
+            version=v.version,
+            bundle_hash=v.bundle_hash,
+            deployed_at=v.deployed_at,
+            deployed_by=v.deployed_by,
+            rego_content=v.rego_content,
+        )
+        for v in versions
+    ]
+
+
 # Deploy a new OPA Rego policy bundle. The bundle contains Rego policy code
 # that the OPA sidecar evaluates for authorization decisions. The service
 # validates Rego syntax before accepting the bundle.

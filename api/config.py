@@ -21,6 +21,7 @@ PRODUCTION CHECKLIST:
   ☐ Review RATE_LIMIT defaults for your traffic patterns
 """
 
+from celery.schedules import crontab
 from pydantic_settings import BaseSettings
 
 
@@ -33,10 +34,10 @@ class Settings(BaseSettings):
     """
 
     # ── Database ────────────────────────────────────────────────────
-    # Default SQLite URL for zero-dependency local development.
-    # In production, set to a PostgreSQL async URL:
-    #   postgresql+asyncpg://user:password@host:5432/fabric
-    database_url: str = "sqlite+aiosqlite:///fabric.db"
+    # Default PostgreSQL URL for Docker-based development.
+    # Override with DATABASE_URL env var. For local-only dev without
+    # Docker, set to sqlite+aiosqlite:///fabric.db (requires aiosqlite).
+    database_url: str = "postgresql+asyncpg://fabric:fabric@localhost:5432/mcp_fabric"
 
     # Redis connection string for caching, rate-limit state,
     # pub/sub, and Celery broker/backend.
@@ -156,7 +157,7 @@ class Settings(BaseSettings):
         # audit_retention_days to prevent unbounded log growth.
         "cleanup-audit-logs": {
             "task": "api.tasks.cleanup_audit_logs",
-            "schedule": "0 3 * * *",
+            "schedule": crontab(minute=0, hour=3),
         },
         # Every 60s, evaluates alert thresholds (e.g., high error rate,
         # server degradation) and fires notifications if triggered.

@@ -16,6 +16,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from api.schemas.admin import AdminUserResponse
+
 
 class LoginRequest(BaseModel):
     """Admin login credentials (POST /api/v1/auth/login).
@@ -40,6 +42,17 @@ class TokenResponse(BaseModel):
     token: str
     token_type: str = "bearer"
     expires_in: int = 28800
+
+
+class LoginResponse(TokenResponse):
+    """Admin login/bootstrap response used by the UI.
+
+    Extends the token payload with the authenticated admin user and whether
+    MFA is still required before the session is fully usable.
+    """
+
+    user: AdminUserResponse
+    mfa_required: bool = False
 
 
 class MFASetupResponse(BaseModel):

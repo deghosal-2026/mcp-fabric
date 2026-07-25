@@ -85,12 +85,12 @@ async def register_server(
 # the variable if named `q` without the alias workaround.
 @router.get("")
 async def list_servers(
-    team: str | None = Query(None),
-    trust: str | None = Query(None),
-    health: str | None = Query(None),
+    team: str | None = Query(None, alias="team_namespace"),
+    trust: str | None = Query(None, alias="trust_level"),
+    health: str | None = Query(None, alias="health_status"),
     q: str | None = Query(None, alias="q"),
     cursor: str | None = Query(None),
-    per_page: int = Query(20, le=100),
+    per_page: int = Query(20, le=200),
     svc: RegistryService = Depends(get_registry_service),
 ) -> PaginatedServers:
     return await svc.list_servers(

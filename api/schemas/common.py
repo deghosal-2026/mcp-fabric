@@ -39,20 +39,34 @@ class PaginatedServers(BaseModel):
 
     Uses forward reference to ServerResponse (defined in api.schemas.server).
     The forward ref is resolved via model_rebuild() in __init__.py.
+
+    The `servers` field is the primary storage. An `items` alias is added
+    for frontend consumers that expect a generic `items` array.
     """
 
     servers: list["ServerResponse"]
     pagination: PaginationMeta
+
+    @property
+    def items(self) -> list["ServerResponse"]:  # type: ignore[name-defined]
+        return self.servers
 
 
 class PaginatedAudit(BaseModel):
     """Paginated list of audit events (GET /api/v1/audit).
 
     Uses forward reference to AuditEventResponse (defined in api.schemas.audit).
+
+    The `events` field is the primary storage. An `items` alias is added
+    for frontend consumers that expect a generic `items` array.
     """
 
     events: list["AuditEventResponse"]
     pagination: PaginationMeta
+
+    @property
+    def items(self) -> list["AuditEventResponse"]:  # type: ignore[name-defined]
+        return self.events
 
 
 class PaginatedApprovals(BaseModel):
@@ -64,6 +78,10 @@ class PaginatedApprovals(BaseModel):
 
     approvals: list[dict[str, Any]]
     pagination: PaginationMeta
+
+    @property
+    def items(self) -> list[dict[str, Any]]:
+        return self.approvals
 
 
 class FabricError(BaseModel):

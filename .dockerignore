@@ -7,10 +7,5 @@ ui/
 *.pyc
 .env
 .gitignore
-README.md
-LICENSE
-CHANGELOG.md
-CONTRIBUTING.md
-SECURITY.md
 Makefile
 docker-compose.yml

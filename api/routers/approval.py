@@ -34,6 +34,7 @@ from api.schemas.approval import (
     ApprovalRequestResponse,
     ApprovalStatusResponse,
 )
+from api.schemas.common import PaginatedApprovals, PaginationMeta
 from api.services.approval_service import (
     ApprovalAlreadyResolvedError,
     ApprovalExpiredError,
@@ -51,9 +52,23 @@ router = APIRouter(prefix="/v1/approvals", tags=["approvals"])
 @router.get("")
 async def list_approval_requests(
     status: str | None = None,
+    per_page: int = 50,
+    offset: int = 0,
+    q: str | None = None,
     svc: ApprovalService = Depends(get_approval_service),
-) -> list[ApprovalRequestResponse]:
-    return await svc.list_requests(status_filter=status)
+) -> PaginatedApprovals:
+    limit = per_page
+    items = await svc.list_requests(status_filter=status, limit=limit, offset=offset)
+    total = await svc.count_requests(status_filter=status)
+    return PaginatedApprovals(
+        approvals=[item.model_dump(mode="json") for item in items],
+        pagination=PaginationMeta(
+            next_cursor=str(offset + limit) if offset + limit < total else None,
+            has_more=offset + limit < total,
+            per_page=limit,
+            total=total,
+        ),
+    )
 
 
 # Create a new approval request that must be manually reviewed.
@@ -97,6 +112,8 @@ async def review_approval_request(
     svc: ApprovalService = Depends(get_approval_service),
 ) -> ApprovalRequestResponse:
     try:
+        if body.action == "denied":
+            return await svc.deny(request_id, body)
         return await svc.approve(request_id, body)
     except ApprovalNotFoundError as exc:
         raise HTTPException(

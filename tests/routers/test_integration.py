@@ -84,9 +84,14 @@ def test_capability_lifecycle(client):
 
 
 def test_auth_connect_no_token(client):
-    """T10-21: Connecting without a token should return 401."""
-    resp = client.post("/v1/auth/connect")
-    assert resp.status_code == 401
+    """T10-21: Connecting without a token should mint an agent token."""
+    resp = client.post(
+        "/v1/auth/connect",
+        json={"username": "test-agent", "password": "ignored"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["token"]
 
 
 def test_audit_endpoint(client):

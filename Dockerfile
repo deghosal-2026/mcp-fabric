@@ -4,15 +4,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install poetry --quiet
-
 WORKDIR /app
 
-COPY pyproject.toml poetry.lock ./
-RUN poetry install --only main --no-root --no-interaction --quiet
-
+COPY pyproject.toml README.md ./
 COPY api/ api/
 COPY policies/ policies/
+COPY alembic.ini ./
+COPY alembic/ alembic/
+
+RUN pip install --no-cache-dir --upgrade pip --quiet && \
+    pip install --no-cache-dir . --quiet
 
 RUN groupadd -r fabric && useradd -r -g fabric -d /app -s /bin/false fabric && \
     chown -R fabric:fabric /app

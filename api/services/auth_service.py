@@ -40,8 +40,8 @@ from api.schemas.agent import (
 )
 from api.schemas.auth import (
     LoginRequest,
+    LoginResponse,
     MFASetupResponse,
-    TokenResponse,
 )
 
 ALGORITHM = "HS256"
@@ -445,7 +445,7 @@ class AuthService:
         username: str,
         email: str,
         password: str,
-    ) -> TokenResponse:
+    ) -> LoginResponse:
         """Create the first admin user if none exists and return a JWT token.
 
         WHY: Initial system setup — the first admin is created through
@@ -480,13 +480,15 @@ class AuthService:
             token_type="admin",
             role="admin",
         )
-        return TokenResponse(
+        return LoginResponse(
             token=token,
             token_type="bearer",
             expires_in=ACCESS_TOKEN_EXPIRE_HOURS * 3600,
+            user=self._admin_to_response(admin),
+            mfa_required=False,
         )
 
-    async def admin_login(self, params: LoginRequest) -> TokenResponse:
+    async def admin_login(self, params: LoginRequest) -> LoginResponse:
         """Authenticate an admin user, enforce lockout, and return a JWT token on success.
 
         WHY: Admin UI login flow — validates credentials, checks lockout,
@@ -533,7 +535,7 @@ class AuthService:
         admin.last_login_at = _utcnow()
         await self.db.commit()
 
-        return TokenResponse(
+        return LoginResponse(
             token=self.create_token(
                 subject=str(admin.id),
                 token_type="admin",
@@ -541,6 +543,21 @@ class AuthService:
             ),
             token_type="bearer",
             expires_in=28800,
+            user=self._admin_to_response(admin),
+            mfa_required=False,
+        )
+
+    def _admin_to_response(self, admin: AdminUser) -> AdminUserResponse:
+        return AdminUserResponse(
+            id=admin.id,
+            username=admin.username,
+            email=admin.email,
+            role=admin.role,
+            team_namespace=admin.team_namespace,
+            mfa_enabled=bool(admin.mfa_enabled),
+            status=admin.status or "active",
+            last_login_at=admin.last_login_at,
+            created_at=admin.created_at,
         )
 
     async def mfa_setup(self, admin_id: UUID) -> MFASetupResponse:

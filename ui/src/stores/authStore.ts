@@ -19,14 +19,45 @@ function loadUser(): AuthUser | null {
   }
 }
 
+function parseJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const parts = token.split('.')
+    if (parts.length < 2) return null
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=')
+    return JSON.parse(atob(padded)) as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+function deriveUserFromToken(token: string): AuthUser | null {
+  const payload = parseJwtPayload(token)
+  const role = payload?.role
+  if (role !== 'admin' && role !== 'editor' && role !== 'viewer') return null
+
+  return {
+    id: typeof payload?.sub === 'string' ? payload.sub : 'unknown',
+    username: typeof payload?.username === 'string' ? payload.username : 'admin',
+    role,
+    team_namespace: typeof payload?.team_namespace === 'string' ? payload.team_namespace : 'team:platform',
+    mfa_enabled: Boolean(payload?.mfa_enabled),
+  }
+}
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   token: localStorage.getItem('fabric_token'),
-  user: loadUser(),
+  user: loadUser() ?? (localStorage.getItem('fabric_token') ? deriveUserFromToken(localStorage.getItem('fabric_token')!) : null),
 
   login: (token: string, user: AuthUser) => {
+    const resolvedUser = user ?? deriveUserFromToken(token)
     localStorage.setItem('fabric_token', token)
-    localStorage.setItem('fabric_user', JSON.stringify(user))
-    set({ token, user })
+    if (resolvedUser) {
+      localStorage.setItem('fabric_user', JSON.stringify(resolvedUser))
+    } else {
+      localStorage.removeItem('fabric_user')
+    }
+    set({ token, user: resolvedUser })
   },
 
   logout: () => {
