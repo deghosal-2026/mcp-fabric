@@ -1,5 +1,5 @@
 [project]
-name = "mcp-fabric"
+name = "mcp-fabric-toolmesh"
 version = "0.1.0"
 description = "Composable tool mesh for MCP ecosystems"
 authors = [

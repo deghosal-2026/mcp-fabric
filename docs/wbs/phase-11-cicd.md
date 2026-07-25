@@ -30,7 +30,7 @@
 
 ### P11-06: Release Workflow — PyPI Publish (#326)
 **Effort:** 0.5h | **Deps:** P0-14
-**Checklist:** `poetry build` creates wheel + sdist → `poetry publish` (requires PYPI_TOKEN) → verify `pip install mcp-fabric==0.1.0` works.
+**Checklist:** `poetry build` creates wheel + sdist → `poetry publish` (requires PYPI_TOKEN) → verify `pip install mcp-fabric-toolmesh==0.1.0` works.
 **Success Criteria:** Package on PyPI. pip install succeeds.
 
 ### P11-07: Release Workflow — GitHub Release (#327)
@@ -45,7 +45,7 @@
 
 ### P11-09: Release Checklist — Post-Release (#329)
 **Effort:** 0.5h | **Deps:** P11-08
-**Checklist:** `docker pull ghcr.io/...:v0.1.0` + smoke test → `pip install mcp-fabric==0.1.0` + smoke test → deploy to staging → capability request works → announce in GitHub Discussions.
+**Checklist:** `docker pull ghcr.io/...:v0.1.0` + smoke test → `pip install mcp-fabric-toolmesh==0.1.0` + smoke test → deploy to staging → capability request works → announce in GitHub Discussions.
 **Success Criteria:** Both Docker + PyPI work. Staging deployment healthy.
 
 ### P11-10: Dependabot Verification (#330)

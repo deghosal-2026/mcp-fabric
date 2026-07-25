@@ -34,7 +34,7 @@
 4. **Verify:**
 
    ```bash
-   pip install mcp-fabric==X.Y.Z
+   pip install mcp-fabric-toolmesh==X.Y.Z
    docker pull ghcr.io/deghosal-2026/mcp-fabric:X.Y.Z
    ```
 

@@ -2588,7 +2588,7 @@ PATCH (0.0.X): Bug fixes, backward-compatible
 
 ### Post-release
 - [ ] Verify: `docker pull ghcr.io/deghosal-2026/mcp-fabric:vX.Y.Z`
-- [ ] Verify: `pip install mcp-fabric==X.Y.Z`
+- [ ] Verify: `pip install mcp-fabric-toolmesh==X.Y.Z`
 - [ ] Smoke test: deploy to staging, run capability request
 - [ ] Announce in GitHub Discussions
 ```

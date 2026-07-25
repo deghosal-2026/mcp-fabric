@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/deghosal-2026/mcp-fabric/actions/workflows/ci.yml/badge.svg)](https://github.com/deghosal-2026/mcp-fabric/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
+[![PyPI](https://img.shields.io/pypi/v/mcp-fabric-toolmesh)](https://pypi.org/project/mcp-fabric-toolmesh/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Ruff](https://img.shields.io/badge/code%20style-ruff-000000)](https://github.com/astral-sh/ruff)
 [![Type checked](https://img.shields.io/badge/mypy-strict-blue)](https://github.com/python/mypy)
@@ -26,6 +27,9 @@ Once a team adds multiple MCP servers, several hard questions emerge:
 ## Quick Start
 
 ```bash
+# Install from PyPI
+pip install mcp-fabric-toolmesh
+
 # Clone and start the full stack (Docker)
 git clone https://github.com/deghosal-2026/mcp-fabric.git
 cd mcp-fabric
