@@ -1,0 +1,18 @@
+{
+  "title": "MCP Fabric — Service Overview",
+  "uid": "mcp-fabric-overview",
+  "version": 1,
+  "panels": [
+    {"title": "Request Rate", "type": "graph", "datasource": "Prometheus", "targets": [{"expr": "rate(fabric_requests_total[5m])", "legendFormat": "{{method}} {{path}}"}]},
+    {"title": "Latency p50/p95/p99", "type": "graph", "datasource": "Prometheus", "targets": [{"expr": "histogram_quantile(0.50, rate(fabric_request_duration_seconds_bucket[5m]))", "legendFormat": "p50"}, {"expr": "histogram_quantile(0.95, rate(fabric_request_duration_seconds_bucket[5m]))", "legendFormat": "p95"}, {"expr": "histogram_quantile(0.99, rate(fabric_request_duration_seconds_bucket[5m]))", "legendFormat": "p99"}]},
+    {"title": "Routing Overhead", "type": "graph", "datasource": "Prometheus", "targets": [{"expr": "histogram_quantile(0.95, rate(fabric_routing_overhead_seconds_bucket[5m]))", "legendFormat": "p95"}]},
+    {"title": "Server Health", "type": "table", "datasource": "Prometheus", "targets": [{"expr": "fabric_server_health", "legendFormat": "{{server_name}}"}]},
+    {"title": "Pending Approvals", "type": "singlestat", "datasource": "Prometheus", "targets": [{"expr": "fabric_approvals_pending"}]},
+    {"title": "Policy Decisions", "type": "graph", "datasource": "Prometheus", "targets": [{"expr": "rate(fabric_policy_decisions_total[5m])", "legendFormat": "{{decision}}"}]},
+    {"title": "Audit Events", "type": "graph", "datasource": "Prometheus", "targets": [{"expr": "rate(fabric_audit_events_total[5m])", "legendFormat": "{{event_type}}"}]},
+    {"title": "DB Connections", "type": "graph", "datasource": "Prometheus", "targets": [{"expr": "fabric_db_connections", "legendFormat": "{{pool}}"}]},
+    {"title": "Redis Connections", "type": "graph", "datasource": "Prometheus", "targets": [{"expr": "fabric_redis_connections", "legendFormat": "{{pool}}"}]},
+    {"title": "Celery Tasks", "type": "graph", "datasource": "Prometheus", "targets": [{"expr": "rate(fabric_celery_tasks_total[5m])", "legendFormat": "{{task_type}} {{status}}"}]}
+  ],
+  "time": {"from": "now-1h", "to": "now"}
+}

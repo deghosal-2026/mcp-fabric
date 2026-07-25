@@ -1,0 +1,111 @@
+[project]
+name = "mcp-fabric"
+version = "0.1.0"
+description = "Composable tool mesh for MCP ecosystems"
+authors = [
+    {name = "Debashish Ghosal", email = "debashish@ghosal.dev"},
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.12"
+keywords = ["mcp", "agent", "governance", "platform", "tool-mesh", "ai"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "greenlet>=3.0",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "sqlalchemy[asyncio]>=2.0",
+    "aiosqlite>=0.22.1",
+    "asyncpg>=0.31.0",
+    "alembic>=1.13",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.14.2",
+    "redis>=8.0.1",
+    "celery>=5.6.3",
+    "kombu>=5.6.0",
+    "httpx>=0.27",
+    "mcp>=1.28.1",
+    "prometheus-client>=0.26.0",
+    "opentelemetry-sdk>=1.28",
+    "opentelemetry-instrumentation-fastapi>=0.49b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.49b0",
+    "opentelemetry-instrumentation-redis>=0.49b0",
+    "structlog>=24.4",
+    "python-jose[cryptography]>=3.5.0",
+    "passlib[bcrypt]>=1.7",
+    "pyotp>=2.9",
+    "opentelemetry-exporter-otlp-proto-http (>=1.44.0,<2.0.0)",
+]
+
+[project.urls]
+Homepage = "https://github.com/deghosal-2026/mcp-fabric"
+Repository = "https://github.com/deghosal-2026/mcp-fabric"
+Documentation = "https://github.com/deghosal-2026/mcp-fabric"
+
+[project.scripts]
+fabric-admin = "api.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "mypy>=2.3.0",
+    "pytest-xdist (>=3.8.0,<4.0.0)",
+]
+
+[tool.poetry]
+packages = [
+    { include = "api", from = "." },
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"api/dependencies.py" = ["B008"]
+"api/routers/*.py" = ["B008"]
+"tests/*.py" = ["B008"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "unit: Tests that run fast with no external dependencies (DB/Redis/OPA mocked).",
+    "integration: Tests that exercise real API routes with test DB + mock MCP servers.",
+    "e2e: Full-stack tests that require Docker Compose (PostgreSQL, Redis, OPA).",
+    "slow: Tests that take >5s to run (timed, large data, chaos).",
+]
+
+[tool.coverage.run]
+source = ["api"]
+omit = ["tests/*", "alembic/*", "api/seeders/*"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["api*"]
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"

@@ -1,0 +1,65 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request: { branches: [main] }
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: { python-version: "3.12" }
+      - run: pip install ruff
+      - run: ruff check api/ tests/
+      - run: ruff format --check api/ tests/
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: { python-version: "3.12" }
+      - run: pip install poetry && poetry install --extras dev
+      - run: poetry run mypy api/
+
+  test-sqlite:
+    runs-on: ubuntu-latest
+    services:
+      redis: { image: redis:7-alpine, ports: ["6379:6379"] }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: { python-version: "3.12" }
+      - run: pip install poetry && poetry install --extras dev
+      - run: poetry run pytest tests/ -m "unit" -v --cov=api --cov-report=xml
+        env:
+          DATABASE_URL: sqlite+aiosqlite://
+          REDIS_URL: redis://localhost:6379/0
+          ENVIRONMENT: testing
+      - uses: codecov/codecov-action@v7
+        with: { file: ./coverage.xml }
+
+  opa-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: open-policy-agent/setup-opa@v2
+        with: { version: "0.68.0" }
+      - run: opa test policies/ -v
+
+  ui-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: "20" }
+      - run: cd ui && npm ci --legacy-peer-deps && npm run lint && npm run typecheck
+
+  ui-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: "20" }
+      - run: cd ui && npm ci --legacy-peer-deps && npx vitest run
