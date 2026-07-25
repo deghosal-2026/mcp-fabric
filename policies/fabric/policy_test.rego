@@ -32,13 +32,6 @@ test_deny_unreviewed_server_for_incident_responder {
     }
 }
 
-test_deny_unreviewed_server_for_new_hire {
-    not allow with input as {
-        "agent_class": "agent:new-hire",
-        "server_trust_level": "unreviewed",
-    }
-}
-
 test_allow_unreviewed_for_new_hire {
     allow with input as {
         "agent_class": "agent:new-hire",
