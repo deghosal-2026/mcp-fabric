@@ -125,7 +125,7 @@ async def get_pack_usage(
     pack_id: UUID,
     svc: PackService = Depends(get_pack_service),
 ) -> dict:
-    """Get usage statistics for a pack. Returns 404 if not found."""
+    """Return usage statistics for a pack. Returns 404 if not found."""
     try:
         return await svc.get_usage_stats(pack_id)
     except PackNotFoundError as exc:
@@ -133,3 +133,13 @@ async def get_pack_usage(
             status_code=404,
             detail={"error": "not_found", "message": str(exc)},
         ) from exc
+
+
+@router.delete("/{pack_id}/classes/{class_id}", status_code=204)
+async def remove_pack_from_class(
+    pack_id: UUID,
+    class_id: UUID,
+    svc: PackService = Depends(get_pack_service),
+) -> None:
+    """Remove a pack assignment from an agent class. Returns 204 on success."""
+    await svc.remove_from_class(pack_id, class_id)

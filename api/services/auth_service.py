@@ -515,6 +515,63 @@ class AuthService:
         admin.password_history = history[-10:]
         await self.db.commit()
 
+    async def _store_reset_token(self, admin_id: UUID) -> str:
+        """Generate and store a password reset token in Redis (valid for 30 min)."""
+        token = uuid4().hex + uuid4().hex
+        try:
+            import redis.asyncio as aioredis
+
+            r = aioredis.from_url(settings.redis_url)
+            await r.setex(f"admin:reset:{token}", 1800, str(admin_id))
+            await r.aclose()
+        except Exception:
+            from api.telemetry.logging import logger
+
+            logger.exception("auth:redis_reset_token_store_failed")
+        return token
+
+    async def _consume_reset_token(self, token: str) -> UUID | None:
+        """Look up and delete a reset token, returning the admin_id if valid."""
+        try:
+            import redis.asyncio as aioredis
+
+            r = aioredis.from_url(settings.redis_url, decode_responses=True)
+            admin_id = await r.get(f"admin:reset:{token}")
+            if admin_id:
+                await r.delete(f"admin:reset:{token}")
+            await r.aclose()
+            return UUID(admin_id) if admin_id else None
+        except Exception:
+            from api.telemetry.logging import logger
+
+            logger.exception("auth:redis_reset_token_consume_failed")
+            return None
+
+    async def complete_password_reset(self, token: str, new_password: str) -> None:
+        """Complete a password reset using a reset token, bypassing old-password check."""
+        if self.db is None:
+            raise RuntimeError("AuthService requires db")
+        self._enforce_password_policy(new_password)
+        admin_id = await self._consume_reset_token(token)
+        if admin_id is None:
+            raise AuthenticationError("Invalid or expired reset token")
+        result = await self.db.execute(
+            select(AdminUser).where(AdminUser.id == admin_id)
+        )
+        admin = result.scalar_one_or_none()
+        if admin is None:
+            raise AuthenticationError("Admin not found")
+
+        history = admin.password_history or []
+        for past_hash in history[-5:]:
+            if self.verify_password(new_password, past_hash):
+                raise PasswordPolicyError("Password has been used recently")
+
+        history.append(admin.password_hash)
+        admin.password_hash = self.hash_password(new_password)
+        admin.password_history = history[-10:]
+        await self.db.commit()
+
     def _enforce_password_policy(self, password: str) -> None:
         """Validate password meets minimum length, uppercase, lowercase, and digit requirements."""
         if len(password) < PASSWORD_MIN_LENGTH:

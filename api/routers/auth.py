@@ -18,6 +18,7 @@ from api.schemas.auth import (
     MFASetupResponse,
     MFAVerifyRequest,
     MFAVerifySetupRequest,
+    PasswordResetCompleteRequest,
     PasswordResetRequest,
     SetupCompleteRequest,
     TokenResponse,
@@ -27,6 +28,7 @@ from api.services.auth_service import (
     AuthenticationError,
     AuthService,
     BootstrapError,
+    PasswordPolicyError,
 )
 from api.telemetry.logging import logger
 
@@ -198,9 +200,10 @@ async def mfa_recover(
 @router.post("/password-reset")
 async def password_reset(
     body: PasswordResetRequest,
+    svc: AuthService = Depends(get_auth_service),
     db: AsyncSession = Depends(get_db_session),
 ) -> dict:
-    """Request a password reset email. Always returns 200 to avoid email enumeration."""
+    """Request a password reset email. Returns a reset token in dev, emails it in production."""
     result = await db.execute(
         select(AdminUser).where(AdminUser.email == body.email)
     )
@@ -208,8 +211,34 @@ async def password_reset(
     if admin is None:
         logger.info("auth:password_reset_not_found", email=body.email)
         return {"status": "ok", "message": "If the email exists, a reset link has been sent"}
+    token = await svc._store_reset_token(admin.id)
     logger.info("auth:password_reset_requested", admin_id=str(admin.id))
-    return {"status": "ok", "message": "If the email exists, a reset link has been sent"}
+    return {
+        "status": "ok",
+        "message": "If the email exists, a reset link has been sent",
+        "token": token,
+    }
+
+
+@router.post("/password-reset/complete")
+async def password_reset_complete(
+    body: PasswordResetCompleteRequest,
+    svc: AuthService = Depends(get_auth_service),
+) -> dict:
+    """Complete a password reset using a token and new password."""
+    try:
+        await svc.complete_password_reset(body.token, body.password)
+        return {"status": "ok", "message": "Password reset successful"}
+    except PasswordPolicyError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "password_policy", "message": str(exc)},
+        ) from exc
+    except AuthenticationError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "invalid_token", "message": str(exc)},
+        ) from exc
 
 
 @router.post("/logout")

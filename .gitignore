@@ -42,3 +42,8 @@ redis-data/
 # Telemetry
 *.otel
 .coverage
+
+# Tool caches
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/

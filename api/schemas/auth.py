@@ -59,6 +59,13 @@ class PasswordResetRequest(BaseModel):
     email: str
 
 
+class PasswordResetCompleteRequest(BaseModel):
+    """Password reset payload with token and new password."""
+
+    token: str
+    password: str = Field(min_length=8, max_length=128)
+
+
 class SetupCompleteRequest(BaseModel):
     """Initial admin setup payload (password + optional MFA code)."""
 
