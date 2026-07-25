@@ -61,6 +61,11 @@ dev = [
     "pytest-xdist (>=3.8.0,<4.0.0)",
 ]
 
+[tool.poetry]
+packages = [
+    { include = "api", from = "." },
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

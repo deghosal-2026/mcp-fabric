@@ -7,7 +7,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with: { python-version: "3.12" }
       - run: pip install ruff
@@ -17,7 +17,7 @@ jobs:
   typecheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with: { python-version: "3.12" }
       - run: pip install poetry && poetry lock && poetry install
@@ -28,7 +28,7 @@ jobs:
     services:
       redis: { image: redis:7-alpine, ports: ["6379:6379"] }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with: { python-version: "3.12" }
       - run: pip install poetry && poetry lock && poetry install
@@ -37,13 +37,13 @@ jobs:
           DATABASE_URL: sqlite+aiosqlite://
           REDIS_URL: redis://localhost:6379/0
           ENVIRONMENT: testing
-      - uses: codecov/codecov-action@v4
+      - uses: codecov/codecov-action@v7
         with: { file: ./coverage.xml }
 
   opa-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: open-policy-agent/setup-opa@v2
         with: { version: "0.68.0" }
       - run: opa test policies/ -v
@@ -51,15 +51,15 @@ jobs:
   ui-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with: { node-version: "20" }
-      - run: cd ui && npm ci && npm run lint && npm run typecheck
+      - run: cd ui && npm ci --legacy-peer-deps && npm run lint && npm run typecheck
 
   ui-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with: { node-version: "20" }
-      - run: cd ui && npm ci && npx vitest run
+      - run: cd ui && npm ci --legacy-peer-deps && npx vitest run
