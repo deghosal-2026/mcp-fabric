@@ -9,7 +9,7 @@ import type {
 
 const BASE = '/v1'
 
-async function fetcher<T>(path: string, options?: RequestInit): Promise<T> {
+export async function fetcher<T>(path: string, options?: RequestInit): Promise<T> {
   const token = useAuthStore.getState().token
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -22,7 +22,7 @@ async function fetcher<T>(path: string, options?: RequestInit): Promise<T> {
 
   const res = await fetch(`${BASE}${path}`, { ...options, headers })
 
-  if (res.status === 401) {
+  if (res.status === 401 && !path.startsWith('/auth/')) {
     useAuthStore.getState().logout()
     window.location.href = '/login'
     throw new Error('Unauthorized')
@@ -36,7 +36,7 @@ async function fetcher<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json()
 }
 
-function buildQuery(base: string, params?: Record<string, string | undefined>): string {
+export function buildQuery(base: string, params?: Record<string, string | undefined>): string {
   const search = new URLSearchParams()
   if (params) {
     for (const [key, value] of Object.entries(params)) {
@@ -227,7 +227,4 @@ export function fetchDashboard() {
   return fetcher<DashboardStats>('/admin/dashboard')
 }
 
-// Trust Posture
-export function fetchTrustPosture() {
-  return fetcher<MCPServer[]>('/servers?per_page=200')
-}
+// Trust Posture — uses fetchServers directly; this function removed (dead code)

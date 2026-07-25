@@ -24,7 +24,7 @@ interface BadgeProps {
 export function Badge({ label, variant }: BadgeProps) {
   const className = colorMap[variant || label] || 'bg-gray-100 text-gray-800'
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${className}`}>
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium truncate max-w-[200px] ${className}`}>
       {label}
     </span>
   )

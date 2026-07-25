@@ -9,11 +9,19 @@ interface AuthState {
   isAuthenticated: () => boolean;
 }
 
+function loadUser(): AuthUser | null {
+  try {
+    const raw = localStorage.getItem('fabric_user')
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    localStorage.removeItem('fabric_user')
+    return null
+  }
+}
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   token: localStorage.getItem('fabric_token'),
-  user: localStorage.getItem('fabric_user')
-    ? JSON.parse(localStorage.getItem('fabric_user')!)
-    : null,
+  user: loadUser(),
 
   login: (token: string, user: AuthUser) => {
     localStorage.setItem('fabric_token', token)

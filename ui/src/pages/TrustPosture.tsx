@@ -8,6 +8,7 @@ import type { MCPServer } from '../types'
 
 export function TrustPosturePage() {
   const [selectedClassId, setSelectedClassId] = useState<string>('')
+  const [pendingChanges, setPendingChanges] = useState<Record<string, string>>({})
   const queryClient = useQueryClient()
   const { addToast } = useToast()
 
@@ -24,11 +25,22 @@ export function TrustPosturePage() {
   const updateTrust = useMutation({
     mutationFn: ({ serverId, trustLevel }: { serverId: string; trustLevel: string }) =>
       setTrustAssignment(selectedClassId, serverId, trustLevel),
+    onMutate: ({ serverId, trustLevel }) => {
+      setPendingChanges(prev => ({ ...prev, [serverId]: trustLevel }))
+    },
     onSuccess: () => {
+      setPendingChanges({})
       queryClient.invalidateQueries({ queryKey: ['servers'] })
       addToast('success', 'Trust level updated')
     },
-    onError: (err: Error) => addToast('error', err.message),
+    onError: (err: Error, { serverId }) => {
+      setPendingChanges(prev => {
+        const next = { ...prev }
+        delete next[serverId]
+        return next
+      })
+      addToast('error', err.message)
+    },
   })
 
   const trustColors: Record<string, string> = {
@@ -78,7 +90,7 @@ export function TrustPosturePage() {
                   <span className="text-xs text-gray-400">{server.owner_team}</span>
                 </div>
                 <select
-                  value={server.trust_level}
+                  value={pendingChanges[server.id] ?? server.trust_level}
                   onChange={e => { if (selectedClassId) updateTrust.mutate({ serverId: server.id, trustLevel: e.target.value }) }}
                   className="w-full px-2 py-1.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
@@ -87,7 +99,7 @@ export function TrustPosturePage() {
                   <option value="approval-gated">Approval Gated</option>
                   <option value="unreviewed">Unreviewed</option>
                 </select>
-                {server.trust_level === 'unreviewed' && (
+                {(pendingChanges[server.id] ?? server.trust_level) === 'unreviewed' && (
                   <div className="mt-2 text-xs text-red-600 font-medium">⚠ Needs review</div>
                 )}
               </div>
