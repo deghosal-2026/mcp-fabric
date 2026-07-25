@@ -76,6 +76,20 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "unit: Tests that run fast with no external dependencies (DB/Redis/OPA mocked).",
+    "integration: Tests that exercise real API routes with test DB + mock MCP servers.",
+    "e2e: Full-stack tests that require Docker Compose (PostgreSQL, Redis, OPA).",
+    "slow: Tests that take >5s to run (timed, large data, chaos).",
+]
+
+[tool.coverage.run]
+source = ["api"]
+omit = ["tests/*", "alembic/*", "api/seeders/*"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
 
 [tool.mypy]
 python_version = "3.12"
