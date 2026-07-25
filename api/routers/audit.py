@@ -1,3 +1,8 @@
+"""Audit log query and export routes.
+
+Endpoints: GET /v1/audit, POST /v1/audit/export.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +17,7 @@ router = APIRouter(prefix="/v1/audit", tags=["audit"])
 async def get_audit_service(
     db: AsyncSession = Depends(get_db_session),
 ) -> AuditService:
+    """Dependency that provides an AuditService instance."""
     return AuditService(db=db)
 
 
@@ -24,6 +30,7 @@ async def list_audit_events(
     offset: int = Query(0, ge=0),
     svc: AuditService = Depends(get_audit_service),
 ) -> PaginatedAudit:
+    """List audit events with optional filters. Returns paginated results."""
     events = await svc.query(
         event_type=event_type,
         actor_type=actor_type,
@@ -47,6 +54,7 @@ async def export_audit_logs(
     body: AuditExportRequest,
     svc: AuditService = Depends(get_audit_service),
 ) -> dict:
+    """Request an export of audit logs. Returns 501 as this is not yet implemented."""
     raise HTTPException(
         status_code=501,
         detail={

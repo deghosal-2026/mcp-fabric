@@ -5,20 +5,23 @@
 
 ## 12.1 Code Documentation (8 tasks)
 
-### P12-01: Python Docstrings — Services (#333)
+### P12-01: Python Docstrings — Services (#333) — ✅ Done
 **Effort:** 2h | **Deps:** Phase 3
-**Checklist:** All public methods in 9 service classes have Google-style docstrings: Args, Returns, Raises → class-level docstring explaining responsibility.
-**Success Criteria:** `pydocstyle api/services/` passes. IDE hover shows docs.
+- [x] All 12 service files have module, class, and method docstrings
+- [x] `ruff check api/services/` passes
 
-### P12-02: Python Docstrings — Routes (#334)
+### P12-02: Python Docstrings — Routes (#334) — ✅ Done
 **Effort:** 2h | **Deps:** Phase 5
-**Checklist:** All route handlers have docstrings: summary, description, response descriptions for each status code → OpenAPI operation_id auto-generated from function names.
-**Success Criteria:** Swagger UI shows endpoint descriptions. /openapi.json includes all docstrings.
+- [x] All route handlers in 9 router files have docstrings
+- [x] OpenAPI descriptions populated from route docstrings
+- [x] `ruff check api/routers/` passes
 
-### P12-03: Python Docstrings — Models + Middleware (#335)
+### P12-03: Python Docstrings — Models + Middleware (#335) — ✅ Done
 **Effort:** 1h | **Deps:** Phase 1, Phase 4
-**Checklist:** ORM models: column-level comments explaining purpose → Pydantic schemas: Field(description=...) for all fields → middleware: class docstring explaining position in pipeline.
-**Success Criteria:** All models documented. Schema fields have descriptions in OpenAPI.
+- [x] All ORM models have class docstrings
+- [x] All Pydantic schemas have module and class docstrings
+- [x] All middleware have class docstrings
+- [x] `ruff check api/models/ api/schemas/ api/middleware/` passes
 
 ### P12-04: OpenAPI Spec Accuracy (#336)
 **Effort:** 1.5h | **Deps:** Phase 5

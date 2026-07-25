@@ -20,9 +20,12 @@ from api.middleware import (
     TracingMiddleware,
 )
 from api.middleware.cors import CORS_CONFIG
+from api.routers.approval import router as approval_router
 from api.routers.audit import router as audit_router
 from api.routers.auth import router as auth_router
 from api.routers.capabilities import router as capabilities_router
+from api.routers.pack import router as pack_router
+from api.routers.policy import router as policy_router
 from api.routers.registry import router as registry_router
 from api.routers.routing import router as routing_router
 from api.routers.routing import router_rules
@@ -82,6 +85,9 @@ app.include_router(auth_router)
 app.include_router(capabilities_router)
 app.include_router(routing_router)
 app.include_router(router_rules)
+app.include_router(policy_router)
+app.include_router(approval_router)
+app.include_router(pack_router)
 
 @app.get("/health")
 async def health(request: Request):

@@ -19,11 +19,15 @@ class MCPServer(UUIDMixin, TimestampMixin, Base):
     labels: Mapped[list[Any] | None] = mapped_column(JSON, default=lambda: [])
     trust_level: Mapped[str | None] = mapped_column(String(50), default="unreviewed")
     health_status: Mapped[str | None] = mapped_column(String(50), default="unknown")
-    last_health_check: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_health_check: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     team_namespace: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    decommissioned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decommissioned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     decommission_phase: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     tools = relationship("ServerTool", back_populates="server", cascade="all, delete-orphan")

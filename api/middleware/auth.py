@@ -11,7 +11,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
-from api.middleware.constants import HEALTH_PATHS
+from api.middleware.constants import AUTH_PATHS, HEALTH_PATHS
 from api.services.auth_service import AuthService, InvalidTokenError
 from api.telemetry.logging import logger
 
@@ -22,7 +22,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self.auth = auth_service or AuthService()
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        if request.url.path in HEALTH_PATHS:
+        if request.url.path in HEALTH_PATHS | AUTH_PATHS:
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization", "")

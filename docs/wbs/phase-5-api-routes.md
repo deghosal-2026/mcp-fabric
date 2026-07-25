@@ -56,10 +56,32 @@
 - [x] ApprovalService status lookup → 200 / 404
 - [x] api/routers/routing.py
 
-## 5.4 Policy Routes (5 tasks) — ⏳ Pending (need PolicyService)
+## 5.4 Policy Routes (5 tasks) — ✅ Done
 
-### P5-15 to P5-19
-POST /v1/agent-classes, GET /v1/agent-classes, GET /v1/agent-classes/{id}, POST /v1/agent-classes/{id}/trust, POST /v1/admin/policies/bundle.
+### P5-15: POST /v1/agent-classes (#agent-classes)
+- [x] Body validation via AgentClassCreate schema
+- [x] Call PolicyService.create_agent_class() → 201 with AgentClassResponse
+- [x] api/routers/policy.py
+
+### P5-16: GET /v1/agent-classes
+- [x] Query param: team_namespace filter
+- [x] Call list_agent_classes() → 200 with list[AgentClassResponse]
+- [x] api/routers/policy.py
+
+### P5-17: GET /v1/agent-classes/{class_id}
+- [x] Path param class_id UUID → call get_agent_class()
+- [x] 200 with AgentClassResponse, not found → 404
+- [x] api/routers/policy.py
+
+### P5-18: POST /v1/agent-classes/{class_id}/trust
+- [x] Body: TrustAssignmentCreate with server_id and trust_level
+- [x] Call PolicyService.set_trust() → 201 with TrustAssignmentResponse
+- [x] api/routers/policy.py
+
+### P5-19: POST /v1/admin/policies/bundle
+- [x] Body: BundleDeployRequest with rego_content
+- [x] Call deploy_bundle() → 201 with OPAPolicyVersionResponse
+- [x] api/routers/policy.py
 
 ## 5.5 Routing Rule Routes (3 tasks) — ✅ Done
 
@@ -68,9 +90,23 @@ POST /v1/agent-classes, GET /v1/agent-classes, GET /v1/agent-classes/{id}, POST 
 - [x] GET /v1/routing-rules — api/routers/routing.py
 - [x] DELETE /v1/routing-rules/{id} — api/routers/routing.py
 
-## 5.6 Approval Routes (3 tasks) — ⏳ Pending (need ApprovalService)
+## 5.6 Approval Routes (3 tasks) — ✅ Done
 
-### P5-23 to P5-25
+### P5-23: POST /v1/approvals
+- [x] Body: ApprovalRequestCreate with agent, capability, server IDs
+- [x] Call ApprovalService.create_request() → 201 with ApprovalRequestResponse
+- [x] api/routers/approval.py
+
+### P5-24: GET /v1/approvals/{request_id}
+- [x] Path param → call get_status() → 200 with ApprovalStatusResponse
+- [x] Not found → 404
+- [x] api/routers/approval.py
+
+### P5-25: POST /v1/approvals/{request_id}/review
+- [x] Body: ApprovalAction with approver_id + optional note
+- [x] Call approve(request_id, action) → 200 with ApprovalRequestResponse
+- [x] Not found → 404, already resolved → 409, expired → 410
+- [x] api/routers/approval.py
 
 ## 5.7 Audit Routes (2 tasks) — ✅ Done
 
@@ -78,22 +114,91 @@ POST /v1/agent-classes, GET /v1/agent-classes, GET /v1/agent-classes/{id}, POST 
 - [x] GET /v1/audit (query+paginate) — api/routers/audit.py
 - [x] POST /v1/audit/export (Celery task stub) — 501
 
-## 5.8 Pack Routes (8 tasks) — ⏳ Pending (need PackService)
+## 5.8 Pack Routes (8 tasks) — ✅ Done
 
-### P5-28 to P5-35
+### P5-28: POST /v1/packs
+- [x] Body: PackCreate with name, description, team_namespace
+- [x] Call PackService.create_pack() → 201 with PackResponse
+- [x] api/routers/pack.py
 
-## 5.9 Auth Routes (9 tasks) — ✅ Partial
+### P5-29: GET /v1/packs
+- [x] Query params: team_namespace, limit, offset
+- [x] Call list_packs() → 200 with list[PackResponse]
+- [x] api/routers/pack.py
 
-### P5-36 to P5-44
-- [x] POST /v1/auth/connect — api/routers/auth.py
-- [x] POST /v1/auth/login — api/routers/auth.py
-- [ ] POST /v1/auth/mfa/verify
-- [ ] POST /v1/auth/mfa/setup
-- [ ] POST /v1/auth/mfa/verify-setup
-- [ ] POST /v1/auth/mfa/recover
-- [ ] POST /v1/auth/password-reset
-- [ ] POST /v1/auth/password-reset/complete
-- [ ] POST /v1/auth/setup + POST /v1/auth/logout
+### P5-30: GET /v1/packs/{pack_id}
+- [x] Path param → call get_pack() → 200 with PackResponse
+- [x] Not found → 404
+- [x] api/routers/pack.py
+
+### P5-31: PUT /v1/packs/{pack_id}
+- [x] Body: PackCreate → call update_pack() → 200 with PackResponse
+- [x] Not found → 404
+- [x] api/routers/pack.py
+
+### P5-32: DELETE /v1/packs/{pack_id}
+- [x] Path param → call delete_pack() → 204 No Content
+- [x] Not found → 404
+- [x] api/routers/pack.py
+
+### P5-33: POST /v1/packs/{pack_id}/capabilities
+- [x] Body: PackAssignmentRequest → assign + return updated pack
+- [x] Not found → 404
+- [x] api/routers/pack.py
+
+### P5-34: POST /v1/packs/{pack_id}/clone
+- [x] Body: ClonePackRequest → call clone_pack() → 201 with PackResponse
+- [x] Not found → 404
+- [x] api/routers/pack.py
+
+### P5-35: GET /v1/packs/{pack_id}/usage
+- [x] Path param → call get_usage_stats() → 200 with dict
+- [x] Not found → 404
+- [x] api/routers/pack.py
+
+## 5.9 Auth Routes (9 tasks) — ✅ Done
+
+### P5-36: POST /v1/auth/login
+- [x] Body: LoginRequest → call admin_login() → 200 with TokenResponse
+- [x] Account locked → 423, invalid credentials → 401
+- [x] api/routers/auth.py
+
+### P5-37: POST /v1/auth/connect
+- [x] Body: LoginRequest → create agent token → 200 with TokenResponse
+- [x] api/routers/auth.py
+
+### P5-38: POST /v1/auth/setup
+- [x] Body: SetupCompleteRequest → call first_admin_bootstrap() → 201
+- [x] Already set up → 409
+- [x] api/routers/auth.py
+
+### P5-39: POST /v1/auth/mfa/setup
+- [x] Requires admin auth → call mfa_setup() → 200 with MFASetupResponse
+- [x] admin not found → 404
+- [x] api/routers/auth.py
+
+### P5-40: POST /v1/auth/mfa/verify-setup
+- [x] Requires admin auth → call mfa_verify_setup() → 200
+- [x] Invalid code → 400
+- [x] api/routers/auth.py
+
+### P5-41: POST /v1/auth/mfa/verify
+- [x] Requires admin auth → TOTP verification against stored secret
+- [x] Not found / not configured → 404, invalid code → 400
+- [x] api/routers/auth.py
+
+### P5-42: POST /v1/auth/mfa/recover
+- [x] Requires admin auth → validate recovery code hash, consume on use
+- [x] Not found → 404, invalid → 400
+- [x] api/routers/auth.py
+
+### P5-43: POST /v1/auth/password-reset
+- [x] Body: email → look up admin, log request (idempotent response)
+- [x] api/routers/auth.py
+
+### P5-44: POST /v1/auth/logout
+- [x] Invalidate X-Session-Token via logout_admin_session()
+- [x] api/routers/auth.py
 
 ## 5.10 Admin Routes (9 tasks) — ⏳ Pending
 

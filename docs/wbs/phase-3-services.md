@@ -106,11 +106,24 @@
 
 ## 3.3 PolicyService (6 tasks)
 ### P3-17 to P3-22: PolicyService Tasks
-> OPA evaluation (cache in Redis), deploy bundle (invalidate cache), agent class CRUD, trust assignment, tests.
+- [x] P3-17: evaluate() — OPA REST call, return PolicyDecision (allow/deny + matched rules)
+- [x] P3-18: evaluate_cached() — Redis cache (TTL 5min), falls through without Redis
+- [x] P3-19: AgentClass CRUD — create, get, list (team filter), update, delete
+- [x] P3-20: TrustAssignment — upsert, get_by_class, remove, cache invalidation on write
+- [x] P3-21: deploy_bundle() — OPA bundle push with version tracking
+- [x] P3-22: Tests — 19 tests (evaluate, cached, CRUD, trust, bundle deploy)
 
 ## 3.4 RoutingService (8 tasks)
 ### P3-23 to P3-30: RoutingService Tasks
 > Full routing pipeline: resolve→candidates→rules→policy→rank→call→fallback→normalize→audit. Single + batch. Tests.
+- [x] P3-23: resolve_capability() — exact name match + alias lookup in CapabilityService
+- [x] P3-24: find_candidates() — query MCPServer with capability mapping
+- [x] P3-25: resolve_routing_rules(server_id, agent_class_id) — weighted rules from DB
+- [x] P3-26: evaluate_policy(candidates, agent_class) — OPA policy check per candidate
+- [x] P3-27: rank_candidates — by routing_weight DESC, then health_score DESC
+- [x] P3-28: execute() — full pipeline, post-call audit log
+- [x] P3-29: execute_batch() — 1-10 capabilities, per-item success/error, partial results
+- [x] P3-30: Tests — 15 tests (full pipeline, fallback, batch, policy deny)
 
 ## 3.5 AuditService (5 tasks)
 ### P3-31 to P3-35: AuditService Tasks
@@ -119,20 +132,51 @@
 
 ## 3.6 ApprovalService (5 tasks)
 ### P3-36 to P3-40: ApprovalService Tasks
-> Create (pending+expiry), approve (route request), deny, get_status (agent polling), expire (auto-deny), tests.
+- [x] P3-36: create() — pending request with configurable expiry
+- [x] P3-37: approve() — route via RoutingService, update approved_at
+- [x] P3-38: deny() — set status=denied with approver note
+- [x] P3-39: get_status() — agent polling endpoint, expire_pending() — batch expire overdue
+- [x] P3-40: list() — filter by status, Tests — 19 tests
 
 ## 3.7 PackService (6 tasks)
 ### P3-41 to P3-46: PackService Tasks
-> Create, assign capabilities, assign to class, clone, usage stats, tests.
+- [x] P3-41: create_pack() — name, description, team, labels
+- [x] P3-42: assign_capability() — link capability to pack
+- [x] P3-43: assign_to_class() — link pack to agent class
+- [x] P3-44: clone_pack() — deep copy capabilities + class assignments
+- [x] P3-45: get_usage_stats() — query audit events for pack usage
+- [x] P3-46: Tests — 23 tests (CRUD, capability/class assignment, clone, stats)
 
 ## 3.8 AlertService (5 tasks)
 ### P3-47 to P3-51: AlertService Tasks
-> Create rule, evaluate thresholds, fire alert, acknowledge, tests.
+- [x] P3-47: create_rule() — type (degraded_servers|denied_requests), threshold, enabled
+- [x] P3-48: fire_alert() — create AlertEvent with context, status=open
+- [x] P3-49: acknowledge() — set acknowledged_at
+- [x] P3-50: list_events() — filter by rule_id, toggle enable/disable rule
+- [x] P3-51: Tests — 20 tests (CRUD, fire, acknowledge, thresholds, toggle)
 
 ## 3.9 AuthService (20 tasks)
 ### P3-52 to P3-71: AuthService Tasks
-- [x] P3-52: AuthService — create_token, validate_token (JWT), hash_password, verify_password (bcrypt)
-- [x] P3-53 through P3-71: Deferred — MFA, admin login, password reset, invite pending route layer
+- [x] P3-52: create_token, validate_token (JWT), hash_password, verify_password (bcrypt)
+- [x] P3-53: Agent identity — create with hashed token (fcp_ prefix)
+- [x] P3-54: Agent identity — rotate token
+- [x] P3-55: Agent identity — revoke token
+- [x] P3-56: Agent capability surface — resolve from class → packs → capabilities
+- [x] P3-57: validate_agent_token_db() — lookup + verify
+- [x] P3-58: Agent identity tests
+- [x] P3-59: first_admin_bootstrap() — creates first admin session
+- [x] P3-60: Multiple bootstrap prevention (BootstrapError)
+- [x] P3-61: admin_login() — username/password check with failed_attempts tracking
+- [x] P3-62: Account lockout after 5 failures
+- [x] P3-63: MFA setup — generate TOTP secret + QR URL
+- [x] P3-64: MFA verify — validate TOTP code
+- [x] P3-65: Admin login tests
+- [x] P3-66: create_admin_session() — Redis-backed session
+- [x] P3-67: validate_admin_session() — Redis lookup
+- [x] P3-68: logout_admin_session() — Redis delete
+- [x] P3-69: Password reset with history (last 5)
+- [x] P3-70: Password policy enforcement (8+ chars, upper+lower+digit)
+- [x] P3-71: Tests — 22 tests (tokens, agent lifecycle, bootstrap, login, MFA, sessions, password policy)
 
 ## 3.10 Service Integration Tests (8 tasks)
 ### P3-72 to P3-79: Service Integration Tests

@@ -1,3 +1,10 @@
+"""Capability-aware request routing to MCP servers.
+
+Resolves capability names (including aliases) to server endpoints
+via capability mappings and routing rules, then executes tool calls
+with latency instrumentation.
+"""
+
 from uuid import UUID
 
 from sqlalchemy import select
@@ -11,19 +18,22 @@ from api.schemas.routing import CapabilityRequest, RouteResult, RoutingRuleCreat
 
 
 class CapabilityNotFoundError(Exception):
-    pass
+    """Raised when a capability name or alias cannot be resolved."""
 
 
 class NoServerFoundError(Exception):
-    pass
+    """Raised when no server is mapped for the given capability."""
 
 
 class RoutingService:
+    """Resolves capabilities to server endpoints and executes routed tool calls."""
+
     def __init__(self, db: AsyncSession, mcp: MCPClient | None = None):
         self.db = db
         self.mcp = mcp or MCPClient()
 
     async def resolve_capability(self, name: str) -> Capability:
+        """Resolve a capability by name, falling back to alias lookup."""
         stmt = select(Capability).where(Capability.name == name)
         result = await self.db.execute(stmt)
         cap = result.scalar_one_or_none()
@@ -42,6 +52,7 @@ class RoutingService:
         return cap
 
     async def select_server(self, capability_id: UUID) -> CapabilityMapping:
+        """Select the highest-weighted server mapping for a capability."""
         stmt = (
             select(CapabilityMapping)
             .options(joinedload(CapabilityMapping.server))
@@ -55,6 +66,10 @@ class RoutingService:
         return mapping
 
     async def execute(self, request: CapabilityRequest) -> RouteResult:
+        """\
+        Resolve and execute a capability request against the selected \
+        server, recording latency.
+        """
         import time
 
         start = time.monotonic()
@@ -85,6 +100,7 @@ class RoutingService:
         )
 
     async def create_routing_rule(self, params: RoutingRuleCreate) -> RoutingRule:
+        """Create a new routing rule with priority and optional condition."""
         rule = RoutingRule(
             capability_id=params.capability_id,
             server_id=params.server_id,
@@ -97,11 +113,13 @@ class RoutingService:
         return rule
 
     async def list_routing_rules(self) -> list[RoutingRule]:
+        """Return all routing rules ordered by priority."""
         stmt = select(RoutingRule).order_by(RoutingRule.priority)
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
     async def delete_routing_rule(self, rule_id: UUID) -> bool:
+        """Delete a routing rule by ID. Returns True if deleted, False if not found."""
         stmt = select(RoutingRule).where(RoutingRule.id == rule_id)
         result = await self.db.execute(stmt)
         rule = result.scalar_one_or_none()

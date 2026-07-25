@@ -1,3 +1,9 @@
+"""Capability routing and routing rule management routes.
+
+Endpoints: POST /v1/capability/request, POST /v1/capability/batch,
+POST /v1/routing-rules, GET /v1/routing-rules, DELETE /v1/routing-rules/{id}.
+"""
+
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -24,6 +30,7 @@ router = APIRouter(prefix="/v1/capability", tags=["routing"])
 async def get_routing_service(
     db: AsyncSession = Depends(get_db_session),
 ) -> RoutingService:
+    """Dependency that provides a RoutingService instance."""
     return RoutingService(db=db, mcp=MCPClient())
 
 
@@ -32,6 +39,10 @@ async def capability_request(
     body: CapabilityRequest,
     svc: RoutingService = Depends(get_routing_service),
 ) -> RouteResult:
+    """Execute a single capability request by routing to the appropriate server.
+
+    Returns 404 if capability or server not found.
+    """
     try:
         return await svc.execute(body)
     except CapabilityNotFoundError as exc:
@@ -51,6 +62,10 @@ async def capability_batch(
     body: BatchCapabilityRequest,
     svc: RoutingService = Depends(get_routing_service),
 ) -> BatchResult:
+    """Execute multiple capability requests in a batch.
+
+    Errors per request are captured in the results.
+    """
     results: list[RouteResult | dict] = []
     for req in body.requests:
         try:
@@ -69,6 +84,7 @@ async def create_routing_rule(
     body: RoutingRuleCreate,
     svc: RoutingService = Depends(get_routing_service),
 ) -> dict:
+    """Create a new routing rule. Returns 201 with the rule details."""
     rule = await svc.create_routing_rule(body)
     return {
         "id": str(rule.id),
@@ -82,6 +98,7 @@ async def create_routing_rule(
 async def list_routing_rules(
     svc: RoutingService = Depends(get_routing_service),
 ) -> list[dict]:
+    """List all routing rules."""
     rules = await svc.list_routing_rules()
     return [
         {
@@ -99,6 +116,7 @@ async def delete_routing_rule(
     rule_id: UUID,
     svc: RoutingService = Depends(get_routing_service),
 ) -> None:
+    """Delete a routing rule by ID. Returns 404 if not found, 204 on success."""
     deleted = await svc.delete_routing_rule(rule_id)
     if not deleted:
         raise HTTPException(

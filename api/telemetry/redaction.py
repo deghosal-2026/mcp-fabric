@@ -1,7 +1,5 @@
 import re
 
-import structlog
-
 TOKEN_PATTERN = re.compile(r"\b([A-Za-z0-9_-]{20,})\b")
 PASSWORD_PATTERN = re.compile(r'(?i)(password|secret|token|api_key)\s*[=:]\s*["\']?[^"\'&\s]+')
 

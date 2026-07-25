@@ -1,3 +1,10 @@
+"""MCP server registry — register, inspect, list, and decommission servers.
+
+Manages the lifecycle of MCP server endpoints, including tool schema
+discovery, health tracking, decommissioning with dependency reporting,
+and Redis-backed health caching.
+"""
+
 from __future__ import annotations
 
 import base64
@@ -46,17 +53,24 @@ _READ_ONLY_PREFIXES = ("get", "list", "search", "read", "find", "query", "check"
 
 
 def _is_read_only_tool(tool: ToolDefinition) -> bool:
+    """\
+    Return True if the tool name starts with a known read-only \
+    prefix (get, list, search, etc.).
+    """
     name = tool.name.lower()
     return any(name.startswith(p) for p in _READ_ONLY_PREFIXES)
 
 
 def _suggest_trust_level(tools: list[ToolDefinition]) -> str:
+    """Suggest 'trusted' if all tools are read-only, otherwise 'unreviewed'."""
     if tools and all(_is_read_only_tool(t) for t in tools):
         return "trusted"
     return "unreviewed"
 
 
 class RegistryService:
+    """MCP server registry — register, inspect, list, decommission, and monitor server health."""
+
     def __init__(
         self,
         db: AsyncSession,
@@ -70,6 +84,7 @@ class RegistryService:
         self.redis = redis_client
 
     async def register(self, params: ServerCreate) -> ServerResponse:
+        """Register a new MCP server, discover its tools, and suggest a trust level."""
         result = await self.db.execute(
             select(MCPServer).where(MCPServer.endpoint == params.endpoint)
         )
@@ -126,6 +141,7 @@ class RegistryService:
         return ServerResponse.model_validate(server)
 
     async def inspect(self, server_id: UUID) -> ServerInspectResponse:
+        """Inspect a server, detect tool changes (added, removed, changed), and record versions."""
         result = await self.db.execute(
             select(MCPServer)
             .options(selectinload(MCPServer.tools))
@@ -261,6 +277,10 @@ class RegistryService:
         cursor: str | None = None,
         per_page: int = 50,
     ) -> PaginatedServers:
+        """\
+        List servers with optional filters (team, trust level, health, \
+        name search) and cursor-based pagination.
+        """
         query = select(MCPServer).options(selectinload(MCPServer.tools))
 
         if team is not None:
@@ -323,6 +343,10 @@ class RegistryService:
         )
 
     async def get_server(self, server_id: UUID) -> ServerDetail:
+        """\
+        Get detailed server information including tools, versions, \
+        trust, mappings, and routing rules.
+        """
         result = await self.db.execute(
             select(MCPServer)
             .options(
@@ -352,9 +376,9 @@ class RegistryService:
             endpoint=server.endpoint,
             owner_team=server.owner_team,
             description=server.description,
-            labels=server.labels,
-            trust_level=server.trust_level,
-            health_status=server.health_status,
+            labels=server.labels or [],
+            trust_level=server.trust_level or "unverified",
+            health_status=server.health_status or "unknown",
             version=server.version,
             team_namespace=server.team_namespace,
             created_at=server.created_at,
@@ -380,6 +404,11 @@ class RegistryService:
         phase: str,
         replacement_id: UUID | None = None,
     ) -> DecommissionResult:
+        """\
+        Transition a server through decommission phases \
+        (grace_period, migration, sunset) with dependency reporting.
+        """
+
         valid_phases = ["grace_period", "migration", "sunset"]
         if phase not in valid_phases:
             raise DecommissionError(f"Invalid phase '{phase}'. Must be one of {valid_phases}")
@@ -468,6 +497,7 @@ class RegistryService:
         )
 
     async def update_health(self, server_id: UUID, status: str) -> None:
+        """Update a server's health status in the database and optionally cache it in Redis."""
         now = datetime.now(UTC)
         result = await self.db.execute(
             select(MCPServer).where(MCPServer.id == server_id)
@@ -484,6 +514,7 @@ class RegistryService:
             await self.redis.set(key, status, ex=60)
 
     async def get_server_health(self, server_id: UUID) -> str | None:
+        """Get a server's health status from Redis cache or fall back to the database."""
         if self.redis is not None:
             cached = await self.redis.get(f"health:{server_id}")
             if cached is not None:
@@ -497,6 +528,10 @@ class RegistryService:
         return row
 
     async def get_all_health_statuses(self) -> dict[str, str]:
+        """\
+        Return a dict mapping server IDs to health statuses, \
+        using Redis scan or full database query.
+        """
         if self.redis is not None:
             cursor = 0
             pattern = "health:*"

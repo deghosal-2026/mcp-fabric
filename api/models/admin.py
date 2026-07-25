@@ -1,9 +1,7 @@
-import uuid
 from datetime import datetime
 from typing import Any
 
 from sqlalchemy import JSON, Boolean, DateTime, Index, Integer, String, Text, func
-from sqlalchemy import UUID as SAUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.models.base import Base, UUIDMixin
@@ -25,6 +23,7 @@ class AdminUser(UUIDMixin, Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     password_history: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
+    recovery_codes: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
     failed_attempts: Mapped[int | None] = mapped_column(Integer, default=0)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

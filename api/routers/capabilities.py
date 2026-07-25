@@ -1,3 +1,9 @@
+"""Capability definition and mapping routes.
+
+Endpoints: POST /v1/capabilities, GET /v1/capabilities, GET /v1/capabilities/{id},
+POST /v1/capabilities/{id}/deprecate, POST /v1/capabilities/{id}/mappings.
+"""
+
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,6 +24,7 @@ router = APIRouter(prefix="/v1/capabilities", tags=["capabilities"])
 async def get_capability_service(
     db: AsyncSession = Depends(get_db_session),
 ) -> CapabilityService:
+    """Dependency that provides a CapabilityService instance."""
     return CapabilityService(db=db)
 
 
@@ -26,6 +33,7 @@ async def create_capability(
     body: CapabilityCreate,
     svc: CapabilityService = Depends(get_capability_service),
 ) -> CapabilityResponse:
+    """Create a new capability definition. Returns 201 with the created capability."""
     return await svc.create(body)
 
 
@@ -34,6 +42,7 @@ async def list_capabilities(
     domain: str | None = Query(None),
     svc: CapabilityService = Depends(get_capability_service),
 ) -> list[CapabilityResponse]:
+    """List capabilities, optionally filtered by domain."""
     return await svc.list(domain=domain)
 
 
@@ -42,6 +51,7 @@ async def get_capability(
     capability_id: UUID,
     svc: CapabilityService = Depends(get_capability_service),
 ) -> CapabilityResponse:
+    """Get a single capability by ID. Returns 404 if not found."""
     result = await svc.get(capability_id)
     if result is None:
         raise HTTPException(
@@ -56,6 +66,7 @@ async def deprecate_capability(
     capability_id: UUID,
     svc: CapabilityService = Depends(get_capability_service),
 ) -> CapabilityResponse:
+    """Mark a capability as deprecated. Returns 404 if not found."""
     result = await svc.deprecate(capability_id)
     if result is None:
         raise HTTPException(
@@ -71,6 +82,7 @@ async def map_capability(
     body: CapabilityMappingCreate,
     db: AsyncSession = Depends(get_db_session),
 ) -> CapabilityMappingResponse:
+    """Create a new capability-to-server mapping. Returns 201 with the mapping."""
     from api.models.server import CapabilityMapping
 
     mapping = CapabilityMapping(
@@ -91,6 +103,6 @@ async def map_capability(
         tool_name=mapping.tool_name,
         input_mapping=mapping.input_mapping,
         output_mapping=mapping.output_mapping,
-        is_primary=mapping.is_primary,
-        routing_weight=mapping.routing_weight,
+        is_primary=mapping.is_primary or True,
+        routing_weight=mapping.routing_weight or 1.0,
     )

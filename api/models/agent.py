@@ -42,7 +42,10 @@ class TrustAssignment(UUIDMixin, Base):
     agent_class = relationship("AgentClass", back_populates="trust_assignments")
     server = relationship("MCPServer", back_populates="trust_assignments")
 
-    __table_args__ = (Index("idx_trust_class", "agent_class_id"),)
+    __table_args__ = (
+        Index("idx_trust_class", "agent_class_id"),
+        Index("uq_trust_class_server", "agent_class_id", "server_id", unique=True),
+    )
 
 
 class AgentIdentity(UUIDMixin, TimestampMixin, Base):
@@ -57,7 +60,9 @@ class AgentIdentity(UUIDMixin, TimestampMixin, Base):
     status: Mapped[str | None] = mapped_column(String(50), default="active")
     rate_limit_per_min: Mapped[int | None] = mapped_column(Integer, default=100)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    grace_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    grace_period_end: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     rotated_from_id: Mapped[uuid.UUID | None] = mapped_column(
         SAUUID(as_uuid=True), ForeignKey("agent_identities.id"), nullable=True
     )

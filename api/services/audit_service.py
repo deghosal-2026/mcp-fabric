@@ -15,6 +15,8 @@ from api.models.audit import AuditEvent
 
 
 class AuditService:
+    """Append-only audit event log backed by the AuditEvent model."""
+
     def __init__(self, db: AsyncSession):
         self.db = db
 
@@ -27,6 +29,7 @@ class AuditService:
         target_id: str | None = None,
         details: dict | None = None,
     ) -> AuditEvent:
+        """Record an audit event with actor and target metadata."""
         event = AuditEvent(
             event_type=event_type,
             actor_type=actor_type,
@@ -56,6 +59,7 @@ class AuditService:
         limit: int = 100,
         offset: int = 0,
     ) -> list[AuditEvent]:
+        """Query audit events with optional filters, ordered by newest first."""
         stmt = select(AuditEvent).order_by(AuditEvent.created_at.desc())
         if event_type:
             stmt = stmt.where(AuditEvent.event_type == event_type)
@@ -68,6 +72,10 @@ class AuditService:
         return list(result.scalars().all())
 
     async def cleanup(self, before: datetime | None = None) -> int:
+        """Delete audit events older than the given datetime.
+
+        Defaults to retention period. Returns count deleted.
+        """
         if before is None:
             before = datetime.now(UTC) - timedelta(days=settings.audit_retention_days)
         stmt = delete(AuditEvent).where(AuditEvent.created_at < before)

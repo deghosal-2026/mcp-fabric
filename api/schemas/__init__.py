@@ -14,6 +14,12 @@ from api.schemas.agent import (
     TrustAssignmentCreate,
     TrustAssignmentResponse,
 )
+from api.schemas.approval import (
+    ApprovalAction,
+    ApprovalRequestCreate,
+    ApprovalRequestResponse,
+    ApprovalStatusResponse,
+)
 from api.schemas.audit import AuditEventResponse, AuditExportRequest
 from api.schemas.auth import (
     LoginRequest,
@@ -67,6 +73,10 @@ PaginatedServers.model_rebuild()
 ServerDetail.model_rebuild()
 
 __all__ = [
+    "ApprovalAction",
+    "ApprovalRequestCreate",
+    "ApprovalRequestResponse",
+    "ApprovalStatusResponse",
     "ServerCreate",
     "ServerResponse",
     "ToolResponse",

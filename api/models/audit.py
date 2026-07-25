@@ -43,6 +43,7 @@ class ApprovalRequest(UUIDMixin, Base):
         SAUUID(as_uuid=True), ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=False
     )
     request_params: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str | None] = mapped_column(String(50), default="pending")
     approver_id: Mapped[uuid.UUID | None] = mapped_column(
         SAUUID(as_uuid=True), ForeignKey("admin_users.id", ondelete="SET NULL"), nullable=True

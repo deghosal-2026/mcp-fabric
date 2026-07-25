@@ -31,11 +31,19 @@ class MFASetupResponse(BaseModel):
     secret: str
     qr_code: str
     recovery_codes: list[str]
+    setup_token: str = ""
 
 
 class MFAVerifyRequest(BaseModel):
     """TOTP code submission for MFA verification."""
 
+    code: str = Field(min_length=6, max_length=6)
+
+
+class MFAVerifySetupRequest(BaseModel):
+    """TOTP code submission to confirm MFA setup."""
+
+    secret: str
     code: str = Field(min_length=6, max_length=6)
 
 

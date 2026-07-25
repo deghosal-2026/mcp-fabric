@@ -1,3 +1,9 @@
+"""MCP server registry routes.
+
+Endpoints: POST /v1/servers, GET /v1/servers, GET /v1/servers/{id},
+POST /v1/servers/{id}/inspect, POST /v1/servers/{id}/decommission.
+"""
+
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -28,6 +34,7 @@ async def register_server(
     body: ServerCreate,
     svc: RegistryService = Depends(get_registry_service),
 ) -> ServerResponse:
+    """Register a new MCP server. Returns 409 if duplicate, 400 if unreachable."""
     try:
         return await svc.register(body)
     except DuplicateServerError as exc:
@@ -52,6 +59,7 @@ async def list_servers(
     per_page: int = Query(20, le=100),
     svc: RegistryService = Depends(get_registry_service),
 ) -> PaginatedServers:
+    """List registered servers with optional filters and cursor-based pagination."""
     return await svc.list_servers(
         team=team, trust=trust, health=health,
         search=q, cursor=cursor, per_page=per_page,
@@ -63,6 +71,7 @@ async def get_server(
     server_id: UUID,
     svc: RegistryService = Depends(get_registry_service),
 ) -> ServerDetail:
+    """Get a single server by ID. Returns 404 if not found."""
     try:
         return await svc.get_server(server_id)
     except ServerNotFoundError as exc:
@@ -77,6 +86,7 @@ async def inspect_server(
     server_id: UUID,
     svc: RegistryService = Depends(get_registry_service),
 ) -> ServerInspectResponse:
+    """Inspect a server's capabilities and health. Returns 404 if not found, 400 if unreachable."""
     try:
         return await svc.inspect(server_id)
     except ServerNotFoundError as exc:
@@ -97,6 +107,10 @@ async def decommission_server(
     body: DecommissionRequest,
     svc: RegistryService = Depends(get_registry_service),
 ) -> DecommissionResult:
+    """Decommission a server (drain or immediate).
+
+    Returns 404 if not found, 400 on decommission error.
+    """
     try:
         return await svc.decommission(
             server_id=server_id,
