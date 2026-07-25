@@ -1,7 +1,8 @@
 # Phase 9: Admin UI
 
 > **Tasks:** 85 · **Effort:** 64h (8 days)  
-> **Dependencies:** Phase 5 (API routes must be functional)
+> **Dependencies:** Phase 5 (API routes must be functional)  
+> **Status:** ✅ Complete
 
 ## 9.1 UI Scaffolding (8 tasks)
 

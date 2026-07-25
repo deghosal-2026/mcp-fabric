@@ -69,51 +69,78 @@ Deploy updated rego via POST /v1/admin/policies/bundle → verify OPA endpoint r
 Stop OPA → make capability request → verify 503 → verify no request routed (deny by default) → start OPA → verify requests resume.
 **Success Criteria:** OPA down = all denied. OPA back = normal operation.
 
-## 10.4 E2E Tests (3 tasks)
+## 10.4 UI Component + Integration Tests (5 tasks)
 
-### T10-27: Docker Compose Smoke Test (#312)
+### T10-27: UI Test Infrastructure (#321)
+**Effort:** 2h | **Deps:** Phase 9
+Install Vitest, @testing-library/react, @testing-library/jest-dom, @testing-library/user-event, jsdom → configure vitest.config.ts with jsdom environment → set up test setup file (cleanup, matchers) → configure npm test script → verify `npm test` runs a placeholder.
+**Success Criteria:** `npm test` runs. Testing library renders a React component. DOM assertions work.
+
+### T10-28: Shared Component Tests (#322)
+**Effort:** 3h | **Deps:** T10-27
+Tests for: LoadingState (renders correct number of skeleton rows) → ErrorState (message renders, retry button fires callback) → EmptyState (message renders, action button fires) → Badge (correct color class per variant) → Modal (opens/closes, Esc key closes, overlay click closes) → Toast (message appears, auto-dismisses after 5s).
+**Success Criteria:** All shared component states tested. 20+ tests. Assertions on render, events, and accessibility.
+
+### T10-29: Page Component Tests (#323)
+**Effort:** 3h | **Deps:** T10-27
+Wrap pages in test providers (QueryClientProvider, BrowserRouter, ToastProvider) → mock API client functions → test: LoginPage (renders form, submits, shows error, MFA flow) → DashboardPage (renders stat cards with mock data, handles empty state) → ServersPage (renders table, filter changes query, register modal opens/submits).
+**Success Criteria:** Login, Dashboard, and Servers page tests pass. Mock API data renders correctly. Loading/error states tested.
+
+### T10-30: Auth Flow Integration Test (#324)
+**Effort:** 2h | **Deps:** T10-27
+Mock login API → render LoginPage → fill form → submit → verify authStore updated → verify redirect to / → mock 401 response → verify redirect to /login → verify token cleared from localStorage.
+**Success Criteria:** Full auth lifecycle tested. Token persistence and clearance verified.
+
+### T10-31: Navigation + Protected Routes Test (#325)
+**Effort:** 1h | **Deps:** T10-27
+Render App with no token → verify redirect to /login → set token in store → render App → verify sidebar renders role-filtered links → click each nav link → verify correct page route → logout → verify redirect.
+**Success Criteria:** Protected route redirects unauthenticated. All 11 nav links navigate correctly. Role filtering works.
+
+## 10.5 E2E Tests (3 tasks)
+
+### T10-32: Docker Compose Smoke Test (#312)
 **Effort:** 2h | **Deps:** P0-06, All phases
 `docker-compose up` → wait for all healthy → curl /v1/health → register server via API → create capability → map → token → capability request → verify audit → decomission → sunset.
 **Success Criteria:** Full lifecycle in Docker Compose. All 7 services healthy.
 
-### T10-28: Admin UI Smoke Test (#313)
-**Effort:** 1.5h | **Deps:** Phase 9
+### T10-33: Admin UI E2E Smoke Test (#313)
+**Effort:** 1.5h | **Deps:** Phase 9, T10-27
 Login → dashboard loads → navigate servers → register → verify detail → navigate capabilities → create → map → navigate audit → verify events.
 **Success Criteria:** All 12 pages render. Navigation works. API calls succeed.
 
-### T10-29: First-Time Deployment Walkthrough (#314)
+### T10-34: First-Time Deployment Walkthrough (#314)
 **Effort:** 1h | **Deps:** All phases
 Follow spec Section 14.1 step-by-step (10 curl commands) → verify each step returns expected response → verify entire flow < 10 minutes.
 **Success Criteria:** Zero-to-first-request in < 10 min. README commands work exactly.
 
-## 10.5 Test Infrastructure (6 tasks)
+## 10.6 Test Infrastructure (6 tasks)
 
-### T10-30: Mock MCP Server Fixture (#315)
+### T10-35: Mock MCP Server Fixture (#315)
 **Effort:** 2h | **Deps:** P0-13
 `tests/fixtures/mock_mcp_server.py` — FastAPI app with /tools/list + /tools/call → configurable tool definitions (code-search: 3 tools, git-history: 2 tools, kb-server: 4 tools, deployment-server: 2 tools) → configurable latency (default 0ms, test modes: 200ms, 2000ms, 6000ms) → configurable failure (timeout, 500 error) → health check endpoint.
 **Success Criteria:** Returns tools. Latency/failure injection works. Multiple server instances possible.
 
-### T10-31: Test Database Fixtures (#316)
+### T10-36: Test Database Fixtures (#316)
 **Effort:** 1h | **Deps:** P1-51
 `tests/conftest.py` — pytest fixtures: test_db (SQLite :memory:), test_settings (testing env), test_client (FastAPI TestClient), auth_headers (agent token), admin_headers (admin token).
 **Success Criteria:** Tests use :memory: SQLite, no file I/O. Clean DB per test.
 
-### T10-32: Test Data Factories (#317)
+### T10-37: Test Data Factories (#317)
 **Effort:** 1.5h | **Deps:** Phase 1
 `tests/factories.py` — factory functions: create_test_server(name, tools), create_test_capability(name, domain), create_test_agent_class(name), create_test_token(class), create_test_admin(role). All return ORM objects or response dicts.
 **Success Criteria:** One function call creates test data. No manual DB inserts in tests.
 
-### T10-33: Coverage Configuration (#318)
+### T10-38: Coverage Configuration (#318)
 **Effort:** 0.5h | **Deps:** P0-01
 pytest-cov config: source=api, omit=tests/*,alembic/*, fail_under=80 → .coveragerc exclusions.
 **Success Criteria:** `make test` reports coverage > 80%. Coverage report uploaded to codecov in CI.
 
-### T10-34: Test Markers (#319)
+### T10-39: Test Markers (#319)
 **Effort:** 0.5h | **Deps:** P0-01
 Register pytest markers: unit, integration, e2e, slow → tests tagged appropriately → `make test-unit` runs only unit tests → `make test-integration` runs integration → CI test-sqlite runs unit, test-postgres runs integration.
 **Success Criteria:** Marker filtering works. Unit tests run < 30s. Integration < 2min.
 
-### T10-35: Test CI Verification (#320)
+### T10-40: Test CI Verification (#320)
 **Effort:** 0.5h | **Deps:** P0-13, T10-01 through T10-34
 Verify CI test-sqlite job passes → verify test-postgres passes → verify coverage uploaded → verify opa-tests passes.
 **Success Criteria:** All CI test jobs green. Coverage badge shows >80%.

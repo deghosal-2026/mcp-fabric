@@ -20,9 +20,9 @@
 | [5](wbs/phase-5-api-routes.md) | API Routes | 55 | 40h | 11 route groups: Registry, Capability, Routing, Policy, Approval, Audit, Pack, Auth, Admin, Health, Webhooks |
 | [6](wbs/phase-6-celery.md) | Celery Tasks | 18 | 16h | Health checks, notifications, exports, thresholds, cleanup, webhook delivery |
 | [7](wbs/phase-7-telemetry.md) | Telemetry | 15 | 16h | Prometheus metrics, OpenTelemetry traces, structlog, Grafana dashboard, Alertmanager rules |
-| [8](wbs/phase-8-errors.md) | Error Handling | 8 | 8h | Error infrastructure, 14 error catalog entries, graceful degradation |
-| [9](wbs/phase-9-admin-ui.md) | Admin UI | 85 | 64h | 16 components: Pages (12), Shared components, Login, Dashboard, Servers, Capabilities, etc. |
-| [10](wbs/phase-10-testing.md) | Testing | 35 | 40h | Unit (15), Integration (8), OPA, E2E (3), Infrastructure (8) |
+| [8](wbs/phase-8-errors.md) | Error Handling | 8 | 8h | ✅ Error infrastructure, 14 error catalog entries, graceful degradation |
+| [9](wbs/phase-9-admin-ui.md) | Admin UI | 85 | 64h | ✅ 16 components: Pages (12), Shared components, Login, Dashboard, Servers, Capabilities, etc. |
+| [10](wbs/phase-10-testing.md) | Testing | 40 | 50h | Unit (15), Integration (8), OPA, UI (5), E2E (3), Infrastructure (6) |
 | [11](wbs/phase-11-cicd.md) | CI/CD | 12 | 8h | CI pipeline, Release pipeline, Release checklist |
 | [12](wbs/phase-12-docs.md) | Documentation | 27 | 16h | Code docs, Operator docs, API reference, Deployment guide |
 | [OSS](wbs/phase-oss-prep.md) | Open Source Preparation | 10 | 12h | Community profile, README badges, governance, release automation, docs site, security scanning, health files |
