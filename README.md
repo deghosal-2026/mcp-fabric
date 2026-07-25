@@ -5,6 +5,7 @@
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Ruff](https://img.shields.io/badge/code%20style-ruff-000000)](https://github.com/astral-sh/ruff)
 [![Type checked](https://img.shields.io/badge/mypy-strict-blue)](https://github.com/python/mypy)
+[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
 
 A control plane for AI agents — register MCP servers, normalize tools into capabilities, control access with policies and trust levels, require human approval for sensitive actions, and audit everything.
 
@@ -174,3 +175,7 @@ make opa-test    # OPA policy tests
 ## License
 
 MIT
+
+---
+
+See [ROADMAP](ROADMAP.md), [GOVERNANCE](GOVERNANCE.md), and [CONTRIBUTING](CONTRIBUTING.md) for project direction, governance, and how to contribute.
