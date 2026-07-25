@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from api.config import settings
+from api.errors import FabricError
 from api.middleware import (
     APIVersionMiddleware,
     AuditMiddleware,
@@ -133,6 +134,22 @@ async def metrics():
     from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+@app.exception_handler(FabricError)
+async def fabric_error_handler(request: Request, exc: FabricError):
+    rid = getattr(request.state, "request_id", None)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": exc.error_code,
+            "message": exc.message,
+            "details": exc.details,
+            "request_id": rid,
+            "suggestion": exc.suggestion,
+            "retry_after": exc.retry_after,
+        },
+    )
 
 
 @app.exception_handler(RequestValidationError)
