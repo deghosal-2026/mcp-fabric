@@ -1,5 +1,3 @@
-from datetime import UTC, datetime, timedelta
-
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +11,7 @@ from api.models.agent import (
     PackAssignment,
     TrustAssignment,
 )
-from api.models.audit import AlertEvent, ApprovalRequest, AuditEvent, AlertRule
+from api.models.audit import AlertEvent, AlertRule, ApprovalRequest, AuditEvent
 from api.models.capability import Capability
 from api.models.server import CapabilityMapping, MCPServer, ServerTool
 from api.seeders.demo_data import seed_demo_data
@@ -44,18 +42,18 @@ async def test_seed_demo_data_creates_full_ui_dataset(db_session: AsyncSession) 
 async def test_seed_demo_data_is_idempotent(db_session: AsyncSession) -> None:
     await seed_demo_data(db_session)
     first_counts = {
-        'admins': len((await db_session.execute(select(AdminUser))).scalars().all()),
-        'servers': len((await db_session.execute(select(MCPServer))).scalars().all()),
-        'approvals': len((await db_session.execute(select(ApprovalRequest))).scalars().all()),
-        'audit': len((await db_session.execute(select(AuditEvent))).scalars().all()),
+        "admins": len((await db_session.execute(select(AdminUser))).scalars().all()),
+        "servers": len((await db_session.execute(select(MCPServer))).scalars().all()),
+        "approvals": len((await db_session.execute(select(ApprovalRequest))).scalars().all()),
+        "audit": len((await db_session.execute(select(AuditEvent))).scalars().all()),
     }
 
     await seed_demo_data(db_session)
     second_counts = {
-        'admins': len((await db_session.execute(select(AdminUser))).scalars().all()),
-        'servers': len((await db_session.execute(select(MCPServer))).scalars().all()),
-        'approvals': len((await db_session.execute(select(ApprovalRequest))).scalars().all()),
-        'audit': len((await db_session.execute(select(AuditEvent))).scalars().all()),
+        "admins": len((await db_session.execute(select(AdminUser))).scalars().all()),
+        "servers": len((await db_session.execute(select(MCPServer))).scalars().all()),
+        "approvals": len((await db_session.execute(select(ApprovalRequest))).scalars().all()),
+        "audit": len((await db_session.execute(select(AuditEvent))).scalars().all()),
     }
 
     assert second_counts == first_counts
@@ -67,13 +65,13 @@ async def test_seed_demo_data_creates_mixed_status_records(db_session: AsyncSess
 
     approvals = (await db_session.execute(select(ApprovalRequest))).scalars().all()
     approval_statuses = {approval.status for approval in approvals}
-    assert {'pending', 'approved', 'denied'}.issubset(approval_statuses)
+    assert {"pending", "approved", "denied"}.issubset(approval_statuses)
 
     servers = (await db_session.execute(select(MCPServer))).scalars().all()
     health_statuses = {server.health_status for server in servers}
     trust_levels = {server.trust_level for server in servers}
-    assert {'healthy', 'degraded', 'unhealthy'}.issubset(health_statuses)
-    assert {'trusted', 'restricted', 'approval-gated', 'unreviewed'}.issubset(trust_levels)
+    assert {"healthy", "degraded", "unhealthy"}.issubset(health_statuses)
+    assert {"trusted", "restricted", "approval-gated", "unreviewed"}.issubset(trust_levels)
 
     alerts = (await db_session.execute(select(AlertEvent))).scalars().all()
     assert any(alert.acknowledged_at is None for alert in alerts)

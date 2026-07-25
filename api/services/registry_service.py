@@ -450,7 +450,9 @@ class RegistryService:
         )
 
     async def count_by_health(self) -> dict[str, int]:
-        stmt = select(MCPServer.health_status, func.count(MCPServer.id)).group_by(MCPServer.health_status)
+        stmt = select(MCPServer.health_status, func.count(MCPServer.id)).group_by(
+            MCPServer.health_status
+        )
         result = await self.db.execute(stmt)
         counts: dict[str, int] = {"total": 0, "healthy": 0, "degraded": 0}
         for status, count in result.all():

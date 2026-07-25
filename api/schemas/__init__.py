@@ -135,4 +135,5 @@ __all__ = [
     "RouteResult",
     "BatchResult",
     "RoutingRuleCreate",
+    "DashboardStats",
 ]

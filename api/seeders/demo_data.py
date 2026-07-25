@@ -67,35 +67,155 @@ async def seed_demo_data(db: AsyncSession) -> None:
         admins.append(admin)
 
     agent_classes = [
-        AgentClass(name=f"{DEMO_PREFIX}agent-admin", description="Demo admin agent", team_namespace=DEMO_NAMESPACE),
-        AgentClass(name=f"{DEMO_PREFIX}incident-responder", description="Incident automation", team_namespace="team:platform"),
-        AgentClass(name=f"{DEMO_PREFIX}developer", description="Developer assistant", team_namespace="team:platform"),
-        AgentClass(name=f"{DEMO_PREFIX}new-hire", description="New hire sandbox", team_namespace="team:platform"),
-        AgentClass(name=f"{DEMO_PREFIX}security", description="Security review agent", team_namespace="team:security"),
-        AgentClass(name=f"{DEMO_PREFIX}deploy-monitor", description="Deployment monitor", team_namespace="team:platform"),
+        AgentClass(
+            name=f"{DEMO_PREFIX}agent-admin",
+            description="Demo admin agent",
+            team_namespace=DEMO_NAMESPACE,
+        ),
+        AgentClass(
+            name=f"{DEMO_PREFIX}incident-responder",
+            description="Incident automation",
+            team_namespace="team:platform",
+        ),
+        AgentClass(
+            name=f"{DEMO_PREFIX}developer",
+            description="Developer assistant",
+            team_namespace="team:platform",
+        ),
+        AgentClass(
+            name=f"{DEMO_PREFIX}new-hire",
+            description="New hire sandbox",
+            team_namespace="team:platform",
+        ),
+        AgentClass(
+            name=f"{DEMO_PREFIX}security",
+            description="Security review agent",
+            team_namespace="team:security",
+        ),
+        AgentClass(
+            name=f"{DEMO_PREFIX}deploy-monitor",
+            description="Deployment monitor",
+            team_namespace="team:platform",
+        ),
     ]
     db.add_all(agent_classes)
 
     capabilities = [
-        Capability(name=f"{DEMO_PREFIX}knowledge:search", domain="knowledge", description="Search knowledge base", status="active", grace_period_days=14, created_by="demo-seeder"),
-        Capability(name=f"{DEMO_PREFIX}knowledge:runbook-get", domain="knowledge", description="Get runbook", status="active", grace_period_days=14, created_by="demo-seeder"),
-        Capability(name=f"{DEMO_PREFIX}code:search", domain="code", description="Search code", status="active", grace_period_days=14, created_by="demo-seeder"),
-        Capability(name=f"{DEMO_PREFIX}code:blameless-diff", domain="code", description="Review recent changes", status="active", grace_period_days=14, created_by="demo-seeder"),
-        Capability(name=f"{DEMO_PREFIX}deployment:status", domain="deployment", description="Check deployment status", status="active", grace_period_days=14, created_by="demo-seeder"),
-        Capability(name=f"{DEMO_PREFIX}deployment:promote", domain="deployment", description="Promote deployment", status="active", grace_period_days=14, created_by="demo-seeder"),
-        Capability(name=f"{DEMO_PREFIX}service:health-metrics", domain="service", description="Read health metrics", status="active", grace_period_days=14, created_by="demo-seeder"),
-        Capability(name=f"{DEMO_PREFIX}incident:create", domain="incident", description="Create incident", status="active", grace_period_days=14, created_by="demo-seeder"),
-        Capability(name=f"{DEMO_PREFIX}incident:get", domain="incident", description="Get incident details", status="active", grace_period_days=14, created_by="demo-seeder"),
-        Capability(name=f"{DEMO_PREFIX}vulnerability:scan", domain="security", description="Run vulnerability scan", status="active", grace_period_days=14, created_by="demo-seeder"),
-        Capability(name=f"{DEMO_PREFIX}dependency:impact-analysis", domain="dependency", description="Assess dependency impact", status="active", grace_period_days=14, created_by="demo-seeder"),
-        Capability(name=f"{DEMO_PREFIX}cost:estimate", domain="cost", description="Estimate cloud cost", status="active", grace_period_days=14, created_by="demo-seeder"),
+        Capability(
+            name=f"{DEMO_PREFIX}knowledge:search",
+            domain="knowledge",
+            description="Search knowledge base",
+            status="active",
+            grace_period_days=14,
+            created_by="demo-seeder",
+        ),
+        Capability(
+            name=f"{DEMO_PREFIX}knowledge:runbook-get",
+            domain="knowledge",
+            description="Get runbook",
+            status="active",
+            grace_period_days=14,
+            created_by="demo-seeder",
+        ),
+        Capability(
+            name=f"{DEMO_PREFIX}code:search",
+            domain="code",
+            description="Search code",
+            status="active",
+            grace_period_days=14,
+            created_by="demo-seeder",
+        ),
+        Capability(
+            name=f"{DEMO_PREFIX}code:blameless-diff",
+            domain="code",
+            description="Review recent changes",
+            status="active",
+            grace_period_days=14,
+            created_by="demo-seeder",
+        ),
+        Capability(
+            name=f"{DEMO_PREFIX}deployment:status",
+            domain="deployment",
+            description="Check deployment status",
+            status="active",
+            grace_period_days=14,
+            created_by="demo-seeder",
+        ),
+        Capability(
+            name=f"{DEMO_PREFIX}deployment:promote",
+            domain="deployment",
+            description="Promote deployment",
+            status="active",
+            grace_period_days=14,
+            created_by="demo-seeder",
+        ),
+        Capability(
+            name=f"{DEMO_PREFIX}service:health-metrics",
+            domain="service",
+            description="Read health metrics",
+            status="active",
+            grace_period_days=14,
+            created_by="demo-seeder",
+        ),
+        Capability(
+            name=f"{DEMO_PREFIX}incident:create",
+            domain="incident",
+            description="Create incident",
+            status="active",
+            grace_period_days=14,
+            created_by="demo-seeder",
+        ),
+        Capability(
+            name=f"{DEMO_PREFIX}incident:get",
+            domain="incident",
+            description="Get incident details",
+            status="active",
+            grace_period_days=14,
+            created_by="demo-seeder",
+        ),
+        Capability(
+            name=f"{DEMO_PREFIX}vulnerability:scan",
+            domain="security",
+            description="Run vulnerability scan",
+            status="active",
+            grace_period_days=14,
+            created_by="demo-seeder",
+        ),
+        Capability(
+            name=f"{DEMO_PREFIX}dependency:impact-analysis",
+            domain="dependency",
+            description="Assess dependency impact",
+            status="active",
+            grace_period_days=14,
+            created_by="demo-seeder",
+        ),
+        Capability(
+            name=f"{DEMO_PREFIX}cost:estimate",
+            domain="cost",
+            description="Estimate cloud cost",
+            status="active",
+            grace_period_days=14,
+            created_by="demo-seeder",
+        ),
     ]
     db.add_all(capabilities)
 
     packs = [
-        CapabilityPack(name=f"{DEMO_PREFIX}new-hire-pack", description="Starter tools", team_namespace="team:platform"),
-        CapabilityPack(name=f"{DEMO_PREFIX}incident-pack", description="Incident response tools", team_namespace="team:platform"),
-        CapabilityPack(name=f"{DEMO_PREFIX}security-pack", description="Security analysis tools", team_namespace="team:security"),
+        CapabilityPack(
+            name=f"{DEMO_PREFIX}new-hire-pack",
+            description="Starter tools",
+            team_namespace="team:platform",
+        ),
+        CapabilityPack(
+            name=f"{DEMO_PREFIX}incident-pack",
+            description="Incident response tools",
+            team_namespace="team:platform",
+        ),
+        CapabilityPack(
+            name=f"{DEMO_PREFIX}security-pack",
+            description="Security analysis tools",
+            team_namespace="team:security",
+        ),
     ]
     db.add_all(packs)
 
@@ -117,7 +237,9 @@ async def seed_demo_data(db: AsyncSession) -> None:
     ]
 
     servers: list[MCPServer] = []
-    for index, (name, description, owner_team, trust_level, health_status) in enumerate(server_specs, start=1):
+    for index, (name, description, owner_team, trust_level, health_status) in enumerate(
+        server_specs, start=1
+    ):
         server = MCPServer(
             name=name,
             endpoint=f"https://{name.replace(':', '-').replace('_', '-')}.example.internal/mcp",
@@ -234,13 +356,25 @@ async def seed_demo_data(db: AsyncSession) -> None:
 
     await db.flush()
 
-    approval_statuses = ["pending", "approved", "denied", "pending", "approved", "denied", "pending", "approved"]
+    approval_statuses = [
+        "pending",
+        "approved",
+        "denied",
+        "pending",
+        "approved",
+        "denied",
+        "pending",
+        "approved",
+    ]
     for index, status in enumerate(approval_statuses):
         approval = ApprovalRequest(
             agent_identity_id=identities[index % len(identities)].id,
             capability_id=capabilities[index % len(capabilities)].id,
             server_id=servers[index % len(servers)].id,
-            request_params={"service": f"service-{index}", "env": "staging" if index % 2 == 0 else "prod"},
+            request_params={
+                "service": f"service-{index}",
+                "env": "staging" if index % 2 == 0 else "prod",
+            },
             status=status,
             requested_at=now - timedelta(hours=index + 1),
             resolved_at=None if status == "pending" else now - timedelta(minutes=index * 5),
@@ -279,8 +413,20 @@ async def seed_demo_data(db: AsyncSession) -> None:
         )
 
     rules = [
-        AlertRule(name=f"{DEMO_PREFIX}degraded-servers", alert_type="degraded_servers", condition={"threshold": 1}, channels=["log"], enabled=True),
-        AlertRule(name=f"{DEMO_PREFIX}denied-requests", alert_type="denied_requests", condition={"threshold": 2}, channels=["log"], enabled=True),
+        AlertRule(
+            name=f"{DEMO_PREFIX}degraded-servers",
+            alert_type="degraded_servers",
+            condition={"threshold": 1},
+            channels=["log"],
+            enabled=True,
+        ),
+        AlertRule(
+            name=f"{DEMO_PREFIX}denied-requests",
+            alert_type="denied_requests",
+            condition={"threshold": 2},
+            channels=["log"],
+            enabled=True,
+        ),
     ]
     db.add_all(rules)
     await db.flush()

@@ -340,9 +340,7 @@ class ApprovalService:
         """
         if approver_id is None:
             return None
-        result = await self.db.execute(
-            select(AdminUser).where(AdminUser.id == approver_id)
-        )
+        result = await self.db.execute(select(AdminUser).where(AdminUser.id == approver_id))
         if result.scalar_one_or_none() is None:
             return None
         return approver_id
