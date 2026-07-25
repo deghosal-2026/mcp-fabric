@@ -23,12 +23,21 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
+from api.config import settings
 from api.mcp import MCPClient
+from api.models.agent import AgentIdentity
 from api.models.capability import Capability
+from api.models.resource import (
+    IdentityResourceBinding,
+    PackResourceBinding,
+    ResourceDimension,
+)
 from api.models.server import CapabilityMapping, RoutingRule
 from api.schemas.routing import CapabilityRequest, RouteResult, RoutingRuleCreate
+from api.services.audit_service import AuditService
+from api.services.policy_service import PolicyService
 
 
 class CapabilityNotFoundError(Exception):
@@ -37,6 +46,10 @@ class CapabilityNotFoundError(Exception):
 
 class NoServerFoundError(Exception):
     """Raised when no server is mapped for the given capability."""
+
+
+class ResourceDeniedError(Exception):
+    """Raised when resource dimension validation fails."""
 
 
 class RoutingService:
@@ -109,16 +122,128 @@ class RoutingService:
             raise NoServerFoundError(f"No server mapped for capability {capability_id}")
         return mapping
 
-    async def execute(self, request: CapabilityRequest) -> RouteResult:
+    async def resolve_resources(
+        self, capability_id: UUID, params: dict, explicit_resources: dict[str, str] | None
+    ) -> dict[str, str]:
+        """Extract resource dimension values for a capability request.
+
+        First checks if the capability has declared dimensions. If not,
+        returns empty dict (no resource checking needed). If it does,
+        tries to extract values from params via dimension_value_map,
+        falling back to explicit_resources from the request body.
+
+        RAISES: ValueError if a declared dimension has no value.
+        """
+        stmt = select(ResourceDimension).options(
+            selectinload(ResourceDimension.value_maps)
+        ).where(ResourceDimension.capability_id == capability_id)
+        result = await self.db.execute(stmt)
+        dims: list[ResourceDimension] = list(result.scalars().all())
+        if not dims:
+            return {}
+
+        value_map: dict[str, str] = {}
+        for d in dims:
+            matching_maps = d.value_maps or []
+            if matching_maps:
+                m = matching_maps[0]
+                if m.source == "constant" and m.constant_value:
+                    value_map[d.dimension_key] = m.constant_value
+                elif m.source == "param" and m.param_path:
+                    resolved_path = m.param_path
+                    if resolved_path.startswith("params."):
+                        resolved_path = resolved_path[len("params."):]
+                    parts = resolved_path.split(".")
+                    val: object = params
+                    for part in parts:
+                        if isinstance(val, dict):
+                            val = val.get(part, {})
+                        else:
+                            val = None
+                            break
+                    if val is not None:
+                        value_map[d.dimension_key] = str(val)
+            if (
+                    d.dimension_key not in value_map
+                    and explicit_resources
+                    and d.dimension_key in explicit_resources
+                ):
+                value_map[d.dimension_key] = explicit_resources[d.dimension_key]
+
+        # Validate all declared dimensions have values
+        for d in dims:
+            if d.dimension_key not in value_map:
+                raise ValueError(
+                    f"Missing value for resource dimension '{d.dimension_key}'"
+                    f" on capability"
+                )
+
+        return value_map
+
+    async def merge_bindings(
+        self, identity_id: UUID | None, pack_ids: list[UUID] | None
+    ) -> dict[str, list[str]]:
+        """Merge identity and pack resource bindings, computing intersection.
+
+        The effective allowed resources are the intersection of identity
+        bindings and pack bindings per dimension. If only one source
+        exists, its values are used directly.
+        """
+        identity_rows: list[IdentityResourceBinding] = []
+        pack_rows: list[PackResourceBinding] = []
+
+        if identity_id:
+            stmt = select(IdentityResourceBinding).where(
+                IdentityResourceBinding.agent_identity_id == identity_id
+            )
+            result = await self.db.execute(stmt)
+            identity_rows = list(result.scalars().all())
+
+        if pack_ids:
+            stmt = select(PackResourceBinding).where(
+                PackResourceBinding.pack_id.in_(pack_ids)
+            )
+            result = await self.db.execute(stmt)
+            pack_rows = list(result.scalars().all())
+
+        identity_by_dim: dict[str, set[str]] = {}
+        for b in identity_rows:
+            identity_by_dim.setdefault(b.dimension_key, set()).add(b.allowed_value)
+
+        pack_by_dim: dict[str, set[str]] = {}
+        for b in pack_rows:
+            pack_by_dim.setdefault(b.dimension_key, set()).add(b.allowed_value)
+
+        all_dims = set(identity_by_dim.keys()) | set(pack_by_dim.keys())
+        merged: dict[str, list[str]] = {}
+        for dim in all_dims:
+            id_vals = identity_by_dim.get(dim, set())
+            pack_vals = pack_by_dim.get(dim, set())
+            if id_vals and pack_vals:
+                merged[dim] = sorted(id_vals & pack_vals)
+            elif id_vals:
+                merged[dim] = sorted(id_vals)
+            else:
+                merged[dim] = sorted(pack_vals)
+
+        return merged
+
+    async def execute(
+        self,
+        request: CapabilityRequest,
+        identity_id: UUID | None = None,
+        pack_ids: list[UUID] | None = None,
+    ) -> RouteResult:
         """Resolve and execute a capability request against the selected server.
 
         WHY: The primary execution path — an agent requests a capability
         by name with parameters, and this method:
           1. Resolves the name to a Capability (including alias check).
-          2. Selects the highest-weighted server for that capability.
-          3. Calls the tool on the selected server via MCPClient.
-          4. Records latency via Prometheus metrics.
-          5. Returns the result with routing metadata.
+          2. Resolves resource dimensions and validates bindings (v0.2.0).
+          3. Selects the highest-weighted server for that capability.
+          4. Calls the tool on the selected server via MCPClient.
+          5. Records latency via Prometheus metrics.
+          6. Returns the result with routing metadata.
 
         Latency is measured with time.monotonic() (monotonic clock, not
         affected by system time changes) and reported in milliseconds.
@@ -126,8 +251,8 @@ class RoutingService:
         latency tracking.
 
         SIDE EFFECTS: Records Prometheus metric fabric_routing_overhead_seconds.
-        RAISES: CapabilityNotFoundError, NoServerFoundError, or errors from
-        MCPClient.call_tool() if the server is unreachable.
+        RAISES: CapabilityNotFoundError, NoServerFoundError, ResourceDeniedError,
+        or errors from MCPClient.call_tool() if the server is unreachable.
         RETURN: RouteResult with the tool response, server metadata, and latency.
         """
         import time
@@ -135,6 +260,48 @@ class RoutingService:
         start = time.monotonic()
         cap = await self.resolve_capability(request.capability)
         mapping = await self.select_server(cap.id)
+
+        resources = await self.resolve_resources(
+            cap.id, request.params, request.resources
+        )
+        resource_check: dict[str, object] = {}
+        if resources and identity_id:
+            identity_bindings = await self.merge_bindings(
+                identity_id=identity_id, pack_ids=pack_ids
+            )
+            if identity_bindings:
+                from api.models.agent import AgentClass
+
+                ac_stmt = (
+                    select(AgentClass)
+                    .join(AgentIdentity, AgentIdentity.agent_class_id == AgentClass.id)
+                    .where(AgentIdentity.id == identity_id)
+                )
+                ac_result = await self.db.execute(ac_stmt)
+                agent_class_obj = ac_result.scalar_one_or_none()
+                agent_class = agent_class_obj.name if agent_class_obj else ""
+
+                psvc = PolicyService(db=self.db, opa_url=settings.opa_url)
+                decision = await psvc.evaluate(
+                    agent_class=agent_class,
+                    server_id=str(mapping.server_id),
+                    capability=request.capability,
+                    team_namespace="",
+                    identity_resources=identity_bindings,
+                    request_resources=resources,
+                )
+                if not decision.resource_allowed:
+                    violations = decision.resource_violations
+                    raise ResourceDeniedError(
+                        f"Resource validation failed: {violations}"
+                    )
+                resource_check = {
+                    "identity_resources": identity_bindings,
+                    "request_resources": resources,
+                    "resource_allowed": decision.resource_allowed,
+                    "resource_violations": decision.resource_violations,
+                }
+
         endpoint = mapping.server.endpoint
         tool_name = mapping.tool_name
 
@@ -151,6 +318,29 @@ class RoutingService:
         fabric_routing_overhead_seconds.labels(
             server_id=str(mapping.server_id),
         ).observe(latency_s)
+
+        if resource_check:
+            from contextlib import suppress
+
+            from api.telemetry.logging import logger
+
+            audit = AuditService(db=self.db)
+            with suppress(Exception):
+                await audit.log_event(
+                    event_type="capability_request",
+                    actor_type="agent",
+                    actor_id=request.capability,
+                    target_type="server",
+                    target_id=str(mapping.server_id),
+                    details={
+                        "capability": request.capability,
+                        "server": mapping.server.name,
+                        "latency_ms": latency_ms,
+                        "resource_check": resource_check,
+                    },
+                )
+                logger.info("audit:resource_check_logged", resource_check=resource_check)
+
         return RouteResult(
             result=response.result,
             server=mapping.server.name,

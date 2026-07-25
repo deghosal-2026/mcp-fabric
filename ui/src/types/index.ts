@@ -192,6 +192,32 @@ export interface LoginResponse {
   mfa_required: boolean;
 }
 
+export interface ResourceDimension {
+  id: string;
+  capability_id: string;
+  dimension_key: string;
+  display_name: string | null;
+  created_at: string;
+  value_maps?: DimensionValueMap[];
+}
+
+export interface DimensionValueMap {
+  id: string;
+  resource_dimension_id: string;
+  source: 'param' | 'constant';
+  param_path: string | null;
+  constant_value: string | null;
+}
+
+export interface ResourceBinding {
+  id: string;
+  agent_identity_id?: string;
+  pack_id?: string;
+  dimension_key: string;
+  allowed_value: string;
+  created_at: string;
+}
+
 export interface DashboardStats {
   server_count: number;
   healthy_servers: number;

@@ -156,6 +156,9 @@ class AgentIdentity(UUIDMixin, TimestampMixin, Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     agent_class = relationship("AgentClass", back_populates="agent_identities")
+    resource_bindings = relationship(
+        "IdentityResourceBinding", back_populates="agent_identity", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         Index("idx_identities_class", "agent_class_id"),
@@ -195,6 +198,9 @@ class CapabilityPack(UUIDMixin, TimestampMixin, Base):
     )
     class_packs = relationship(
         "AgentClassPack", back_populates="pack", cascade="all, delete-orphan"
+    )
+    resource_bindings = relationship(
+        "PackResourceBinding", back_populates="pack", cascade="all, delete-orphan"
     )
 
 

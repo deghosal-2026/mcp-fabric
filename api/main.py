@@ -55,6 +55,7 @@ from api.routers.capabilities import router as capabilities_router
 from api.routers.pack import router as pack_router
 from api.routers.policy import router as policy_router
 from api.routers.registry import router as registry_router
+from api.routers.resource import router as resource_router
 from api.routers.routing import router as routing_router
 from api.routers.routing import router_rules
 from api.routers.webhooks import router as webhooks_router
@@ -158,6 +159,7 @@ app.include_router(policy_router)
 app.include_router(approval_router)
 app.include_router(pack_router)
 app.include_router(webhooks_router)
+app.include_router(resource_router)
 
 
 @app.get("/health")

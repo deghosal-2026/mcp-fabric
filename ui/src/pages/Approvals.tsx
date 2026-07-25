@@ -123,6 +123,22 @@ export function ApprovalsPage() {
               <div className="text-sm"><span className="font-medium">Agent:</span> {reviewTarget.agent_name || reviewTarget.agent_identity_id}</div>
               <div className="text-sm"><span className="font-medium">Capability:</span> {reviewTarget.capability_name || reviewTarget.capability_id}</div>
               <div className="text-sm"><span className="font-medium">Server:</span> {reviewTarget.server_name || reviewTarget.server_id}</div>
+              {reviewTarget.request_params && typeof reviewTarget.request_params === 'object' && 'resources' in reviewTarget.request_params && (() => {
+                const res = (reviewTarget.request_params as Record<string, unknown>).resources
+                if (!res || typeof res !== 'object') return null
+                const entries = Object.entries(res as Record<string, string>)
+                return entries.length > 0 ? (
+                  <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <h4 className="text-sm font-medium text-yellow-800 mb-2">Resource Constraints</h4>
+                    {entries.map(([key, value]) => (
+                      <div key={key} className="flex items-center justify-between text-sm py-1">
+                        <span className="font-mono text-yellow-700">{key}</span>
+                        <span className="font-mono text-yellow-900">{String(value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null
+              })()}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Note / Reason</label>
                 <textarea value={reviewNote} onChange={e => setReviewNote(e.target.value)}

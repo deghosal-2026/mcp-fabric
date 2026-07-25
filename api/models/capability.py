@@ -85,6 +85,9 @@ class Capability(UUIDMixin, TimestampMixin, Base):
     routing_rules = relationship(
         "RoutingRule", back_populates="capability", cascade="all, delete-orphan"
     )
+    resource_dimensions = relationship(
+        "ResourceDimension", back_populates="capability", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         Index("idx_capabilities_domain", "domain"),

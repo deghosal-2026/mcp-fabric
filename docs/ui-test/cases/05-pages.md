@@ -1049,6 +1049,168 @@
 
 ---
 
+
+## 14. Resource Policy — Capability Dimensions
+
+### TC-PAGE-037: Opens dimension management modal from capabilities table
+
+**Description:** The Capabilities page has a "Dimensions" action button per row. Clicking it opens a modal showing declared dimensions for that capability with add/remove controls.
+
+**Severity:** High
+
+**Preconditions:**
+- Mock `fetchCapabilities()` returns 2+ capabilities
+- Mock `fetchResourceDimensions(capId)` returns `[{ id: "dim-1", capability_id: "cap-1", dimension_key: "env", display_name: "Environment" }]`
+
+**Test Steps:**
+1. Render `<CapabilitiesPage />`
+2. Click the "Dimensions" button on the first capability row
+3. Wait for the dimension modal to appear
+4. Verify the modal shows the existing dimension key "env" and display name "Environment"
+5. Verify the add dimension form has two input fields (key and display name) and an "Add" button
+6. Verify the "Remove" button is visible next to the dimension
+
+**Expected Results:**
+- Modal title shows "Dimensions — {capability_name}"
+- Existing dimension is listed with key "env" and display name "(Environment)"
+- Add form has placeholder "env" for key and "Environment" for display name
+
+### TC-PAGE-038: Adds a new dimension via the modal
+
+**Description:** Users can add new resource dimensions via the modal form. On success, the dimension list refreshes.
+
+**Severity:** High
+
+**Preconditions:** Same as TC-PAGE-037
+
+**Test Steps:**
+1. Open the dimensions modal (as in TC-PAGE-037)
+2. Type "tenant" in the dimension key input
+3. Type "Tenant" in the display name input
+4. Click "Add"
+5. Verify success toast appears
+6. Verify the new dimension appears in the list
+
+**Expected Results:**
+- Toast shows "Dimension added"
+- Dimension list now shows "env" and "tenant"
+
+
+## 15. Resource Policy — Agent Class Resource Bindings
+
+### TC-PAGE-039: Opens resource bindings modal from agent classes table
+
+**Description:** The Agent Classes page has a "Bindings" action button per row. Clicking it opens a modal showing resource bindings for that agent identity with add/remove controls.
+
+**Severity:** High
+
+**Preconditions:**
+- Mock `fetchAgentClasses()` returns 2+ classes
+- Mock `fetchIdentityResourceBindings(classId)` returns `[{ id: "bind-1", dimension_key: "env", allowed_value: "staging" }]`
+
+**Test Steps:**
+1. Render `<AgentClassesPage />`
+2. Click the "Bindings" button on the first agent class row
+3. Wait for the bindings modal to appear
+4. Verify the modal shows "env = staging"
+5. Verify the add form has dimension key and allowed value inputs with an "Add" button
+6. Verify "Remove" button is visible
+
+**Expected Results:**
+- Modal title shows "Identity Resource Bindings"
+- Existing binding shows "env = staging"
+- Add form has two inputs and an "Add" button
+
+### TC-PAGE-040: Adds a new resource binding
+
+**Description:** Users can add new resource bindings via the modal form.
+
+**Severity:** High
+
+**Preconditions:** Same as TC-PAGE-039
+
+**Test Steps:**
+1. Open the bindings modal (as in TC-PAGE-039)
+2. Type "tenant" in the dimension key input
+3. Type "acme-corp" in the allowed value input
+4. Click "Add"
+5. Verify success toast
+6. Verify the new binding appears in the list
+
+**Expected Results:**
+- Toast shows "Binding added"
+- Binding list shows "tenant = acme-corp"
+
+
+## 16. Resource Policy — Pack Resource Bindings
+
+### TC-PAGE-041: Opens resource bindings modal from packs page
+
+**Description:** The Packs page has a "Bindings" action button per pack card. Clicking it opens a modal showing pack resource bindings.
+
+**Severity:** High
+
+**Preconditions:**
+- Mock `fetchPacks()` returns 2+ packs
+- Mock `fetchPackResourceBindings(packId)` returns `[]` (empty)
+
+**Test Steps:**
+1. Render `<PacksPage />`
+2. Click the "Bindings" button on the first pack card
+3. Wait for the bindings modal to appear
+4. Verify the empty state shows "No resource bindings"
+5. Verify the add form has dimension key and allowed value inputs
+
+**Expected Results:**
+- Modal title shows "Pack Resource Bindings"
+- Empty state text: "No resource bindings. This pack has unrestricted resource access."
+- Add form is functional
+
+### TC-PAGE-042: Adds a pack resource binding
+
+**Description:** Users can add resource bindings to packs via the modal.
+
+**Severity:** High
+
+**Preconditions:** Same as TC-PAGE-041
+
+**Test Steps:**
+1. Open the pack bindings modal (as in TC-PAGE-041)
+2. Type "env" in the dimension key input
+3. Type "staging" in the allowed value input
+4. Click "Add"
+5. Verify success toast
+6. Verify the new binding appears in the list
+
+**Expected Results:**
+- Toast shows "Binding added"
+- Binding list shows "env = staging"
+
+
+## 17. Resource Policy — Approval Resource Violation Display
+
+### TC-PAGE-043: Shows resource constraints in approval review panel
+
+**Description:** When an approval request contains resource dimension data, the review panel displays a yellow warning box showing the dimension key/value pairs.
+
+**Severity:** Medium
+
+**Preconditions:**
+- Mock `fetchApprovals()` returns a pending approval with `request_params.resources = { "env": "staging", "tenant": "acme-corp" }`
+
+**Test Steps:**
+1. Render `<ApprovalsPage />`
+2. Click the "Review" button on the first pending approval
+3. Verify the review panel shows a "Resource Constraints" section
+4. Verify the section lists "env" → "staging" and "tenant" → "acme-corp"
+5. Verify the section has a yellow background
+
+**Expected Results:**
+- Yellow warning box with heading "Resource Constraints" is visible
+- Dimension keys "env" and "tenant" are shown with their values
+- Approve and Deny buttons remain functional
+
+
 ## Summary
 
 | Prefix | Page | Test Count |
@@ -1064,5 +1226,9 @@
 | TC-PAGE-026 to 027 | Alerts | 2 |
 | TC-PAGE-028 to 030 | AdminUsers | 3 |
 | TC-PAGE-031 to 036 | TrustPosture | 6 |
+| TC-PAGE-037 to 038 | Capabilities — Dimensions | 2 |
+| TC-PAGE-039 to 040 | AgentClasses — Resource Bindings | 2 |
+| TC-PAGE-041 to 042 | Packs — Resource Bindings | 2 |
+| TC-PAGE-043 | Approvals — Resource Violation | 1 |
 | (skipped) | Login | (covered in Auth/Session) |
-| **Total** | | **36** |
+| **Total** | | **43** |

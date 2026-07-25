@@ -24,6 +24,12 @@ from api.models.audit import AlertEvent, AlertRule, ApprovalRequest, AuditEvent
 from api.models.base import Base
 from api.models.capability import Capability, CapabilityAlias
 from api.models.policy import OPAPolicyVersion
+from api.models.resource import (
+    DimensionValueMap,
+    IdentityResourceBinding,
+    PackResourceBinding,
+    ResourceDimension,
+)
 from api.models.server import CapabilityMapping, MCPServer, RoutingRule, ServerTool, ToolVersion
 
 __all__ = [
@@ -48,4 +54,8 @@ __all__ = [
     "AdminUser",
     "BackgroundTask",
     "OPAPolicyVersion",
+    "ResourceDimension",
+    "DimensionValueMap",
+    "IdentityResourceBinding",
+    "PackResourceBinding",
 ]

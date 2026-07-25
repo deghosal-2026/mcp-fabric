@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   fetchCapabilities, createCapability, deprecateCapability,
+  fetchResourceDimensions, createResourceDimension, deleteResourceDimension,
 } from '../api/client'
 import { Table } from '../components/shared/Table'
 import { FilterBar } from '../components/shared/FilterBar'
@@ -10,7 +11,7 @@ import { Badge } from '../components/shared/Badge'
 import { PageState } from '../components/shared/PageState'
 import { useToast } from '../components/shared/Toast'
 import type { ColumnDef } from '@tanstack/react-table'
-import type { Capability } from '../types'
+import type { Capability, ResourceDimension } from '../types'
 
 const PER_PAGE = '100'
 
@@ -21,6 +22,8 @@ export function CapabilitiesPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [deprecateTarget, setDeprecateTarget] = useState<Capability | null>(null)
   const [form, setForm] = useState({ name: '', domain: '', description: '' })
+  const [dimTarget, setDimTarget] = useState<Capability | null>(null)
+  const [dimForm, setDimForm] = useState({ dimension_key: '', display_name: '' })
   const queryClient = useQueryClient()
   const { addToast } = useToast()
 
@@ -51,6 +54,31 @@ export function CapabilitiesPage() {
     onError: (err: Error) => addToast('error', err.message),
   })
 
+  const dimensions = useQuery({
+    queryKey: ['dimensions', dimTarget?.id],
+    queryFn: () => fetchResourceDimensions(dimTarget!.id),
+    enabled: !!dimTarget,
+  })
+
+  const addDim = useMutation({
+    mutationFn: () => createResourceDimension(dimTarget!.id, dimForm),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dimensions', dimTarget?.id] })
+      setDimForm({ dimension_key: '', display_name: '' })
+      addToast('success', 'Dimension added')
+    },
+    onError: (err: Error) => addToast('error', err.message),
+  })
+
+  const delDim = useMutation({
+    mutationFn: (dimId: string) => deleteResourceDimension(dimTarget!.id, dimId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dimensions', dimTarget?.id] })
+      addToast('success', 'Dimension removed')
+    },
+    onError: (err: Error) => addToast('error', err.message),
+  })
+
   const columns: ColumnDef<Capability>[] = [
     { header: 'Name', accessorKey: 'name' },
     { header: 'Domain', accessorKey: 'domain' },
@@ -63,13 +91,21 @@ export function CapabilitiesPage() {
     {
       header: 'Actions',
       cell: ({ row }) => (
-        <button
-          onClick={e => { e.stopPropagation(); setDeprecateTarget(row.original) }}
-          disabled={row.original.status === 'deprecated'}
-          className="text-sm text-red-500 hover:text-red-700 disabled:opacity-50"
-        >
-          Deprecate
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={e => { e.stopPropagation(); setDimTarget(row.original) }}
+            className="text-sm text-blue-500 hover:text-blue-700"
+          >
+            Dimensions
+          </button>
+          <button
+            onClick={e => { e.stopPropagation(); setDeprecateTarget(row.original) }}
+            disabled={row.original.status === 'deprecated'}
+            className="text-sm text-red-500 hover:text-red-700 disabled:opacity-50"
+          >
+            Deprecate
+          </button>
+        </div>
       ),
     },
   ]
@@ -170,6 +206,60 @@ export function CapabilitiesPage() {
               className="w-full px-3 py-2 border rounded-lg"
               rows={3}
             />
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!dimTarget}
+        onClose={() => { setDimTarget(null); setDimForm({ dimension_key: '', display_name: '' }) }}
+        title={`Dimensions — ${dimTarget?.name || ''}`}
+        size="lg"
+      >
+        <div className="space-y-4">
+          {dimensions.isLoading && <p className="text-gray-500">Loading dimensions...</p>}
+          {dimensions.data && dimensions.data.length === 0 && (
+            <p className="text-gray-400 text-sm">No resource dimensions declared yet.</p>
+          )}
+          {dimensions.data?.map((d: ResourceDimension) => (
+            <div key={d.id} className="flex items-center justify-between py-2 border-b last:border-0">
+              <div>
+                <span className="font-mono text-sm font-medium">{d.dimension_key}</span>
+                {d.display_name && <span className="text-gray-500 text-sm ml-2">({d.display_name})</span>}
+              </div>
+              <button
+                onClick={() => delDim.mutate(d.id)}
+                className="text-sm text-red-500 hover:text-red-700"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          <div className="pt-4 border-t">
+            <h4 className="text-sm font-medium text-gray-700 mb-2">Add Dimension</h4>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={dimForm.dimension_key}
+                onChange={e => setDimForm(p => ({ ...p, dimension_key: e.target.value }))}
+                placeholder="env"
+                className="flex-1 px-3 py-2 border rounded-lg text-sm"
+              />
+              <input
+                type="text"
+                value={dimForm.display_name}
+                onChange={e => setDimForm(p => ({ ...p, display_name: e.target.value }))}
+                placeholder="Environment"
+                className="flex-1 px-3 py-2 border rounded-lg text-sm"
+              />
+              <button
+                onClick={() => addDim.mutate()}
+                disabled={!dimForm.dimension_key || addDim.isPending}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600 disabled:opacity-50"
+              >
+                Add
+              </button>
+            </div>
           </div>
         </div>
       </Modal>

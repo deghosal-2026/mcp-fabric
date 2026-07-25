@@ -71,6 +71,8 @@ class PolicyService:
         server_id: str,
         capability: str,
         team_namespace: str,
+        identity_resources: dict[str, list[str]] | None = None,
+        request_resources: dict[str, str] | None = None,
     ) -> PolicyDecision:
         """Evaluate a policy decision from OPA for the given inputs.
 
@@ -94,6 +96,9 @@ class PolicyService:
                 "server_id": server_id,
                 "capability": capability,
                 "team_namespace": team_namespace,
+                "identity_resources": identity_resources or {},
+                "request_resources": request_resources or {},
+                "declared_dimensions": list((identity_resources or {}).keys()),
             }
         }
         try:
@@ -116,6 +121,8 @@ class PolicyService:
             trust_level=result.get("trust_level", "unreviewed"),
             agent_class=result.get("agent_class", agent_class),
             cross_team=result.get("cross_team", False),
+            resource_allowed=result.get("resource_allowed", True),
+            resource_violations=result.get("resource_violations", []),
         )
 
     async def evaluate_cached(
@@ -124,6 +131,8 @@ class PolicyService:
         server_id: str,
         capability: str,
         team_namespace: str,
+        identity_resources: dict[str, list[str]] | None = None,
+        request_resources: dict[str, str] | None = None,
     ) -> PolicyDecision:
         """Evaluate policy with Redis caching (300s TTL), falling back to uncached evaluation.
 
@@ -146,18 +155,33 @@ class PolicyService:
 
             r = aioredis.from_url(settings.redis_url, decode_responses=True)  # type: ignore[no-untyped-call]
             cache_key = f"policy:eval:{agent_class}:{server_id}:{capability}"
+            if identity_resources:
+                import json
+                cache_key += f":ir={json.dumps(identity_resources, sort_keys=True)}"
+            if request_resources:
+                import json
+                cache_key += f":rr={json.dumps(request_resources, sort_keys=True)}"
+            cache_ttl = 60 if (identity_resources or request_resources) else 300
             cached = await r.get(cache_key)
             if cached is not None:
                 data = json.loads(cached)
                 await r.aclose()
                 return PolicyDecision(**data)
-            decision = await self.evaluate(agent_class, server_id, capability, team_namespace)
-            await r.setex(cache_key, 300, decision.model_dump_json())
+            decision = await self.evaluate(
+                agent_class, server_id, capability, team_namespace,
+                identity_resources=identity_resources,
+                request_resources=request_resources,
+            )
+            await r.setex(cache_key, cache_ttl, decision.model_dump_json())
             await r.aclose()
             return decision
         except Exception:
             # Redis failure: fall through to uncached evaluation.
-            return await self.evaluate(agent_class, server_id, capability, team_namespace)
+            return await self.evaluate(
+                agent_class, server_id, capability, team_namespace,
+                identity_resources=identity_resources,
+                request_resources=request_resources,
+            )
 
     async def _invalidate_policy_cache(self) -> None:
         """Scan and delete all Redis keys matching the policy:* pattern.

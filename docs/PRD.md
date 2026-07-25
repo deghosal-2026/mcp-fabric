@@ -51,6 +51,10 @@ There is often no clear answer to which tools are safe for which workflows. A co
 
 Even if individual servers are well built, the platform has no single place to audit usage, resolve overlap, or curate bundles for different users. Compliance and oversight are manual or nonexistent.
 
+**Problem 5: Verb-Only Policy Enforcement**
+
+The policy layer checks which agent class can access which capability, but it does not check *what the capability request acts on*. A policy that allows `deployment:promote` allows it equally for `env:staging` and `env:prod`. The verb is constrained; the object is not. In practice, an agent that can be trusted with a capability may still be dangerous when acting on the wrong resource — and the policy engine today cannot tell the difference.
+
 ---
 
 ## WHAT — MCP Fabric
@@ -872,7 +876,30 @@ Agents stop thinking in terms of arbitrary server sprawl and instead receive a c
 
 ---
 
-## Feature Catalog
+### Journey 30: Resource-Constrained Policy — Binding Identity to Allowed Targets
+
+**Persona:** Priya, platform engineer, configuring resource-level policies for a deployment server. Alex, DevEx lead, verifying that a release engineer agent cannot promote outside its allowed environments.
+
+**Scenario:** The team has a deployment MCP server with a `promote` tool. The current policy says "agent:release-engineer may use `deployment:promote`" — but it doesn't say which environments. Priya wants to constrain the policy so that the release engineer agent can only promote to staging, never to production. The allowed targets come from the agent's identity, not from the agent's request.
+
+**Step by Step:**
+
+1. Priya opens the Capability Catalog and navigates to `deployment:promote`.
+2. She defines resource dimensions for this capability: `env`, `tenant`, `service`. These are the three dimensions that constrain every `deployment:promote` request.
+3. Fabric saves the dimension definitions. Any agent requesting `deployment:promote` must now provide values for all three dimensions (or they can be extracted from the request parameters via a mapping).
+4. Priya navigates to the release engineer agent identity and opens "Resource Bindings."
+5. She configures: `env: [staging, dev]`, `tenant: [acme-corp]`, `service: [config-api, billing-api]`. These are the values this agent is allowed to use.
+6. She also navigates to the capability pack "Release Engineering" and adds pack-level bindings: `env: [staging]`. The pack binding is more restrictive than the identity binding — the effective scope is the intersection of identity and pack limits.
+7. Later, the release engineer agent requests `deployment:promote` with `resources: { "env": "prod", "tenant": "acme-corp", "service": "config-api" }`.
+8. Fabric's policy engine evaluates: the identity allows `env: [staging, dev]`, but the request uses `env: prod`. The resource check fails.
+9. OPA returns `deny` with a detailed reason: `resource_violation: dimension "env" — requested "prod", identity allows ["staging", "dev"]`.
+10. Fabric returns `403 Access Denied` with the violation detail. The agent logs the failure and does not attempt the promotion.
+11. An hour later, the same agent requests the same capability with `resources: { "env": "staging", "tenant": "acme-corp", "service": "config-api" }`. The resource check passes. The request is routed and the promotion proceeds.
+12. Alex reviews the audit log at the end of the week. Every `deployment:promote` request shows the resource dimensions, the identity bindings, and the policy decision. Alex confirms: zero unauthorized promotions.
+
+**Outcome:** The policy engine now distinguishes between approving a verb and approving an action. The release engineer agent can promote — but only to staging, only for acme-corp, only for config-api or billing-api. The identity is the source of truth for what resources an agent may act on. The audit trail captures both the allowed scope and the actual request for every call.
+
+---
 
 ### 1. Registry
 
@@ -976,6 +1003,19 @@ Monitoring Fabric itself — request metrics, traces, dashboards, and alerts for
 | Alert rules | Configurable alert thresholds for latency spikes, error rate increases, server degradation, unreviewed servers |
 | Trace sampling | Configurable sampling rate (100% in dev, 10% in production) to manage trace volume |
 
+### 10. Resource-Aware Policy
+
+Constrains capability access to specific resources (environments, tenants, services) defined by the agent identity, not the request body.
+
+| Feature | Description |
+|---|---|
+| Resource dimensions | Per-capability dimension definitions (`env`, `tenant`, `service`, or custom). Declared by platform engineers at capability setup time. |
+| Identity resource bindings | Allowed resource values per agent identity. The source of truth for what targets an agent may act on. |
+| Pack resource bindings | Inherited resource limits from capability packs. Merged with identity bindings at authentication time (intersection). |
+| OPA resource evaluation | Rego rules compare `request_resources` against `identity_resources` for every declared dimension. |
+| Resource violation audit | Every policy decision logs identity bindings, request resources, and the specific dimension that caused a denial. |
+| Approval integration | Resource violations in approval-gated capabilities show the mismatch in the approval UI; approver can override. |
+
 ### 9. Authentication
 
 Securing Fabric access for agents and admin users.
@@ -1051,6 +1091,10 @@ A: If an agent connected through the fabric has a cleaner, safer, more understan
 
 Scenarios and features explicitly deferred from v0.1.0 — important, but not in the initial build scope.
 
+### Resource Dimension Tenant Isolation
+
+Resource dimensions (`env`, `tenant`, `service`) are defined per-capability and evaluated by OPA. This design is flexible but introduces a question: should resource dimensions be globally enforced across all capabilities, or should each capability declare its own dimensions? The current design (per-capability) allows teams to add dimensions only where they matter (e.g., `deployment:promote` gets `env` but `code:search` does not). A global enforcement model would be simpler but risk over-constraining read-only capabilities. The per-capability model is preferred for v0.2.0.
+
 ### Multi-Environment Separation (dev / staging / prod)
 
 A production incident response agent should not see dev servers, and a dev agent should never route through production servers. Currently, Fabric trusts the platform engineer to label servers correctly. A first-class environment tag with enforced isolation (servers tagged `env:prod` are invisible to agents tagged `env:dev` and vice versa) is a natural v0.2.0 addition.
@@ -1104,6 +1148,9 @@ Two organizations each running their own Fabric instance may want to share selec
 | **Routing rule** | An explicit preference set by a platform engineer to resolve capability conflicts (e.g., "use Server A for general requests, Server B when `file_pattern` is present"). |
 | **Schema diff** | The difference between a server's current tool definitions and a previous version. Used during server upgrades to detect breaking changes. |
 | **Trust level** | The classification of a server or tool: `trusted` (no restrictions), `restricted` (limited agent classes), or `approval-gated` (human approval required per request). |
+| **Resource dimension** | A named category that constrains a capability request (e.g., `env`, `tenant`, `service`). Defined per-capability by the platform team. |
+| **Resource binding** | The set of allowed values for a resource dimension, attached to an agent identity or capability pack. Defines the maximum scope an agent may act within. |
+| **Identity-bound resource** | A resource value that comes from the agent identity, not from the request body. The model cannot escalate beyond what the identity allows. |
 
 ## Assumptions
 

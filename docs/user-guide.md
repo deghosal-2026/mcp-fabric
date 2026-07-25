@@ -34,16 +34,17 @@ This guide walks through each step, starting from login.
 2. [Dashboard — Command Center](#2-dashboard--command-center)
 3. [Server Management — Connect MCP Servers](#3-server-management--connect-mcp-servers)
 4. [Capability Catalog — Name What Servers Can Do](#4-capability-catalog--name-what-servers-can-do)
-5. [Policy Editor — Set the Rules](#5-policy-editor--set-the-rules)
-6. [Agent Classes — Define Who the Agents Are](#6-agent-classes--define-who-the-agents-are)
-7. [Capability Packs — Bundle Capabilities for Each Class](#7-capability-packs--bundle-capabilities-for-each-class)
-8. [Approvals — Human in the Loop](#8-approvals--human-in-the-loop)
-9. [Audit Log — Record Everything](#9-audit-log--record-everything)
-10. [Alerts — Surface Problems](#10-alerts--surface-problems)
-11. [Trust Posture — Security at a Glance](#11-trust-posture--security-at-a-glance)
-12. [Admin Users — Manage the Team](#12-admin-users--manage-the-team)
-13. [Navigation & Layout](#13-navigation--layout)
-14. [Troubleshooting](#14-troubleshooting)
+5. [Resource Policy — Constrain Capabilities to Specific Resources](#5-resource-policy--constrain-capabilities-to-specific-resources)
+6. [Policy Editor — Set the Rules](#6-policy-editor--set-the-rules)
+7. [Agent Classes — Define Who the Agents Are](#7-agent-classes--define-who-the-agents-are)
+8. [Capability Packs — Bundle Capabilities for Each Class](#8-capability-packs--bundle-capabilities-for-each-class)
+9. [Approvals — Human in the Loop](#9-approvals--human-in-the-loop)
+10. [Audit Log — Record Everything](#10-audit-log--record-everything)
+11. [Alerts — Surface Problems](#11-alerts--surface-problems)
+12. [Trust Posture — Security at a Glance](#12-trust-posture--security-at-a-glance)
+13. [Admin Users — Manage the Team](#13-admin-users--manage-the-team)
+14. [Navigation & Layout](#14-navigation--layout)
+15. [Troubleshooting](#15-troubleshooting)
 
 ---
 
@@ -174,9 +175,68 @@ Click **Deprecate** on any active capability. A confirmation dialog appears expl
 
 ---
 
-> **Where we are:** Capabilities define *what* agents can do. Now we define *who* the agents are and *how* they authenticate.
+> **Where we are:** Capabilities define *what* agents can do. Resource policy extends that to *which resources* they can act on.
 
-## 5. Agent Classes — Define Who the Agents Are
+## 5. Resource Policy — Constrain Capabilities to Specific Resources
+
+> **New in v0.2.0:** Resource dimensions extend the policy engine from verb-only to verb+object authorization. You can now say "agent:release-engineer may use `deployment:promote`" **and** "only on `env:staging`, `tenant:acme-corp`."
+
+The Resource Dimension system lets you define fine-grained constraints on what resources a capability can act on. Instead of just checking *which agent* can use *which capability*, Fabric now checks *what the capability acts on*.
+
+### How It Works
+
+1. **Define dimensions** on a capability — declare which resource dimensions constrain it (e.g., `env`, `tenant`, `service`)
+2. **Configure extraction** — tell Fabric where to find dimension values in the request (from a `params` path or a constant)
+3. **Bind allowed values** — attach allowed resource values to agent identities and capability packs
+4. **Policy evaluates** — at request time, OPA checks that every declared dimension has a matching identity binding
+
+### Adding Resource Dimensions to a Capability
+
+Navigate to **Capabilities** and click the **Dimensions** button on any row:
+
+![Capability Dimensions modal](/docs/ui-test/findings/screenshots/19-capabilities-dimensions.png)
+
+The modal shows existing dimensions with add/remove controls. Add dimension keys like `env`, `tenant`, or `service`:
+
+- **Dimension key** — lowercase identifier (e.g., `env`)
+- **Display name** — optional human label (e.g., `Environment`)
+
+### Binding Resources to an Agent Identity
+
+Navigate to **Agent Classes** and click the **Bindings** button. The modal lets you add allowed resource values per dimension:
+
+- `env` = `staging` means this agent can only act on the staging environment
+- `tenant` = `acme-corp` means this agent can only act on the acme-corp tenant
+
+### Binding Resources to a Capability Pack
+
+Navigate to **Capability Packs** and click the **Bindings** button on any pack card:
+
+![Pack Resource Bindings modal](/docs/ui-test/findings/screenshots/20-packs-bindings.png)
+
+Pack bindings work the same as identity bindings but apply to every agent assigned to the pack. The effective allowed resources are the **intersection** of identity and pack bindings per dimension. For example:
+
+| Source | `env` allowed |
+|--------|--------------|
+| Identity binding | `staging`, `prod` |
+| Pack binding | `staging` |
+| **Effective** | `staging` |
+
+### Resource Violations in Approvals
+
+When a resource-gated request requires human approval, the review panel shows the resource constraints:
+
+![Approval resource violation](/docs/ui-test/findings/screenshots/21-approvals-resource-violation.png)
+
+The yellow warning box lists each dimension with its requested value, making it clear what resources the agent is trying to act on.
+
+### Audit Trail
+
+Every resource policy decision is logged in the audit trail. Filter by `resource_violation=true` to find all requests that were denied because of resource constraints.
+
+---
+
+## 6. Agent Classes — Define Who the Agents Are
 
 Agent classes define categories of AI agents and their access levels:
 

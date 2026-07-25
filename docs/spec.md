@@ -232,22 +232,45 @@ Agent sends POST /capability/request
 │   Filter candidates by rule conditions      │
 │   (e.g., "file_pattern in params")          │
 │                                             │
-│ Step 4: Evaluate policy (OPA)               │
-│   POST http://localhost:8181/v1/data/       │
-│        fabric/policy/allow                  │
-│   Body: {                                   │
-│     "input": {                              │
-│       "agent_class": "incident-responder",  │
-│       "capability": "code:blameless-diff",  │
-│       "server_id": "uuid",                  │
-│       "team_namespace": "team:platform"     │
-│     }                                       │
-│   }                                         │
-│   Response: { "result": { "allow": true,   │
-│              "trust_level": "trusted" } }   │
-│   → Filter candidates to allowed only      │
-│   → 403 if all denied                       │
-│   → 202 if approval-gated                   │
+ │ Step 3.5: Resolve resources (v0.2.0)        │
+ │   Query declared dimensions for capability  │
+ │   Extract request resources from params     │
+ │     (via dimension_value_map param_path)    │
+ │     → If not extractable, use resources     │
+ │       field from request body               │
+ │   Resolve identity resources:               │
+ │     Query identity bindings + pack bindings │
+ │     Intersect per dimension                 │
+ │   → 400 if any declared dimension missing   │
+ │     a value (missing_resource_dimension)    │
+ │                                             │
+ │ Step 4: Evaluate policy (OPA)               │
+ │   POST http://localhost:8181/v1/data/       │
+ │        fabric/policy/allow                  │
+ │   Body: {                                   │
+ │     "input": {                              │
+ │       "agent_class": "incident-responder",  │
+ │       "capability": "deployment:promote",   │
+ │       "server_id": "uuid",                  │
+ │       "team_namespace": "team:platform",    │
+ │       "identity_resources": {               │
+ │         "env": ["staging"],                 │
+ │         "tenant": ["acme-corp"]             │
+ │       },                                     │
+ │       "request_resources": {                │
+ │         "env": "staging",                   │
+ │         "tenant": "acme-corp"               │
+ │       }                                      │
+ │     }                                       │
+ │   }                                         │
+ │   Response: { "result": { "allow": true,   │
+ │              "trust_level": "trusted",      │
+ │              "resource_allowed": true } }   │
+ │   → Filter candidates to allowed only      │
+ │   → 403 if all denied                       │
+ │   → 403 with violation detail if resource   │
+ │     check fails (resource_not_allowed)      │
+ │   → 202 if approval-gated                   │
 │                                             │
 │ Step 5: Rank candidates                     │
 │   Score = match_quality × policy × priority │
@@ -378,7 +401,72 @@ CREATE TABLE opa_policy_versions (
 );
 ```
 
-#### 3.20 `background_tasks`
+#### 3.20 `resource_dimensions`
+
+```sql
+CREATE TABLE resource_dimensions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    capability_id UUID NOT NULL REFERENCES capabilities(id) ON DELETE CASCADE,
+    dimension_key VARCHAR(100) NOT NULL,  -- 'env', 'tenant', 'service', or custom
+    display_name VARCHAR(255),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(capability_id, dimension_key)
+);
+
+CREATE INDEX idx_rd_capability ON resource_dimensions(capability_id);
+CREATE INDEX idx_rd_dimension ON resource_dimensions(dimension_key);
+```
+
+#### 3.21 `dimension_value_map`
+
+Defines how request parameters map to dimension values for automatic extraction.
+
+```sql
+CREATE TABLE dimension_value_map (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    resource_dimension_id UUID NOT NULL REFERENCES resource_dimensions(id) ON DELETE CASCADE,
+    source VARCHAR(50) NOT NULL DEFAULT 'param',  -- 'param', 'constant'
+    param_path VARCHAR(255) NOT NULL,              -- e.g., 'params.env', 'params.deploy.environment'
+    constant_value VARCHAR(255),                    -- used when source = 'constant'
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_dvm_dimension ON dimension_value_map(resource_dimension_id);
+```
+
+#### 3.22 `identity_resource_bindings`
+
+```sql
+CREATE TABLE identity_resource_bindings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_identity_id UUID NOT NULL REFERENCES agent_identities(id) ON DELETE CASCADE,
+    dimension_key VARCHAR(100) NOT NULL,
+    allowed_value VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(agent_identity_id, dimension_key, allowed_value)
+);
+
+CREATE INDEX idx_irb_identity ON identity_resource_bindings(agent_identity_id);
+CREATE INDEX idx_irb_dimension ON identity_resource_bindings(dimension_key);
+```
+
+#### 3.23 `pack_resource_bindings`
+
+```sql
+CREATE TABLE pack_resource_bindings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    pack_id UUID NOT NULL REFERENCES capability_packs(id) ON DELETE CASCADE,
+    dimension_key VARCHAR(100) NOT NULL,
+    allowed_value VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(pack_id, dimension_key, allowed_value)
+);
+
+CREATE INDEX idx_prb_pack ON pack_resource_bindings(pack_id);
+CREATE INDEX idx_prb_dimension ON pack_resource_bindings(dimension_key);
+```
+
+#### 3.24 `background_tasks`
 
 ```sql
 CREATE TABLE background_tasks (
@@ -502,11 +590,46 @@ class_min_trust := {
     "agent:new-hire": 0
 }
 
-# Main allow rule
+# ─── Resource-Aware Policy (v0.2.0) ───
+
+# Each capability declares which resource dimensions it constrains.
+# Populated from the resource_dimensions DB table at bundle deploy time.
+capability_dimensions := {
+    "deployment:promote": ["env", "tenant", "service"],
+    "deployment:rollback": ["env", "tenant"],
+    "database:query": ["tenant", "service"]
+}
+
+# Default: capabilities with no declared dimensions are unconstrained
+default resource_allowed := true
+
+# Resource policy: identity must authorize every requested dimension
+resource_allowed {
+    dims := capability_dimensions[input.capability]
+    every dim in dims {
+        input.identity_resources[dim] != null
+        input.identity_resources[dim][_] == input.request_resources[dim]
+    }
+}
+
+# Collect resource violations for audit detail
+resource_violations[dim] := {
+    "dimension": dim,
+    "requested": input.request_resources[dim],
+    "allowed": input.identity_resources[dim]
+} {
+    dims := capability_dimensions[input.capability]
+    some dim in dims
+    not input.identity_resources[dim][_] == input.request_resources[dim]
+}
+
+# ─── Main Allow Rule ───
+
 allow {
     agent_trust := class_min_trust[input.agent_class]
     server_trust := trust_levels[input.server_trust_level]
     server_trust >= agent_trust
+    resource_allowed  # resource check gate
 }
 
 # Approval-gated: allowed but requires human approval
@@ -515,12 +638,26 @@ approval_required {
     input.agent_class != "agent:admin"
 }
 
+# Cross-team access
+default cross_team_allowed := false
+
+cross_team_allowed {
+    input.agent_namespace == input.server_namespace
+}
+
+cross_team_allowed {
+    input.server_namespace == ""
+}
+
 # Decision output
 result := {
     "allow": allow,
     "approval_required": approval_required,
+    "cross_team": cross_team_allowed,
     "trust_level": input.server_trust_level,
-    "agent_class": input.agent_class
+    "agent_class": input.agent_class,
+    "resource_allowed": resource_allowed,
+    "resource_violations": resource_violations
 }
 ```
 
@@ -539,25 +676,31 @@ class PolicyService:
         agent_class: str,
         server_id: str,
         capability: str,
-        team_namespace: str
+        team_namespace: str,
+        identity_resources: dict[str, list[str]] | None = None,  # v0.2.0
+        request_resources: dict[str, str] | None = None           # v0.2.0
     ) -> PolicyDecision:
         input_data = {
             "input": {
                 "agent_class": agent_class,
                 "server_id": server_id,
                 "capability": capability,
-                "team_namespace": team_namespace
+                "team_namespace": team_namespace,
+                "identity_resources": identity_resources or {},
+                "request_resources": request_resources or {}
             }
         }
         result = await self.opa.evaluate("fabric/policy/allow", input_data)
-        
+
         # Log decision for audit
         await self.opa.log_decision(input_data, result)
-        
+
         return PolicyDecision(
             allow=result["allow"],
             approval_required=result.get("approval_required", False),
-            trust_level=result.get("trust_level", "unreviewed")
+            trust_level=result.get("trust_level", "unreviewed"),
+            resource_allowed=result.get("resource_allowed", True),
+            resource_violations=result.get("resource_violations", [])
         )
 ```
 
@@ -753,6 +896,8 @@ All errors return a consistent JSON structure:
 | 403 | `namespace_restricted` | Agent outside allowed team namespace | 20 |
 | 404 | `capability_not_found` | Requested capability doesn't exist | 13 |
 | 404 | `server_not_found` | Referenced server doesn't exist | — |
+| 400 | `missing_resource_dimension` | Required resource dimension not provided in request | 30 |
+| 403 | `resource_not_allowed` | Requested resource value not in identity's allowed bindings | 30 |
 | 409 | `capability_conflict` | Two servers claim same capability | 9 |
 | 409 | `schema_breaking_change` | Server upgrade contains breaking changes | 10 |
 | 422 | `validation_error` | Request body fails Pydantic validation | — |
@@ -1015,7 +1160,8 @@ testpaths = ["tests"]
 | 4 | Fabric backup/restore — CLI tooling | 24 | `fabric-admin backup` + `fabric-admin restore` with PITR support. Validate after restore. |
 | 5 | Fabric version upgrade — blue-green | 25 | Zero-downtime upgrade. API backward compatibility verified. Rollback tested. |
 | 6 | Performance benchmark suite | — | Load tests validate v0.1.0 targets. Chaos tests for DB/Redis/OPA failures. Bottlenecks resolved. |
-| 7 | Reference MCP server integrations | — | Tested with 5+ popular OSS MCP servers. Integration guide published. |
+| 7 | Resource-aware policy — dynamic dimensions | 30 | Dimensions defined per-capability. Identity and pack bindings constrain request resources. OPA evaluates `(capability, resource)` pairs. 403 on violation with audit detail. |
+| 8 | Reference MCP server integrations | — | Tested with 5+ popular OSS MCP servers. Integration guide published. |
 
 ### v0.3.0 — Scale (Weeks 9-12)
 
@@ -1699,7 +1845,45 @@ def verify_webhook(body: bytes, signature: str, secret: str) -> bool:
 │ agent_class_id (FK) ─────────────────┼── agent_classes.id        │  │
 │ pack_id (FK) ────────────────────────┼── capability_packs.id     │  │
 └──────────────────────────────────────┘                            │  │
-                                                                    │  │
+
+┌──────────────────────────────────────┐                            │  │
+│       resource_dimensions            │  (v0.2.0)                  │  │
+│──────────────────────────────────────│                            │  │
+│ id (PK)                              │                            │  │
+│ capability_id (FK) ──────────────────┼── capabilities.id          │  │
+│ dimension_key                        │                            │  │
+│ display_name                         │                            │  │
+└──────────────┬───────────────────────┘                            │  │
+               │ 1:N                                                 │  │
+               ▼                                                    │  │
+┌────────────────────────────────────────┐                           │  │
+│        dimension_value_map             │  (v0.2.0)                 │  │
+│────────────────────────────────────────│                           │  │
+│ id (PK)                                │                           │  │
+│ resource_dimension_id (FK) ────────────┼── resource_dimensions.id  │  │
+│ source                                 │                           │  │
+│ param_path                             │                           │  │
+│ constant_value                         │                           │  │
+└────────────────────────────────────────┘                           │  │
+
+┌──────────────────────────────────────┐                            │  │
+│     identity_resource_bindings        │  (v0.2.0)                  │  │
+│──────────────────────────────────────│                            │  │
+│ id (PK)                              │                            │  │
+│ agent_identity_id (FK) ──────────────┼── agent_identities.id      │  │
+│ dimension_key                        │                            │  │
+│ allowed_value                        │                            │  │
+└──────────────────────────────────────┘                            │  │
+
+┌──────────────────────────────────────┐                            │  │
+│      pack_resource_bindings          │  (v0.2.0)                  │  │
+│──────────────────────────────────────│                            │  │
+│ id (PK)                              │                            │  │
+│ pack_id (FK) ────────────────────────┼── capability_packs.id      │  │
+│ dimension_key                        │                            │  │
+│ allowed_value                        │                            │  │
+└──────────────────────────────────────┘                            │  │
+
 ┌───────────────────┐       ┌──────────────────────────────────┐   │  │
 │   admin_users     │       │          audit_events            │   │  │
 │───────────────────│       │──────────────────────────────────│   │  │
@@ -1779,6 +1963,15 @@ CREATE INDEX idx_aliases_capability ON capability_aliases(capability_id);
 -- Alert indexes
 CREATE INDEX idx_alerts_fired ON alert_events(fired_at DESC);
 CREATE INDEX idx_alerts_rule ON alert_events(rule_id);
+
+-- Resource dimension indexes (v0.2.0)
+CREATE INDEX idx_rd_capability ON resource_dimensions(capability_id);
+CREATE INDEX idx_rd_dimension ON resource_dimensions(dimension_key);
+CREATE INDEX idx_dvm_dimension ON dimension_value_map(resource_dimension_id);
+CREATE INDEX idx_irb_identity ON identity_resource_bindings(agent_identity_id);
+CREATE INDEX idx_irb_dimension ON identity_resource_bindings(dimension_key);
+CREATE INDEX idx_prb_pack ON pack_resource_bindings(pack_id);
+CREATE INDEX idx_prb_dimension ON pack_resource_bindings(dimension_key);
 
 -- Agent indexes
 CREATE INDEX idx_identities_class ON agent_identities(agent_class_id);
@@ -1971,6 +2164,19 @@ fabric_policy_decisions_total = Counter(
     "fabric_policy_decisions_total",
     "Total OPA policy evaluations",
     ["agent_class", "decision"]  # decision: allow, deny, approval_required
+)
+
+fabric_resource_policy_decisions_total = Counter(   # v0.2.0
+    "fabric_resource_policy_decisions_total",
+    "Resource-constrained policy decisions",
+    ["agent_class", "capability", "dimension", "result"]  # result: allowed, denied
+)
+
+fabric_resource_resolution_duration = Histogram(     # v0.2.0
+    "fabric_resource_resolution_duration_seconds",
+    "Resource dimension resolution duration",
+    ["capability"],
+    buckets=[0.001, 0.002, 0.005, 0.01, 0.025, 0.05]
 )
 
 fabric_policy_evaluation_duration = Histogram(
@@ -2394,7 +2600,58 @@ test_global_server_allowed {
 
 ---
 
-## 25. Admin UI Component Specifications
+## 25. Tech Tradeoffs: Resource Policy Approaches
+
+### Background
+
+During the design of resource-aware policy enforcement (v0.2.0), three approaches were evaluated. This section documents the tradeoffs for future maintainers.
+
+### Approach A: Hardcoded Dimensions
+
+Constrain resource dimensions (env, tenant, service) directly in code and OPA Rego.
+
+| Factor | Assessment |
+|--------|-----------|
+| Complexity | Low — fixed set of known keys in Rego, no dimension management UI |
+| Flexibility | Low — adding a new dimension (region, data classification) requires code changes |
+| Identity model | Simple — each agent carries a known set of allowed env/tenant/service values |
+| Rego clarity | `input.identity_resources.env` is explicit and type-safe |
+| Combinatorial scaling | New env → new identity needed. One identity per (agent × env × tenant) combination |
+
+### Approach B: Python Pre-Processor
+
+Validate request params against identity in Python before calling OPA. Pass only a `params_validated: bool` flag to Rego.
+
+| Factor | Assessment |
+|--------|-----------|
+| Complexity | Low — no Rego changes needed |
+| Policy location | Split — some rules in Python, some in Rego |
+| Audit transparency | OPA decision log doesn't capture raw resource values — only "validated: true/false" |
+| Extensibility | Code change needed per new dimension type |
+| Testing | Must test both Python validation and Rego separately |
+
+### Approach C: Dynamic Dimension Registry (Selected)
+
+Platform teams define resource dimensions per-capability at runtime. OPA evaluates dynamically against whatever dimensions the capability declares.
+
+| Factor | Assessment |
+|--------|-----------|
+| Complexity | High — 4 new DB tables, 3 new admin UI pages, dynamic Rego evaluation |
+| Flexibility | High — dimensions added at runtime without code deploys |
+| Identity model | Union of identity bindings and pack bindings, intersected per dimension |
+| Rego clarity | `every` loop over dynamic keys is less explicit than typed accessors |
+| Testing complexity | Combinatorial tests over dimension × value × identity × capability |
+| Migration | Requires dimension definition step during upgrade. Existing capabilities have no dimensions — adding one after deployment will break requests until bindings exist. |
+
+### Migration Path
+
+1. Seed 3 built-in dimensions (env, tenant, service) as initial seed data for all capabilities
+2. Feature-flag custom dimensions behind `enable_custom_resource_dimensions`
+3. Sandbox mode (Journey 19) catches dimension addition before breaking production agents
+
+---
+
+## 26. Admin UI Component Specifications
 
 ### 25.1 Common Patterns
 
@@ -2537,9 +2794,9 @@ type PageState<T> =
 
 ---
 
-## 26. Release Management
+## 27. Release Management
 
-### 26.1 Semantic Versioning Policy
+### 27.1 Semantic Versioning Policy
 
 ```
 MAJOR.MINOR.PATCH  (e.g., 0.1.0)
@@ -2565,7 +2822,7 @@ PATCH (0.0.X): Bug fixes, backward-compatible
   - Documentation updates
 ```
 
-### 26.2 Release Checklist
+### 27.2 Release Checklist
 
 ```markdown
 ## vX.Y.Z Release Checklist
@@ -2593,7 +2850,7 @@ PATCH (0.0.X): Bug fixes, backward-compatible
 - [ ] Announce in GitHub Discussions
 ```
 
-### 26.3 PyPI Metadata
+### 27.3 PyPI Metadata
 
 ```toml
 # pyproject.toml (additional fields for PyPI)
@@ -2619,7 +2876,7 @@ classifiers = [
 fabric-admin = "api.cli:main"   # CLI tool for backup/restore/migrations
 ```
 
-### 26.4 Docker Image Tagging
+### 27.4 Docker Image Tagging
 
 | Tag | Purpose |
 |---|---|
@@ -2636,7 +2893,7 @@ fabric-admin = "api.cli:main"   # CLI tool for backup/restore/migrations
 #   ghcr.io/deghosal-2026/mcp-fabric:latest   (always latest)
 ```
 
-### 26.5 CHANGELOG Format
+### 27.5 CHANGELOG Format
 
 ```markdown
 # Changelog
@@ -2670,9 +2927,9 @@ fabric-admin = "api.cli:main"   # CLI tool for backup/restore/migrations
 
 ---
 
-## 27. Dependency Management
+## 28. Dependency Management
 
-### 27.1 Dependabot Configuration
+### 28.1 Dependabot Configuration
 
 ```yaml
 # .github/dependabot.yml
@@ -2730,7 +2987,7 @@ updates:
         patterns: ["vite", "@vitejs/*"]
 ```
 
-### 27.2 Dependency Update Cadence
+### 28.2 Dependency Update Cadence
 
 | Type | Frequency | Auto-merge? |
 |---|---|---|
@@ -2739,7 +2996,7 @@ updates:
 | Major updates | Manual | Manual review + migration plan |
 | Security patches | Immediate (Dependabot security) | Yes (if CI passes) |
 
-### 27.3 Lockfile Strategy
+### 28.3 Lockfile Strategy
 
 ```
 Poetry lock file (poetry.lock): committed to repo
@@ -2751,7 +3008,7 @@ npm lock file (package-lock.json): committed to repo
   → Same strategy for UI dependencies
 ```
 
-### 27.4 Vulnerability Scanning
+### 28.4 Vulnerability Scanning
 
 ```yaml
 # Automated scanning:
@@ -2767,9 +3024,9 @@ npm lock file (package-lock.json): committed to repo
 
 ---
 
-## 28. Load Testing Strategy
+## 29. Load Testing Strategy
 
-### 28.1 Load Test Scenarios
+### 29.1 Load Test Scenarios
 
 ```python
 # tests/load/locustfile.py
@@ -2805,7 +3062,7 @@ class FabricUser(HttpUser):
         self.client.get("/v1/health")
 ```
 
-### 28.2 Load Test Targets (per scenario)
+### 29.2 Load Test Targets (per scenario)
 
 | Scenario | Target RPS | Max p95 latency | Max error rate |
 |---|---|---|---|
@@ -2814,7 +3071,7 @@ class FabricUser(HttpUser):
 | Agent connect | 200 | < 100ms | < 0.1% |
 | Mixed workload (70% request, 15% batch, 10% connect, 5% health) | 800 total | varies | < 0.5% |
 
-### 28.3 Load Test Procedure
+### 29.3 Load Test Procedure
 
 ```bash
 # 1. Deploy Fabric to test environment (matching production config)
@@ -2838,7 +3095,7 @@ locust -f tests/load/locustfile.py \
 # If below target: investigate bottlenecks (DB, OPA, MCP server latency)
 ```
 
-### 28.4 Chaos Testing (Failure Injection)
+### 29.4 Chaos Testing (Failure Injection)
 
 ```python
 # tests/chaos/chaos.py — scenarios for failure injection
@@ -2871,7 +3128,7 @@ locust -f tests/load/locustfile.py \
 
 ---
 
-## 29. Development Setup
+## 30. Development Setup
 
 ```bash
 # Prerequisites: Python 3.12+, Poetry, Docker (optional for PostgreSQL mode)
@@ -2928,7 +3185,7 @@ opa run --server --addr localhost:8181 policies/
 
 ---
 
-## 30. Dockerfile Specification
+## 31. Dockerfile Specification
 
 ### 30.1 API Dockerfile
 
@@ -3017,7 +3274,7 @@ trivy image mcp-fabric:latest          # Aqua Trivy (OSS)
 
 ---
 
-## 31. Middleware Pipeline Order
+## 32. Middleware Pipeline Order
 
 The order is critical — each middleware depends on the previous.
 
@@ -3070,7 +3327,7 @@ app.add_middleware(AuditMiddleware)
 
 ---
 
-## 32. Pydantic Models (Core Schemas)
+## 33. Pydantic Models (Core Schemas)
 
 ### 32.1 Capability Request
 
@@ -3085,6 +3342,8 @@ class CapabilityRequest(BaseModel):
         examples=["code:search", "incident:get"])
     params: dict[str, Any] = Field(default_factory=dict,
         examples=[{"query": "deployment", "max_results": 5}])
+    resources: dict[str, str] | None = Field(default=None,  # v0.2.0
+        examples=[{"env": "staging", "tenant": "acme-corp", "service": "config-api"}])
 
 class BatchCapabilityRequest(BaseModel):
     requests: list[BatchRequestItem] = Field(..., min_length=1, max_length=10)
@@ -3093,6 +3352,7 @@ class BatchRequestItem(BaseModel):
     id: str = Field(..., min_length=1, max_length=50)
     capability: str = Field(..., pattern=r"^[a-z]+:[a-z][a-z-]*$")
     params: dict[str, Any] = Field(default_factory=dict)
+    resources: dict[str, str] | None = Field(default=None)  # v0.2.0
 
 class CapabilityResponse(BaseModel):
     status: str  # "success" | "approval_pending" | "error"
@@ -3198,6 +3458,8 @@ class CapabilitySurfaceItem(BaseModel):
     trust_level: str
     requires_approval: bool = False
     deprecated: bool = False
+    resource_dimensions: list[str] = Field(default_factory=list)  # v0.2.0
+    identity_bindings: dict[str, list[str]] = Field(default_factory=dict)  # v0.2.0
 ```
 
 ### 32.5 Audit Event
@@ -3224,7 +3486,7 @@ class AuditExportRequest(BaseModel):
 
 ---
 
-## 33. SLO Definitions
+## 34. SLO Definitions
 
 ### 33.1 Service Level Objectives
 
@@ -3288,5 +3550,5 @@ When error budget exhausted (0%):
 
 ---
 
-## 34. Development Setup
+## 35. Development Setup
 ```

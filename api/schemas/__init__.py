@@ -51,6 +51,15 @@ from api.schemas.common import (
 )
 from api.schemas.dashboard import DashboardStats
 from api.schemas.pack import ClonePackRequest, PackAssignmentRequest, PackCreate, PackResponse
+from api.schemas.resource import (
+    DimensionValueMapCreate,
+    DimensionValueMapResponse,
+    ResourceBindingBulkRequest,
+    ResourceBindingResponse,
+    ResourceBindingValue,
+    ResourceDimensionCreate,
+    ResourceDimensionResponse,
+)
 from api.schemas.routing import (
     BatchCapabilityRequest,
     BatchResult,
@@ -134,6 +143,13 @@ __all__ = [
     "BatchCapabilityRequest",
     "RouteResult",
     "BatchResult",
+    "ResourceDimensionCreate",
+    "ResourceDimensionResponse",
+    "DimensionValueMapCreate",
+    "DimensionValueMapResponse",
+    "ResourceBindingBulkRequest",
+    "ResourceBindingResponse",
+    "ResourceBindingValue",
     "RoutingRuleCreate",
     "DashboardStats",
 ]

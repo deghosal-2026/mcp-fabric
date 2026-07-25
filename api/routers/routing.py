@@ -32,7 +32,7 @@ POST /v1/routing-rules, GET /v1/routing-rules, DELETE /v1/routing-rules/{id}.
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_db_session
@@ -47,6 +47,7 @@ from api.schemas.routing import (
 from api.services.routing_service import (
     CapabilityNotFoundError,
     NoServerFoundError,
+    ResourceDeniedError,
     RoutingService,
 )
 
@@ -68,10 +69,13 @@ async def get_routing_service(
 @router.post("/request")
 async def capability_request(
     body: CapabilityRequest,
+    request: Request,
     svc: RoutingService = Depends(get_routing_service),
 ) -> RouteResult:
     try:
-        return await svc.execute(body)
+        identity_id = getattr(request.state, "agent_id", None)
+        identity_uuid = UUID(identity_id) if identity_id else None
+        return await svc.execute(body, identity_id=identity_uuid)
     except CapabilityNotFoundError as exc:
         raise HTTPException(
             status_code=404,
@@ -81,6 +85,11 @@ async def capability_request(
         raise HTTPException(
             status_code=404,
             detail={"error": "no_server", "message": str(exc)},
+        ) from exc
+    except ResourceDeniedError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "resource_not_allowed", "message": str(exc)},
         ) from exc
 
 

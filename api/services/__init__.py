@@ -31,6 +31,7 @@ from api.services.policy_service import (
     PolicyService,
 )
 from api.services.registry_service import RegistryService
+from api.services.resource_service import ResourceNotFoundError, ResourceService
 
 __all__ = [
     "ApprovalAlreadyResolvedError",
@@ -47,6 +48,8 @@ __all__ = [
     "PackService",
     "PolicyService",
     "RegistryService",
+    "ResourceNotFoundError",
+    "ResourceService",
     "ServiceError",
     "DecommissionError",
     "DuplicateServerError",

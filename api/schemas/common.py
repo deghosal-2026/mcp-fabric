@@ -126,3 +126,5 @@ class PolicyDecision(BaseModel):
     trust_level: str = "unreviewed"
     agent_class: str | None = None
     cross_team: bool = False
+    resource_allowed: bool = True
+    resource_violations: list[dict[str, object]] = []

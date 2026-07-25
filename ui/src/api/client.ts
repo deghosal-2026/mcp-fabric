@@ -33,6 +33,10 @@ export async function fetcher<T>(path: string, options?: RequestInit): Promise<T
     throw new Error(body.message || `Request failed: ${res.status}`)
   }
 
+  if (res.status === 204) {
+    return undefined as unknown as T
+  }
+
   return res.json()
 }
 
@@ -229,6 +233,64 @@ export function deployPolicy(regoContent: string) {
     method: 'POST',
     body: JSON.stringify({ rego_content: regoContent }),
   })
+}
+
+// Resource Dimensions (v0.2.0)
+export function fetchResourceDimensions(capabilityId: string) {
+  return fetcher<import('../types').ResourceDimension[]>(
+    `/admin/capabilities/${capabilityId}/dimensions`
+  )
+}
+
+export function createResourceDimension(capabilityId: string, data: { dimension_key: string; display_name?: string }) {
+  return fetcher<import('../types').ResourceDimension>(
+    `/admin/capabilities/${capabilityId}/dimensions`,
+    { method: 'POST', body: JSON.stringify(data) }
+  )
+}
+
+export function deleteResourceDimension(capabilityId: string, dimId: string) {
+  return fetcher<void>(
+    `/admin/capabilities/${capabilityId}/dimensions/${dimId}`,
+    { method: 'DELETE' }
+  )
+}
+
+export function setDimensionValueMap(
+  capabilityId: string,
+  dimId: string,
+  data: { source: string; param_path?: string; constant_value?: string }
+) {
+  return fetcher<import('../types').DimensionValueMap>(
+    `/admin/capabilities/${capabilityId}/dimensions/${dimId}/value-map`,
+    { method: 'POST', body: JSON.stringify(data) }
+  )
+}
+
+export function setIdentityResourceBindings(identityId: string, bindings: { dimension_key: string; allowed_value: string }[]) {
+  return fetcher<import('../types').ResourceBinding[]>(
+    `/admin/agents/${identityId}/resources`,
+    { method: 'POST', body: JSON.stringify({ bindings }) }
+  )
+}
+
+export function fetchIdentityResourceBindings(identityId: string) {
+  return fetcher<import('../types').ResourceBinding[]>(
+    `/admin/agents/${identityId}/resources`
+  )
+}
+
+export function setPackResourceBindings(packId: string, bindings: { dimension_key: string; allowed_value: string }[]) {
+  return fetcher<import('../types').ResourceBinding[]>(
+    `/admin/packs/${packId}/resources`,
+    { method: 'POST', body: JSON.stringify({ bindings }) }
+  )
+}
+
+export function fetchPackResourceBindings(packId: string) {
+  return fetcher<import('../types').ResourceBinding[]>(
+    `/admin/packs/${packId}/resources`
+  )
 }
 
 // Dashboard

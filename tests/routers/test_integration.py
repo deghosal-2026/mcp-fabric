@@ -100,7 +100,7 @@ def test_capability_lifecycle(server_available, auth_client):
     resp = auth_client.post(
         "/v1/capabilities",
         json={
-            "name": "test:e2e",
+            "name": "test:etoe-api",
             "domain": "e2e",
             "description": "E2E test capability",
         },
@@ -113,7 +113,7 @@ def test_capability_lifecycle(server_available, auth_client):
     resp = auth_client.get("/v1/capabilities")
     assert resp.status_code == 200
     names = [c["name"] for c in resp.json()["items"]]
-    assert "test:e2e" in names
+    assert "test:etoe-api" in names
 
 
 def test_auth_connect_no_token(server_available, client):

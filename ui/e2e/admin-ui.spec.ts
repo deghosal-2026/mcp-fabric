@@ -55,7 +55,7 @@ const MOCK_AUDIT = {
 
 const MOCK_APPROVALS = {
   items: [
-    { id: 'apr-1', agent_identity_id: 'id-1', capability_id: 'cap-3', server_id: 'srv-4', request_params: { service: 'payment-api', env: 'staging' }, status: 'pending', approver_id: null, requested_at: '2026-07-24T10:00:00Z', resolved_at: null, agent_name: 'CRBot', capability_name: 'deployment:promote', server_name: 'Deployment Server' },
+    { id: 'apr-1', agent_identity_id: 'id-1', capability_id: 'cap-3', server_id: 'srv-4', request_params: { service: 'payment-api', env: 'staging', resources: { env: 'staging', tenant: 'acme-corp' } }, status: 'pending', approver_id: null, requested_at: '2026-07-24T10:00:00Z', resolved_at: null, agent_name: 'CRBot', capability_name: 'deployment:promote', server_name: 'Deployment Server' },
     { id: 'apr-2', agent_identity_id: 'id-2', capability_id: 'cap-4', server_id: 'srv-3', request_params: { service: 'auth-api', depth: 'full' }, status: 'pending', approver_id: null, requested_at: '2026-07-24T09:00:00Z', resolved_at: null, agent_name: 'Igor', capability_name: 'vulnerability:scan', server_name: 'Vuln Scanner' },
   ],
   pagination: { total: 2, has_more: false, per_page: 50 },
@@ -105,6 +105,16 @@ const MOCK_SERVER_DETAIL = {
   routing_rules: [],
   trust_assignments: [],
 }
+
+const MOCK_DIMENSIONS = [
+  { id: 'dim-1', capability_id: 'cap-3', dimension_key: 'env', display_name: 'Environment', created_at: '2026-07-24T00:00:00Z' },
+  { id: 'dim-2', capability_id: 'cap-3', dimension_key: 'tenant', display_name: 'Tenant', created_at: '2026-07-24T00:00:00Z' },
+]
+
+const MOCK_RESOURCE_BINDINGS = [
+  { id: 'bind-1', agent_identity_id: 'id-1', dimension_key: 'env', allowed_value: 'staging', created_at: '2026-07-24T00:00:00Z' },
+  { id: 'bind-2', agent_identity_id: 'id-1', dimension_key: 'env', allowed_value: 'dev', created_at: '2026-07-24T00:00:00Z' },
+]
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript((token: string) => {
@@ -212,6 +222,29 @@ test.beforeEach(async ({ page }) => {
     }
     if (path.match(/^\/v1\/admin\/users\/.+\/deactivate$/)) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_ADMIN_USERS[0]) })
+    }
+
+    // Resource Policy (v0.2.0)
+    if (path.match(/\/v1\/admin\/capabilities\/.+\/dimensions\/?$/)) {
+      if (method === 'POST') {
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(MOCK_DIMENSIONS[0]) })
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_DIMENSIONS) })
+    }
+    if (path.match(/\/v1\/admin\/capabilities\/.+\/dimensions\/[^/]+$/)) {
+      return route.fulfill({ status: 204 })
+    }
+    if (path.match(/\/v1\/admin\/agents\/.+\/resources\/?$/)) {
+      if (method === 'POST') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_RESOURCE_BINDINGS) })
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_RESOURCE_BINDINGS) })
+    }
+    if (path.match(/\/v1\/admin\/packs\/.+\/resources\/?$/)) {
+      if (method === 'POST') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_RESOURCE_BINDINGS) })
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_RESOURCE_BINDINGS) })
     }
 
     route.continue()
@@ -351,6 +384,30 @@ test.describe('Admin UI — Page Screenshots', () => {
     await classSelect.selectOption('cls-1')
     await page.waitForTimeout(500)
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, '18-trust-posture-class-selected.png'), fullPage: true })
+  })
+
+  test('Capabilities — Dimensions modal', async ({ page }) => {
+    await page.goto('/capabilities')
+    await page.waitForLoadState('networkidle')
+    await page.getByRole('button', { name: /dimensions/i }).first().click()
+    await page.waitForTimeout(500)
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '19-capabilities-dimensions.png'), fullPage: true })
+  })
+
+  test('Packs — Resource Bindings modal', async ({ page }) => {
+    await page.goto('/packs')
+    await page.waitForLoadState('networkidle')
+    await page.getByRole('button', { name: /bindings/i }).first().click()
+    await page.waitForTimeout(500)
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '20-packs-bindings.png'), fullPage: true })
+  })
+
+  test('Approvals — Resource violation shows in review', async ({ page }) => {
+    await page.goto('/approvals')
+    await page.waitForLoadState('networkidle')
+    await page.locator('button', { hasText: 'Review' }).first().click()
+    await page.waitForTimeout(500)
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '21-approvals-resource-violation.png'), fullPage: true })
   })
 })
 

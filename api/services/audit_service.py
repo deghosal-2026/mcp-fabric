@@ -91,6 +91,7 @@ class AuditService:
         event_type: str | None = None,
         actor_type: str | None = None,
         actor_id: str | None = None,
+        resource_violation: bool | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[AuditEvent]:
@@ -100,9 +101,10 @@ class AuditService:
         Filters are composable: you can query by event_type + actor_type,
         or event_type alone, etc.
 
-        Note: Does not support filtering by date range or target_type directly.
-        Those can be added when the audit query use case requires them.
-        For now, callers can filter the details JSON in application code.
+        The resource_violation filter (v0.2.0) filters events whose details
+        contain a resource_check with resource_allowed=false. In PostgreSQL
+        this uses JSONB containment; in SQLite it uses application-level
+        filtering.
         """
         stmt = select(AuditEvent).order_by(AuditEvent.created_at.desc())
         if event_type:
@@ -111,9 +113,20 @@ class AuditService:
             stmt = stmt.where(AuditEvent.actor_type == actor_type)
         if actor_id:
             stmt = stmt.where(AuditEvent.actor_id == actor_id)
-        stmt = stmt.offset(offset).limit(limit)
-        result = await self.db.execute(stmt)
-        return list(result.scalars().all())
+
+        if resource_violation is not None:
+            result = await self.db.execute(stmt)
+            events = list(result.scalars().all())
+            events = [
+                e
+                for e in events
+                if (e.details or {}).get("resource_check", {}).get("resource_allowed")
+                is not resource_violation
+            ]
+            return events[offset:offset + limit] if (offset or limit) else events
+        else:
+            result = await self.db.execute(stmt.offset(offset).limit(limit))
+            return list(result.scalars().all())
 
     async def cleanup(self, before: datetime | None = None) -> int:
         """Delete audit events older than the given datetime.

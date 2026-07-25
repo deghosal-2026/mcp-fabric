@@ -11,6 +11,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial project setup: README, LICENSE, PRD, spec, architecture docs
 - Repository scaffolding: CONTRIBUTING, SECURITY, CODEOWNERS, issue templates
 
+## [0.2.0] — 2026-07-25
+
+### Added
+
+#### Resource-Aware Policy (Dynamic Resource Dimensions)
+- **Problem:** The OPA policy engine evaluated `(agent_class, capability, trust_level)` — the verb only. It could answer "may agent:release-engineer use `deployment:promote`?" but not "may agent:release-engineer use `deployment:promote` on `env:prod`?"
+- **Solution:** A dynamic resource dimension system lets platform engineers define per-capability which resource dimensions constrain it (e.g., `env`, `tenant`, `service`), bind allowed values to agent identities and capability packs, and let OPA evaluate `(capability, resource)` pairs at request time.
+- **Key insight from community feedback (Alexey Spinov):** Verb-only policy passes 5/5 cases where the capability is correct but the object differs. Resource-binding closes that gap.
+
+#### Architecture
+- **4 new DB tables:** `resource_dimensions`, `dimension_value_map`, `identity_resource_bindings`, `pack_resource_bindings` with proper FKs, unique constraints, and cascade deletes
+- **OPA Rego extension:** New `resource_allowed` gate in the `allow` rule, `dim_allowed` helper, `resource_violations` set for audit detail. Dimensions come from `input.declared_dimensions` (dynamic, not hardcoded)
+- **Routing service:** `resolve_resources()` extracts dimension values from request params (via `dimension_value_map`) or explicit `resources` field. `merge_bindings()` computes identity ∩ pack intersection per dimension
+- **Policy service:** `identity_resources` and `request_resources` passed to OPA. Cache key includes resource data with shorter TTL (60s vs 300s)
+- **Audit:** `resource_check` field captured in audit event `details` JSONB, queryable via `resource_violation=true` filter
+- **Design choice:** Dynamic dimension registry (Approach C) preferred over hardcoded dimensions — teams add dimensions at runtime without code changes
+
+#### API (10 new endpoints)
+- `POST/GET/DELETE /admin/capabilities/{id}/dimensions` — manage resource dimensions per capability
+- `POST /admin/capabilities/{id}/dimensions/{dim_id}/value-map` — param-to-dimension extraction mapping
+- `POST/GET/DELETE /admin/agents/{identity_id}/resources` — manage identity resource bindings
+- `POST/GET/DELETE /admin/packs/{pack_id}/resources` — manage pack resource bindings
+
+#### Admin UI
+- **Capabilities page** — "Dimensions" button opens modal to add/remove resource dimensions
+- **Agent Classes page** — "Bindings" button opens modal to manage identity resource bindings
+- **Packs page** — "Bindings" button opens modal to manage pack resource bindings
+- **Approvals page** — Resource constraint section shown in review panel when present
+- `CapabilityRequest` schema gains optional `resources` field for explicit dimension values
+
+#### Testing (47 new tests)
+- **13 backend integration tests** — dimension CRUD, value maps, identity/pack binding CRUD, `merge_bindings` intersection, `resolve_resources` extraction, cascade deletes
+- **12 new OPA Rego tests** — resource_allowed pass/fail, empty identity, multi-value, missing dimensions, database query constraints, rollback constraints (21 total)
+- **2 new merge_bindings tests** — pack-only and identity-only paths
+- **3 new Playwright E2E tests** — dimensions modal, packs bindings modal, approval resource violation display
+- **7 new UI test cases** (TC-PAGE-037 to 043) — detailed interaction specs for dimension/binding modals and resource violation display
+
+#### Documentation
+- PRD updated: Problem 5 (verb-only policy), Journey 30 (resource-constrained policy), Feature 10 (resource-aware policy), glossary terms
+- Spec updated: DB schema (3.20-3.23), OPA policy (5.2), request lifecycle (Step 3.5), error catalog, Pydantic models, ERD, indexing, metrics, milestones, tech tradeoffs (Section 25)
+- Design doc: `docs/resource-aware-policy-design.md`
+- WBS: Phase 13 (12 tasks, 184h)
+- 3 new E2E screenshots added
+
+### Fixed
+- `fetcher()` now handles 204 No Content responses (DELETE endpoints were crashing the UI)
+- Audit `resource_violation` filter pagination — in-memory filter no longer applies offset/limit before filtering
+- Param path resolution — `params.` prefix in `param_path` is now stripped correctly
+- Hardcoded `capability_dimensions` map removed from Rego — dimensions now come from `input.declared_dimensions`
+- `set_value_map` now deletes old value maps before inserting (no orphan rows)
+- `create_dimension` validates capability exists before inserting (returns 404, not 500)
+- `IntegrityError` on duplicate dimensions/bindings returns 409 (not 500)
+- `ResourceConflictError` added for duplicate detection
+- Source/param_path consistency validated in `set_value_map`
+- Resource check in routing service now queries identity from auth context (was passing `None`)
+- OPA evaluate called with proper `agent_class` (not empty string)
+- Cache TTL reduced to 60s for resource-specific keys (was 300s)
+- Explicit resources fallback fixed — now checked even when value_map exists
+- Param value extraction uses `str(val)` instead of strict `isinstance(val, str)` check
+- Approvals page no longer crashes when `request_params.resources` is `null`
+- Audit failure logging added (was silently suppressed)
+- N+1 query eliminated — `selectinload` used for dimension value_maps
+- `DimensionValueMap` model now has `created_at` via `TimestampMixin`
+- All existing OPA tests updated to include `declared_dimensions` in input
+
 ## [0.1.0] — 2026-07-22
 
 ### Added
@@ -115,5 +180,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CONTRIBUTING.md — project structure, code style, how to contribute
 - SECURITY.md — vulnerability reporting policy
 
-[Unreleased]: https://github.com/deghosal-2026/mcp-fabric/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/deghosal-2026/mcp-fabric/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/deghosal-2026/mcp-fabric/releases/tag/v0.2.0
 [0.1.0]: https://github.com/deghosal-2026/mcp-fabric/releases/tag/v0.1.0

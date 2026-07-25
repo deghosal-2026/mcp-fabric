@@ -24,6 +24,22 @@ Once a team adds multiple MCP servers, several hard questions emerge:
 - Which agents get access to which tools — and who needs to approve?
 - How should a platform team audit and govern usage across the whole tool ecosystem?
 
+## What's New in v0.2.0 — Resource-Aware Policy
+
+> **Full changelog:** [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
+
+v0.2.0 brings **Resource-Aware Policy** — a dynamic resource dimension system that extends the policy engine from verb-only to verb+object authorization. The original OPA policy could answer "may agent:release-engineer use `deployment:promote`?" but not "may agent:release-engineer use `deployment:promote` on `env:prod`?"
+
+Now it can. Platform engineers define resource dimensions (e.g., `env`, `tenant`, `service`) per capability, bind allowed values to agent identities and capability packs, and OPA evaluates `(capability, resource)` pairs at request time. Resource violations are logged in the audit trail with full detail.
+
+**Key resources:**
+- [Product Requirements — Problem 5, Journey 30, Feature 10](docs/PRD.md)
+- [Technical Spec — DB Schema, OPA Policy, Request Lifecycle, Tech Tradeoffs](docs/spec.md)
+- [Design Doc](docs/resource-aware-policy-design.md)
+- [User Guide — Resource Policy Section](docs/user-guide.md#5-resource-policy--constrain-capabilities-to-specific-resources)
+- [Work Breakdown — Phase 13](docs/wbs/phase-13-resource-policy.md)
+- [GitHub Issue — Parent Feature #394](https://github.com/deghosal-2026/mcp-fabric/issues/394)
+
 ## Quick Start
 
 ```bash
@@ -153,14 +169,15 @@ Everything runs locally. No enterprise dependencies required.
 ## Test Status
 
 | Suite | Tests | Status |
-|---|---|---|
+|---|---|---|---|
 | Backend unit (services, middleware, errors) | 295 | ✅ Passing |
 | Backend integration (HTTP routes) | 12 | ✅ Passing |
-| OPA policy (Rego) | 12 | ✅ Passing |
+| Backend resource policy (services + models) | 36 | ✅ Passing |
+| OPA policy (Rego) | 21 | ✅ Passing |
 | UI unit/integration (Vitest) | 128 | ✅ Passing |
-| UI E2E + screenshots (Playwright) | 21 | ✅ Passing |
+| UI E2E + screenshots (Playwright) | 70 | ✅ Passing |
 | Docker Compose E2E (curl) | 6 | ✅ Scripts ready |
-| **Total** | **474** | |
+| **Total** | **568** | |
 
 ```bash
 make test        # Backend unit tests

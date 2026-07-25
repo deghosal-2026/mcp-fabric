@@ -24,10 +24,15 @@ class CapabilityRequest(BaseModel):
                     normalized_input_schema. The router will transform these
                     through the mapping's input_mapping before sending to
                     the server tool.
+        resources:  Optional resource dimension values for policy evaluation
+                    (v0.2.0). If not provided, Fabric attempts to extract
+                    them from params via dimension_value_map.
+                    E.g. {"env": "staging", "tenant": "acme-corp"}
     """
 
     capability: str
     params: dict[str, Any] = {}
+    resources: dict[str, str] | None = None
 
 
 class BatchCapabilityRequest(BaseModel):

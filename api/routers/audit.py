@@ -53,6 +53,7 @@ async def list_audit_events(
     event_type: str | None = Query(None),
     actor_type: str | None = Query(None),
     actor_id: str | None = Query(None, alias="q"),
+    resource_violation: bool | None = Query(None),
     per_page: int = Query(100, le=500, alias="per_page"),
     offset: int = Query(0, ge=0),
     svc: AuditService = Depends(get_audit_service),
@@ -63,6 +64,7 @@ async def list_audit_events(
         event_type=event_type,
         actor_type=actor_type,
         actor_id=actor_id,
+        resource_violation=resource_violation,
         limit=limit,
         offset=offset,
     )
