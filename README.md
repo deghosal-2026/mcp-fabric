@@ -25,24 +25,41 @@ Once a team adds multiple MCP servers, several hard questions emerge:
 ## Quick Start
 
 ```bash
-# Clone and start the full stack
+# Clone and start the full stack (Docker)
 git clone https://github.com/deghosal-2026/mcp-fabric.git
 cd mcp-fabric
 docker-compose up -d
 
-# API: http://localhost:8000
-# Docs: http://localhost:8000/docs
-# Admin UI: http://localhost:3000 (cd ui && npm run dev)
-```
-
-Or run locally without Docker:
-
-```bash
-poetry install
-cd ui && npm install && cd ..
+# Or run locally without Docker:
+poetry install && cd ui && npm install && cd ..
 poetry run uvicorn api.main:app --reload &
 cd ui && npm run dev
 ```
+
+| Service | URL |
+|---|---|
+| API | `http://localhost:8000` |
+| API Docs (Swagger) | `http://localhost:8000/docs` |
+| Admin UI | `http://localhost:3000` |
+| Metrics | `http://localhost:8000/v1/metrics` |
+| Health | `http://localhost:8000/health` |
+
+## Documentation
+
+| Guide | Description |
+|---|---|---|
+| 👤 [Admin UI User Guide](docs/user-guide.md) | Walkthrough of all 12 UI pages with 19 screenshots |
+| 📄 [Product Requirements (PRD)](docs/PRD.md) | 29 user journeys, persona definitions, product scope |
+| 📐 [Technical Specification](docs/spec.md) | Full architecture, DB schema, API contract, OPA policies |
+| 🏗️ [Architecture](docs/ARCHITECTURE.md) | System design, data flow, component interfaces |
+| 🧪 [Test Plan](docs/ui-test/PLAN.md) | UI test strategy: 145 vitest + 21 Playwright + 19 screenshots |
+| 🛠️ [Development Guide](docs/guides/development.md) | Local setup, testing, migrations, Docker Compose |
+| 🚀 [Deployment Guide](docs/guides/deployment.md) | Docker Compose deploy, env vars, backup/restore, blue-green upgrade |
+| ⚙️ [Configuration Reference](docs/guides/configuration.md) | All 25 env vars with defaults, feature flags, production checklist |
+| 📊 [Monitoring Guide](docs/guides/monitoring.md) | Prometheus metrics, Grafana dashboard, Alertmanager, OTel tracing |
+| 🔒 [Security Guide](docs/guides/security.md) | Auth model, password policy, MFA, token lifecycle, RBAC, audit |
+| ❓ [Troubleshooting Guide](docs/guides/troubleshooting.md) | Common issues: API, health checks, OPA, Redis, CORS, DB migrations |
+| 📝 [Changelog](docs/CHANGELOG.md) | Version history and release notes |
 
 ## What MCP Fabric Does
 
@@ -66,27 +83,6 @@ Agent → MCP Fabric → Registry → Policy → Router → Target MCP Server
 ```
 
 Agents stop thinking in terms of arbitrary server sprawl and instead receive a **coherent capability layer**.
-
-## Quick Start
-
-```bash
-# Install dependencies
-poetry install
-
-# Run database migrations
-alembic upgrade head
-
-# Start the API server (development)
-uvicorn api.main:app --reload
-
-# Or run the full stack with Docker Compose (API, Postgres, Redis, Celery worker/beat)
-docker-compose up --build
-
-# Run tests
-poetry run pytest tests/ -v
-```
-
-The API will be available at `http://localhost:8000`. Health check: `GET /health`. Metrics: `GET /v1/metrics`.
 
 ## Stack
 
