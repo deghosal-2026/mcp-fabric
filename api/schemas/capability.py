@@ -10,6 +10,12 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
+class CapabilityAliasCreate(BaseModel):
+    """Request body for adding an alias to a capability."""
+
+    alias: str = Field(min_length=1, max_length=255)
+
+
 class CapabilityCreate(BaseModel):
     """Request body for defining a new normalized capability."""
 

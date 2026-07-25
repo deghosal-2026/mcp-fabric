@@ -1,21 +1,27 @@
 """Policy and agent class management routes.
 
 Endpoints: POST /v1/agent-classes, GET /v1/agent-classes, GET /v1/agent-classes/{id},
-POST /v1/agent-classes/{id}/trust, POST /v1/admin/policies/bundle.
+POST /v1/agent-classes/{id}/trust, POST /v1/agent-classes/{id}/identities,
+GET /v1/agent-classes/{id}/identities, POST /v1/agent-identities/{id}/rotate,
+POST /v1/agent-identities/{id}/revoke, POST /v1/admin/policies/bundle.
 """
 
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from starlette import status
 
-from api.dependencies import get_policy_service
+from api.dependencies import get_auth_service, get_policy_service
 from api.schemas.agent import (
     AgentClassCreate,
     AgentClassResponse,
+    AgentIdentityCreate,
+    AgentIdentityResponse,
     TrustAssignmentCreate,
     TrustAssignmentResponse,
 )
 from api.schemas.policy import BundleDeployRequest, OPAPolicyVersionResponse
+from api.services.auth_service import AuthService
 from api.services.policy_service import OPABundleError, PolicyService
 
 router = APIRouter(prefix="/v1", tags=["policy"])
@@ -62,6 +68,61 @@ async def set_trust(
 ) -> TrustAssignmentResponse:
     """Set trust assignments for an agent class. Returns 201 with the assignment."""
     return await svc.set_trust(class_id, body)
+
+
+@router.post("/agent-classes/{class_id}/identities", status_code=201)
+async def create_agent_identity(
+    class_id: UUID,
+    body: AgentIdentityCreate,
+    svc: AuthService = Depends(get_auth_service),
+) -> AgentIdentityResponse:
+    """Create a new agent identity for an agent class. Returns 201 with the raw token."""
+    try:
+        return await svc.create_agent_identity(body)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "not_found", "message": str(exc)},
+        ) from exc
+
+
+@router.get("/agent-classes/{class_id}/identities")
+async def list_agent_identities(
+    class_id: UUID,
+    svc: AuthService = Depends(get_auth_service),
+) -> list[AgentIdentityResponse]:
+    """List all agent identities for a given agent class."""
+    return await svc.list_agent_identities(class_id)
+
+
+@router.post("/agent-identities/{identity_id}/rotate")
+async def rotate_agent_token(
+    identity_id: UUID,
+    svc: AuthService = Depends(get_auth_service),
+) -> AgentIdentityResponse:
+    """Rotate the token for an active agent identity."""
+    try:
+        return await svc.rotate_agent_token(identity_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "not_found", "message": str(exc)},
+        ) from exc
+
+
+@router.post("/agent-identities/{identity_id}/revoke", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_agent_token(
+    identity_id: UUID,
+    svc: AuthService = Depends(get_auth_service),
+) -> None:
+    """Revoke an agent identity, preventing further token usage."""
+    try:
+        await svc.revoke_agent_token(identity_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "not_found", "message": str(exc)},
+        ) from exc
 
 
 @router.post("/admin/policies/bundle", status_code=201)

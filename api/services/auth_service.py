@@ -19,6 +19,7 @@ from api.config import settings
 from api.models.admin import AdminUser
 from api.models.agent import AgentClass, AgentClassPack, AgentIdentity
 from api.models.capability import Capability
+from api.schemas.admin import AdminUserInvite, AdminUserResponse, AdminUserUpdate
 from api.schemas.agent import (
     AgentConnectResponse,
     AgentIdentityCreate,
@@ -219,6 +220,32 @@ class AuthService:
         identity.status = "revoked"
         identity.revoked_at = _utcnow()
         await self.db.commit()
+
+    async def list_agent_identities(
+        self,
+        agent_class_id: UUID,
+    ) -> list[AgentIdentityResponse]:
+        """List all agent identities for a given agent class."""
+        if self.db is None:
+            raise RuntimeError("AuthService requires db for identity management")
+        result = await self.db.execute(
+            select(AgentIdentity).where(AgentIdentity.agent_class_id == agent_class_id)
+        )
+        identities = result.scalars().all()
+        return [
+            AgentIdentityResponse(
+                id=ident.id,
+                name=ident.name,
+                agent_class_id=ident.agent_class_id,
+                token_prefix=ident.token_prefix,
+                status=ident.status or "active",
+                rate_limit_per_min=ident.rate_limit_per_min or 100,
+                expires_at=ident.expires_at,
+                created_at=ident.created_at,
+                token=None,
+            )
+            for ident in identities
+        ]
 
     async def get_agent_capability_surface(
         self,
@@ -584,3 +611,189 @@ class AuthService:
             raise PasswordPolicyError("Password must contain a lowercase letter")
         if not any(c.isdigit() for c in password):
             raise PasswordPolicyError("Password must contain a digit")
+
+    # ── Admin User Management ─────────────────────────────────────────
+
+    async def invite_admin(self, params: AdminUserInvite) -> AdminUserResponse:
+        if self.db is None:
+            raise RuntimeError("AuthService requires db")
+        username = params.email.split("@")[0]
+        result = await self.db.execute(
+            select(AdminUser).where(AdminUser.email == params.email)
+        )
+        if result.scalar_one_or_none() is not None:
+            raise ValueError(f"Admin with email {params.email} already exists")
+        temp_password = secrets.token_urlsafe(16)
+        admin = AdminUser(
+            username=username,
+            email=params.email,
+            password_hash=self.hash_password(temp_password),
+            role=params.role,
+            team_namespace=params.team_namespace,
+            status="active",
+        )
+        self.db.add(admin)
+        await self.db.commit()
+        await self.db.refresh(admin)
+        return AdminUserResponse(
+            id=admin.id,
+            username=admin.username,
+            email=admin.email,
+            role=admin.role,
+            team_namespace=admin.team_namespace,
+            mfa_enabled=bool(admin.mfa_enabled),
+            status=admin.status or "active",
+            last_login_at=admin.last_login_at,
+            created_at=admin.created_at,
+        )
+
+    async def list_admins(self) -> list[AdminUserResponse]:
+        if self.db is None:
+            raise RuntimeError("AuthService requires db")
+        result = await self.db.execute(
+            select(AdminUser).order_by(AdminUser.created_at.desc())
+        )
+        admins = result.scalars().all()
+        return [
+            AdminUserResponse(
+                id=a.id,
+                username=a.username,
+                email=a.email,
+                role=a.role,
+                team_namespace=a.team_namespace,
+                mfa_enabled=bool(a.mfa_enabled),
+                status=a.status or "active",
+                last_login_at=a.last_login_at,
+                created_at=a.created_at,
+            )
+            for a in admins
+        ]
+
+    async def get_admin(self, admin_id: UUID) -> AdminUserResponse | None:
+        if self.db is None:
+            raise RuntimeError("AuthService requires db")
+        result = await self.db.execute(
+            select(AdminUser).where(AdminUser.id == admin_id)
+        )
+        admin = result.scalar_one_or_none()
+        if admin is None:
+            return None
+        return AdminUserResponse(
+            id=admin.id,
+            username=admin.username,
+            email=admin.email,
+            role=admin.role,
+            team_namespace=admin.team_namespace,
+            mfa_enabled=bool(admin.mfa_enabled),
+            status=admin.status or "active",
+            last_login_at=admin.last_login_at,
+            created_at=admin.created_at,
+        )
+
+    async def update_admin(
+        self,
+        admin_id: UUID,
+        params: AdminUserUpdate,
+    ) -> AdminUserResponse | None:
+        if self.db is None:
+            raise RuntimeError("AuthService requires db")
+        result = await self.db.execute(
+            select(AdminUser).where(AdminUser.id == admin_id)
+        )
+        admin = result.scalar_one_or_none()
+        if admin is None:
+            return None
+        if params.role is not None:
+            admin.role = params.role
+        if params.team_namespace is not None:
+            admin.team_namespace = params.team_namespace
+        await self.db.commit()
+        await self.db.refresh(admin)
+        return AdminUserResponse(
+            id=admin.id,
+            username=admin.username,
+            email=admin.email,
+            role=admin.role,
+            team_namespace=admin.team_namespace,
+            mfa_enabled=bool(admin.mfa_enabled),
+            status=admin.status or "active",
+            last_login_at=admin.last_login_at,
+            created_at=admin.created_at,
+        )
+
+    async def deactivate_admin(self, admin_id: UUID) -> AdminUserResponse | None:
+        if self.db is None:
+            raise RuntimeError("AuthService requires db")
+        result = await self.db.execute(
+            select(AdminUser).where(AdminUser.id == admin_id)
+        )
+        admin = result.scalar_one_or_none()
+        if admin is None:
+            return None
+        admin.status = "inactive"
+        await self.db.commit()
+        await self.db.refresh(admin)
+        return AdminUserResponse(
+            id=admin.id,
+            username=admin.username,
+            email=admin.email,
+            role=admin.role,
+            team_namespace=admin.team_namespace,
+            mfa_enabled=bool(admin.mfa_enabled),
+            status=admin.status or "inactive",
+            last_login_at=admin.last_login_at,
+            created_at=admin.created_at,
+        )
+
+    async def unlock_admin(self, admin_id: UUID) -> AdminUserResponse | None:
+        if self.db is None:
+            raise RuntimeError("AuthService requires db")
+        result = await self.db.execute(
+            select(AdminUser).where(AdminUser.id == admin_id)
+        )
+        admin = result.scalar_one_or_none()
+        if admin is None:
+            return None
+        admin.failed_attempts = 0
+        admin.locked_until = None
+        if admin.status != "active":
+            admin.status = "active"
+        await self.db.commit()
+        await self.db.refresh(admin)
+        return AdminUserResponse(
+            id=admin.id,
+            username=admin.username,
+            email=admin.email,
+            role=admin.role,
+            team_namespace=admin.team_namespace,
+            mfa_enabled=bool(admin.mfa_enabled),
+            status=admin.status or "active",
+            last_login_at=admin.last_login_at,
+            created_at=admin.created_at,
+        )
+
+    async def reset_admin_mfa(self, admin_id: UUID) -> AdminUserResponse | None:
+        if self.db is None:
+            raise RuntimeError("AuthService requires db")
+        result = await self.db.execute(
+            select(AdminUser).where(AdminUser.id == admin_id)
+        )
+        admin = result.scalar_one_or_none()
+        if admin is None:
+            return None
+        admin.mfa_secret = None
+        admin.mfa_enabled = False
+        admin.recovery_codes = None
+        await self.db.commit()
+        await self.db.refresh(admin)
+        return AdminUserResponse(
+            id=admin.id,
+            username=admin.username,
+            email=admin.email,
+            role=admin.role,
+            team_namespace=admin.team_namespace,
+            mfa_enabled=False,
+            status=admin.status or "active",
+            last_login_at=admin.last_login_at,
+            created_at=admin.created_at,
+        )

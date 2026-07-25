@@ -21,6 +21,7 @@ from api.middleware import (
     TracingMiddleware,
 )
 from api.middleware.cors import CORS_CONFIG
+from api.routers.admin import router as admin_router
 from api.routers.approval import router as approval_router
 from api.routers.audit import router as audit_router
 from api.routers.auth import router as auth_router
@@ -30,6 +31,7 @@ from api.routers.policy import router as policy_router
 from api.routers.registry import router as registry_router
 from api.routers.routing import router as routing_router
 from api.routers.routing import router_rules
+from api.routers.webhooks import router as webhooks_router
 from api.seeders import run_seeders
 from api.services.health import check_database, check_opa, check_redis
 from api.telemetry.instrumentation import instrument_engine
@@ -80,6 +82,7 @@ app.add_middleware(TenantMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(AuditMiddleware)
 
+app.include_router(admin_router)
 app.include_router(registry_router)
 app.include_router(audit_router)
 app.include_router(auth_router)
@@ -89,6 +92,7 @@ app.include_router(router_rules)
 app.include_router(policy_router)
 app.include_router(approval_router)
 app.include_router(pack_router)
+app.include_router(webhooks_router)
 
 @app.get("/health")
 async def health(request: Request):

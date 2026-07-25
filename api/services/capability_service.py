@@ -9,7 +9,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.models.capability import Capability
+from api.models.capability import Capability, CapabilityAlias
 from api.schemas.capability import CapabilityCreate, CapabilityResponse
 
 
@@ -57,6 +57,17 @@ class CapabilityService:
         if cap is None:
             return None
         cap.status = "deprecated"
+        await self.db.commit()
+        await self.db.refresh(cap)
+        return await self._to_response(cap)
+
+    async def add_alias(self, cap_id: UUID, alias: str) -> CapabilityResponse | None:
+        """Add an alias to a capability. Returns None if capability not found."""
+        result = await self.db.execute(select(Capability).where(Capability.id == cap_id))
+        cap = result.scalar_one_or_none()
+        if cap is None:
+            return None
+        cap.aliases.append(CapabilityAlias(capability_id=cap_id, alias=alias))
         await self.db.commit()
         await self.db.refresh(cap)
         return await self._to_response(cap)

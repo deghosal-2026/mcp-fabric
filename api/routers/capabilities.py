@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_db_session
 from api.schemas.capability import (
+    CapabilityAliasCreate,
     CapabilityCreate,
     CapabilityMappingCreate,
     CapabilityMappingResponse,
@@ -53,6 +54,22 @@ async def get_capability(
 ) -> CapabilityResponse:
     """Get a single capability by ID. Returns 404 if not found."""
     result = await svc.get(capability_id)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "not_found", "message": "Capability not found"},
+        )
+    return result
+
+
+@router.post("/{capability_id}/aliases", status_code=201)
+async def add_capability_alias(
+    capability_id: UUID,
+    body: CapabilityAliasCreate,
+    svc: CapabilityService = Depends(get_capability_service),
+) -> CapabilityResponse:
+    """Add an alias to a capability. Returns 201 or 404 if not found."""
+    result = await svc.add_alias(capability_id, body.alias)
     if result is None:
         raise HTTPException(
             status_code=404,

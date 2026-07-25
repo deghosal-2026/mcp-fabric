@@ -25,6 +25,15 @@ from api.services.approval_service import (
 router = APIRouter(prefix="/v1/approvals", tags=["approvals"])
 
 
+@router.get("")
+async def list_approval_requests(
+    status: str | None = None,
+    svc: ApprovalService = Depends(get_approval_service),
+) -> list[ApprovalRequestResponse]:
+    """List approval requests, optionally filtered by status (pending/approved/denied)."""
+    return await svc.list_requests(status_filter=status)
+
+
 @router.post("", status_code=201)
 async def create_approval_request(
     body: ApprovalRequestCreate,
