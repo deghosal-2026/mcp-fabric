@@ -36,6 +36,16 @@ export async function fetcher<T>(path: string, options?: RequestInit): Promise<T
   return res.json()
 }
 
+async function authFetcher<T>(path: string, token: string, body: unknown): Promise<T> {
+  return fetcher<T>(path, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  })
+}
+
 export function buildQuery(base: string, params?: Record<string, string | undefined>): string {
   const search = new URLSearchParams()
   if (params) {
@@ -66,10 +76,9 @@ export function login(username: string, password: string) {
 }
 
 export function verifyMfa(token: string, code: string) {
-  return fetcher<{ token: string; user: import('../types').AuthUser }>(
-    '/auth/mfa/verify',
-    { method: 'POST', body: JSON.stringify({ token, code }) },
-  )
+  return authFetcher<{ token: string; user: import('../types').AuthUser }>('/auth/mfa/verify', token, {
+    code,
+  })
 }
 
 // Servers
@@ -157,9 +166,9 @@ export function fetchApprovals(params?: Record<string, string>) {
 }
 
 export function resolveApproval(id: string, status: 'approved' | 'denied', reason?: string) {
-  return fetcher<ApprovalRequest>(`/approvals/${id}/resolve`, {
+  return fetcher<ApprovalRequest>(`/approvals/${id}/review`, {
     method: 'POST',
-    body: JSON.stringify({ status, reason }),
+    body: JSON.stringify({ action: status, approver_id: useAuthStore.getState().user?.id, note: reason }),
   })
 }
 

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   fetchCapabilities, createCapability, deprecateCapability,
@@ -12,8 +12,12 @@ import { useToast } from '../components/shared/Toast'
 import type { ColumnDef } from '@tanstack/react-table'
 import type { Capability } from '../types'
 
+const PER_PAGE = '100'
+
 export function CapabilitiesPage() {
   const [filters, setFilters] = useState<Record<string, string>>({})
+  const [offset, setOffset] = useState(0)
+  const handleFilter = useCallback((f: Record<string, string>) => { setFilters(f); setOffset(0) }, [])
   const [showCreate, setShowCreate] = useState(false)
   const [deprecateTarget, setDeprecateTarget] = useState<Capability | null>(null)
   const [form, setForm] = useState({ name: '', domain: '', description: '' })
@@ -22,7 +26,8 @@ export function CapabilitiesPage() {
 
   const capabilities = useQuery({
     queryKey: ['capabilities', filters],
-    queryFn: () => fetchCapabilities({ ...filters, per_page: '100' }),
+    queryFn: () => fetchCapabilities({ ...filters, per_page: PER_PAGE }),
+    placeholderData: (prev) => prev,
   })
 
   const create = useMutation({
@@ -97,13 +102,33 @@ export function CapabilitiesPage() {
                 { value: 'deprecated', label: 'Deprecated' },
               ]},
             ]}
-            onFilter={setFilters}
+            onFilter={handleFilter}
             searchPlaceholder="Search capabilities..."
           />
         </div>
 
         <PageState query={capabilities}>
-          {data => <Table data={data.items} columns={columns} />}
+          {data => {
+            const items = Array.isArray(data) ? data : data.items ?? (data as any).capabilities ?? []
+            const normalizedItems = items.map((item: Capability) => ({
+              ...item,
+              description: item.description ?? '',
+            }))
+            const pagination = data.pagination ?? { total: normalizedItems.length, has_more: false, next_cursor: undefined }
+            return (
+              <Table
+                data={normalizedItems}
+                columns={columns}
+                pagination={{
+                  total: pagination.total,
+                  hasMore: pagination.has_more,
+                  nextCursor: pagination.next_cursor,
+                  onNext: pagination.has_more ? () => setOffset(o => o + Number(PER_PAGE)) : undefined,
+                  onPrev: offset > 0 ? () => setOffset(o => Math.max(0, o - Number(PER_PAGE))) : undefined,
+                }}
+              />
+            )
+          }}
         </PageState>
       </div>
 

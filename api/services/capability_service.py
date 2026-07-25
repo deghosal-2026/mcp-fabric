@@ -19,6 +19,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from api.models.capability import Capability, CapabilityAlias
 from api.schemas.capability import CapabilityCreate, CapabilityResponse
@@ -58,17 +59,47 @@ class CapabilityService:
         self.db.add(cap)
         await self.db.commit()
         await self.db.refresh(cap)
-        return await self._to_response(cap)
+        return CapabilityResponse(
+            id=cap.id,
+            name=cap.name,
+            domain=cap.domain,
+            normalized_input_schema=cap.normalized_input_schema,
+            normalized_output_schema=cap.normalized_output_schema,
+            description=cap.description,
+            status=cap.status or "active",
+            created_at=cap.created_at,
+            mappings_count=0,
+            aliases=[],
+        )
 
-    async def list(self, domain: str | None = None) -> list[CapabilityResponse]:
-        """List capabilities, optionally filtered by domain.
+    async def list(
+        self,
+        domain: str | None = None,
+        status: str | None = None,
+        search: str | None = None,
+    ) -> list[CapabilityResponse]:
+        """List capabilities with optional filters.
 
         WHY: Admin UI — browse available capabilities.
+        Filters (domain, status, name/description search) are applied as SQL
+        WHERE clauses for efficient querying at scale, unlike the previous
+        in-memory approach.
         Sorted alphabetically by name for a predictable ordering.
         """
-        stmt = select(Capability).order_by(Capability.name)
+        stmt = (
+            select(Capability)
+            .options(selectinload(Capability.mappings), selectinload(Capability.aliases))
+            .order_by(Capability.name)
+        )
         if domain:
             stmt = stmt.where(Capability.domain == domain)
+        if status:
+            stmt = stmt.where(Capability.status == status)
+        if search:
+            pattern = f"%{search}%"
+            stmt = stmt.where(
+                Capability.name.ilike(pattern) | Capability.description.ilike(pattern)
+            )
         result = await self.db.execute(stmt)
         caps = result.scalars().all()
         return [await self._to_response(c) for c in caps]
@@ -79,7 +110,11 @@ class CapabilityService:
         WHY: Admin UI — view/edit a specific capability's details.
         RETURN: CapabilityResponse or None if not found.
         """
-        result = await self.db.execute(select(Capability).where(Capability.id == cap_id))
+        result = await self.db.execute(
+            select(Capability)
+            .options(selectinload(Capability.mappings), selectinload(Capability.aliases))
+            .where(Capability.id == cap_id)
+        )
         cap = result.scalar_one_or_none()
         if cap is None:
             return None
@@ -96,7 +131,11 @@ class CapabilityService:
         SIDE EFFECTS: Sets status to 'deprecated'.
         RETURN: Updated CapabilityResponse or None if not found.
         """
-        result = await self.db.execute(select(Capability).where(Capability.id == cap_id))
+        result = await self.db.execute(
+            select(Capability)
+            .options(selectinload(Capability.mappings), selectinload(Capability.aliases))
+            .where(Capability.id == cap_id)
+        )
         cap = result.scalar_one_or_none()
         if cap is None:
             return None
@@ -118,7 +157,11 @@ class CapabilityService:
         SIDE EFFECTS: Creates a CapabilityAlias row.
         RETURN: Updated CapabilityResponse or None if capability not found.
         """
-        result = await self.db.execute(select(Capability).where(Capability.id == cap_id))
+        result = await self.db.execute(
+            select(Capability)
+            .options(selectinload(Capability.mappings), selectinload(Capability.aliases))
+            .where(Capability.id == cap_id)
+        )
         cap = result.scalar_one_or_none()
         if cap is None:
             return None

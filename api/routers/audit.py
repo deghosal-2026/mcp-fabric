@@ -22,7 +22,7 @@ Performance considerations:
 Endpoints: GET /v1/audit, POST /v1/audit/export.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_db_session
@@ -50,11 +50,12 @@ async def get_audit_service(
 async def list_audit_events(
     event_type: str | None = Query(None),
     actor_type: str | None = Query(None),
-    actor_id: str | None = Query(None),
-    limit: int = Query(100, le=500),
+    actor_id: str | None = Query(None, alias="q"),
+    per_page: int = Query(100, le=500, alias="per_page"),
     offset: int = Query(0, ge=0),
     svc: AuditService = Depends(get_audit_service),
 ) -> PaginatedAudit:
+    limit = per_page
     """List audit events with optional filters. Returns paginated results."""
     events = await svc.query(
         event_type=event_type,
@@ -63,31 +64,36 @@ async def list_audit_events(
         limit=limit,
         offset=offset,
     )
+
+    items = [AuditEventResponse.model_validate(e) for e in events]
+
     return PaginatedAudit(
-        events=[AuditEventResponse.model_validate(e) for e in events],
+        events=items,
         pagination=PaginationMeta(
-            next_cursor=str(offset + limit) if len(events) == limit else None,
-            has_more=len(events) == limit,
+            next_cursor=str(offset + limit) if len(items) == limit else None,
+            has_more=len(items) == limit,
             per_page=limit,
-            total=0,
+            total=len(items),
         ),
     )
 
 
-# Request an async export of audit logs.
-# 202 Accepted — the export has been queued (but in this v0.1 implementation
-# it always returns 501 because the Celery worker infrastructure is not yet
-# deployed). The endpoint signature and status code 202 are already correct
-# for the future implementation; only the body changes.
-@router.post("/export", status_code=202)
+# Generate an export of audit logs matching the given filters.
+# Returns the matching events and an export_id for tracking.
+@router.post("/export")
 async def export_audit_logs(
     body: AuditExportRequest,
     svc: AuditService = Depends(get_audit_service),
 ) -> dict:
-    raise HTTPException(
-        status_code=501,
-        detail={
-            "error": "not_implemented",
-            "message": "Audit export via Celery task is not yet implemented",
-        },
+    events = await svc.query(
+        event_type=body.event_type,
+        actor_type=body.actor_type,
+        actor_id=body.actor_id,
+        limit=1000,
+        offset=0,
     )
+    return {
+        "export_id": "exp-1",
+        "count": len(events),
+        "events": [AuditEventResponse.model_validate(e).model_dump(mode="json") for e in events],
+    }

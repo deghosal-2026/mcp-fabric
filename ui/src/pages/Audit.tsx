@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchAuditEvents, exportAudit } from '../api/client'
 import { Table } from '../components/shared/Table'
@@ -8,13 +8,18 @@ import { useToast } from '../components/shared/Toast'
 import type { ColumnDef } from '@tanstack/react-table'
 import type { AuditEvent } from '../types'
 
+const PER_PAGE = '50'
+
 export function AuditPage() {
   const [filters, setFilters] = useState<Record<string, string>>({})
+  const [offset, setOffset] = useState(0)
+  const handleFilter = useCallback((f: Record<string, string>) => { setFilters(f); setOffset(0) }, [])
   const { addToast } = useToast()
 
   const audit = useQuery({
     queryKey: ['audit', filters],
-    queryFn: () => fetchAuditEvents({ ...filters, per_page: '50' }),
+    queryFn: () => fetchAuditEvents({ ...filters, offset: String(offset), per_page: PER_PAGE }),
+    placeholderData: (prev) => prev,
   })
 
   const handleExport = async () => {
@@ -61,22 +66,30 @@ export function AuditPage() {
                 { value: 'admin', label: 'Admin' },
               ]},
             ]}
-            onFilter={setFilters}
+            onFilter={handleFilter}
             searchPlaceholder="Search by actor ID..."
           />
         </div>
 
         <PageState query={audit}>
           {data => (
+            (() => {
+              const items = data.items ?? (data as any).events ?? []
+              const pagination = data.pagination ?? { total: items.length, has_more: false, next_cursor: undefined }
+              return (
             <Table
-              data={data.items}
+              data={items}
               columns={columns}
               pagination={{
-                total: data.pagination.total,
-                hasMore: data.pagination.has_more,
-                nextCursor: data.pagination.next_cursor,
+                total: pagination.total,
+                hasMore: pagination.has_more,
+                nextCursor: pagination.next_cursor,
+                onNext: pagination.has_more ? () => setOffset(o => o + Number(PER_PAGE)) : undefined,
+                onPrev: offset > 0 ? () => setOffset(o => Math.max(0, o - Number(PER_PAGE))) : undefined,
               }}
             />
+              )
+            })()
           )}
         </PageState>
       </div>

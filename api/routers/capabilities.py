@@ -69,9 +69,21 @@ async def create_capability(
 @router.get("")
 async def list_capabilities(
     domain: str | None = Query(None),
+    status: str | None = Query(None),
+    q: str | None = Query(None, alias="q"),
+    per_page: int = Query(100, le=200, alias="per_page"),
     svc: CapabilityService = Depends(get_capability_service),
-) -> list[CapabilityResponse]:
-    return await svc.list(domain=domain)
+):
+    caps = await svc.list(domain=domain, status=status, search=q)
+    return {
+        "items": caps,
+        "pagination": {
+            "total": len(caps),
+            "has_more": False,
+            "per_page": per_page,
+            "next_cursor": None,
+        },
+    }
 
 
 # Get a single capability by ID. Returns 404 if the capability doesn't

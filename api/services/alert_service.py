@@ -189,17 +189,24 @@ class AlertService:
     async def list_events(
         self,
         rule_id: UUID | None = None,
+        acknowledged: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[AlertEventResponse]:
-        """List alert events, optionally filtered by rule ID.
+        """List alert events, optionally filtered by rule ID and acknowledgment status.
 
         WHY: Admin user journey — review alert history for a rule or globally.
         Ordered newest-first by fired_at so operators see recent events immediately.
+        The acknowledged filter uses SQL WHERE clauses instead of in-memory
+        filtering for performance at scale.
         """
         stmt = select(AlertEvent).order_by(AlertEvent.fired_at.desc())
         if rule_id:
             stmt = stmt.where(AlertEvent.rule_id == rule_id)
+        if acknowledged == "true":
+            stmt = stmt.where(AlertEvent.acknowledged_at.isnot(None))
+        elif acknowledged == "false":
+            stmt = stmt.where(AlertEvent.acknowledged_at.is_(None))
         stmt = stmt.offset(offset).limit(limit)
         result = await self.db.execute(stmt)
         return [

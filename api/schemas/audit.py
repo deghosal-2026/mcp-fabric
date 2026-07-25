@@ -39,18 +39,23 @@ class AuditExportRequest(BaseModel):
     All fields are optional — omitting all filters exports the full audit log
     (subject to pagination limits).
 
+    Fields mirror the GET /v1/audit query parameters so the UI can forward
+    its active filters directly to the export endpoint.
+
     Fields:
+        event_type: filter by event type (e.g. "server_registered").
+        actor_type: filter by actor type ("agent" | "admin").
+        actor_id: filter by actor ID (free-text search on actor_id).
         date_from / date_to: ISO 8601 date range filter (e.g. "2024-01-01").
-        agent_classes: filter by specific agent class names.
-        event_types: filter by specific event types (e.g. ["server.created"]).
         format: output format — 'json' (default) or 'csv'.
 
     Note: format field shadows the built-in Python keyword, but Pydantic
     handles this correctly via the field name resolution.
     """
 
+    event_type: str | None = None
+    actor_type: str | None = None
+    actor_id: str | None = None
     date_from: str | None = None
     date_to: str | None = None
-    agent_classes: list[str] | None = None
-    event_types: list[str] | None = None
     format: str = "json"

@@ -19,12 +19,13 @@ from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from api.config import settings
+from api.models.admin import AdminUser
 from api.models.audit import ApprovalRequest
 from api.schemas.approval import (
     ApprovalAction,
@@ -39,12 +40,6 @@ from api.telemetry.logging import logger
 
 
 def _utcnow() -> datetime:
-    """Return the current UTC datetime with tzinfo stripped for cross-DB compatibility.
-
-    WHY: SQLite stores TIMESTAMP without timezone. If we store a tz-aware
-    datetime, comparisons against naive datetimes from the DB will fail.
-    Stripping tzinfo ensures uniform naive-UTC handling.
-    """
     return datetime.now(UTC).replace(tzinfo=None)
 
 
@@ -162,7 +157,7 @@ class ApprovalService:
             await self.db.commit()
             raise ApprovalExpiredError(f"Approval request {request_id} has expired")
         req.status = "approved"
-        req.approver_id = action.approver_id
+        req.approver_id = await self._resolve_approver_id(action.approver_id)
         req.approver_note = action.note
         req.resolved_at = _utcnow()
         await self.db.commit()
@@ -213,7 +208,7 @@ class ApprovalService:
                 f"Approval request {request_id} is already {req.status}"
             )
         req.status = "denied"
-        req.approver_id = action.approver_id
+        req.approver_id = await self._resolve_approver_id(action.approver_id)
         req.approver_note = action.note
         req.resolved_at = _utcnow()
         await self.db.commit()
@@ -292,6 +287,18 @@ class ApprovalService:
         result = await self.db.execute(stmt)
         return [self._to_response(r) for r in result.scalars().all()]
 
+    async def count_pending(self) -> int:
+        stmt = select(func.count(ApprovalRequest.id)).where(ApprovalRequest.status == "pending")
+        result = await self.db.execute(stmt)
+        return int(result.scalar_one() or 0)
+
+    async def count_requests(self, status_filter: str | None = None) -> int:
+        stmt = select(func.count(ApprovalRequest.id))
+        if status_filter:
+            stmt = stmt.where(ApprovalRequest.status == status_filter)
+        result = await self.db.execute(stmt)
+        return int(result.scalar_one() or 0)
+
     async def _log_audit(
         self,
         req: ApprovalRequest,
@@ -322,6 +329,23 @@ class ApprovalService:
                 "note": action.note,
             },
         )
+
+    async def _resolve_approver_id(self, approver_id: UUID | None) -> UUID | None:
+        """Validate that the approver_id references a real admin user.
+
+        The UI sends the logged-in user's ID from the auth store, which is
+        the JWT sub claim — a token-specific UUID, not an admin_users row.
+        If the ID does not exist in admin_users, we return None instead so
+        the FK constraint is not violated.
+        """
+        if approver_id is None:
+            return None
+        result = await self.db.execute(
+            select(AdminUser).where(AdminUser.id == approver_id)
+        )
+        if result.scalar_one_or_none() is None:
+            return None
+        return approver_id
 
     def _to_response(self, req: ApprovalRequest) -> ApprovalRequestResponse:
         """Convert an ApprovalRequest ORM object to an ApprovalRequestResponse schema."""

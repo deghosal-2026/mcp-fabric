@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { fetchServers, registerServer } from '../api/client'
 import { Table } from '../components/shared/Table'
@@ -12,6 +12,8 @@ import type { MCPServer } from '../types'
 
 export function ServersPage() {
   const [filters, setFilters] = useState<Record<string, string>>({})
+  const [cursor, setCursor] = useState<string | undefined>()
+  const handleFilter = useCallback((f: Record<string, string>) => { setFilters(f); setCursor(undefined) }, [])
   const [showRegister, setShowRegister] = useState(false)
   const [form, setForm] = useState({ name: '', endpoint: '', owner_team: '', labels: '' })
   const queryClient = useQueryClient()
@@ -19,7 +21,8 @@ export function ServersPage() {
 
   const servers = useQuery({
     queryKey: ['servers', filters],
-    queryFn: () => fetchServers({ ...filters, per_page: '50' }),
+    queryFn: () => fetchServers({ ...filters, cursor, per_page: '50' }),
+    placeholderData: (prev) => prev,
   })
 
   const register = useMutation({
@@ -92,22 +95,31 @@ export function ServersPage() {
                 { value: 'team:data', label: 'Data' },
               ]},
             ]}
-            onFilter={setFilters}
+            onFilter={handleFilter}
             searchPlaceholder="Search servers..."
           />
         </div>
 
         <PageState query={servers}>
           {data => (
+            (() => {
+              const items = data.items ?? (data as any).servers ?? []
+              const pagination = data.pagination ?? { total: items.length, has_more: false, next_cursor: undefined }
+              return (
             <Table
-              data={data.items}
+              data={items}
               columns={columns}
               pagination={{
-                total: data.pagination.total,
-                hasMore: data.pagination.has_more,
-                nextCursor: data.pagination.next_cursor,
+                total: pagination.total,
+                hasMore: pagination.has_more,
+                nextCursor: pagination.next_cursor,
+                cursor,
+                onNext: pagination.next_cursor ? () => setCursor(pagination.next_cursor) : undefined,
+                onPrev: cursor ? () => setCursor(undefined) : undefined,
               }}
             />
+              )
+            })()
           )}
         </PageState>
       </div>
