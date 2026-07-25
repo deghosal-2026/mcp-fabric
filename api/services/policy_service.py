@@ -2,6 +2,20 @@
 
 Provides policy evaluation via Open Policy Agent, agent class and trust
 assignment management, and policy bundle deployment with Redis caching.
+
+Architectural notes:
+  - OPA is the policy decision point: it evaluates Rego policies and
+    returns allow/deny decisions with metadata (trust level, approval
+    requirements, cross-team access).
+  - Policy decisions are cached in Redis with a 300s TTL. When Redis
+    is unavailable, the system falls back to uncached evaluation.
+  - Agent classes define groups of agents with shared policy context.
+  - Trust assignments define the trust relationship between an agent
+    class and a server (trust level + optional tool scope).
+  - Policy versions are tracked in the database for audit trail and
+    rollback capability.
+  - Cache invalidation happens on: bundle deploy, agent class delete,
+    trust assignment changes.
 """
 
 from typing import Any, cast
@@ -41,12 +55,14 @@ class PolicyService:
     OPA-backed policy engine — evaluate, deploy bundles, manage agent \
     classes and trust assignments.
     """
+
     def __init__(
         self,
         db: AsyncSession,
         opa_url: str | None = None,
     ):
         self.db = db
+        # Strip trailing slash to normalize URL construction.
         self.opa_url = (opa_url or settings.opa_url).rstrip("/")
 
     async def evaluate(
@@ -56,7 +72,22 @@ class PolicyService:
         capability: str,
         team_namespace: str,
     ) -> PolicyDecision:
-        """Evaluate a policy decision from OPA for the given agent class, server, and capability."""
+        """Evaluate a policy decision from OPA for the given inputs.
+
+        WHY: Core authorization flow — before executing a capability for
+        an agent, the system asks OPA: "should this agent_class be allowed
+        to use this capability on this server?"
+
+        The input includes: agent_class, server_id, capability, team_namespace.
+        OPA returns: allow (bool), approval_required (bool), trust_level (str),
+        agent_class (str), cross_team (bool).
+
+        Uses OPA's REST API at /v1/data/fabric/policy/result with a 5s timeout.
+
+        RAISES: OPAEvaluationError on connection failure, timeout, or
+        non-200 response.
+        RETURN: PolicyDecision with the evaluation result.
+        """
         input_data = {
             "input": {
                 "agent_class": agent_class,
@@ -76,9 +107,7 @@ class PolicyService:
         except httpx.TimeoutException as e:
             raise OPAEvaluationError(f"OPA timed out: {e}") from e
         if resp.status_code != 200:
-            raise OPAEvaluationError(
-                f"OPA returned HTTP {resp.status_code}: {resp.text}"
-            )
+            raise OPAEvaluationError(f"OPA returned HTTP {resp.status_code}: {resp.text}")
         body = resp.json()
         result = body.get("result", {})
         return PolicyDecision(
@@ -96,8 +125,20 @@ class PolicyService:
         capability: str,
         team_namespace: str,
     ) -> PolicyDecision:
-        """Evaluate policy with Redis caching (300s TTL), falling back to uncached evaluation."""
+        """Evaluate policy with Redis caching (300s TTL), falling back to uncached evaluation.
 
+        WHY: Performance optimization for the hot path — policy evaluation
+        with identical inputs is cached in Redis to avoid OPA round-trips.
+
+        Cache key: policy:eval:{agent_class}:{server_id}:{capability}
+        Cache TTL: 300 seconds
+
+        When Redis is unavailable (exception during get/set), falls through
+        to the uncached evaluate() method. This is deliberate — we always
+        prefer a correct decision over a fast failure.
+
+        RETURN: PolicyDecision from cache or fresh evaluation.
+        """
         try:
             import json
 
@@ -115,11 +156,21 @@ class PolicyService:
             await r.aclose()
             return decision
         except Exception:
+            # Redis failure: fall through to uncached evaluation.
             return await self.evaluate(agent_class, server_id, capability, team_namespace)
 
     async def _invalidate_policy_cache(self) -> None:
-        """Scan and delete all Redis keys matching the policy:* pattern."""
+        """Scan and delete all Redis keys matching the policy:* pattern.
 
+        WHY: When policy state changes (bundle deploy, trust update, class
+        delete), cached decisions may be stale. Invalidating all policy:*
+        keys forces fresh evaluation on the next request.
+
+        Uses Redis SCAN (not KEYS) to avoid blocking on large key sets.
+        SCAN is cursor-based and non-blocking, suitable for production use.
+        Errors are silently ignored — stale cache is acceptable as TTL
+        will eventually expire stale entries.
+        """
         try:
             import redis.asyncio as aioredis
 
@@ -140,8 +191,23 @@ class PolicyService:
         rego_content: str,
         deployed_by: str | None = None,
     ) -> OPAPolicyVersion:
-        """Deploy a Rego policy bundle to OPA, record the version, and invalidate the cache."""
+        """Deploy a Rego policy bundle to OPA, record the version, and invalidate the cache.
 
+        WHY: Admin user journey — update the OPA policies that govern
+        authorization decisions. The Rego content is sent to OPA's
+        policy API and a version record is created in the database.
+
+        After deployment, the Redis cache is invalidated so subsequent
+        evaluations use the new policy.
+
+        SIDE EFFECTS:
+          - PUTs the Rego content to OPA at /v1/policies/fabric/policy
+          - Creates OPAPolicyVersion row in DB
+          - Invalidates all policy:* Redis cache keys
+
+        RAISES: OPABundleError if OPA returns a non-success status code.
+        RETURN: The created OPAPolicyVersion record.
+        """
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.put(
                 f"{self.opa_url}/v1/policies/fabric/policy",
@@ -149,9 +215,7 @@ class PolicyService:
                 headers={"Content-Type": "text/plain"},
             )
         if resp.status_code not in (200, 201, 204):
-            raise OPABundleError(
-                f"OPA bundle deploy returned HTTP {resp.status_code}: {resp.text}"
-            )
+            raise OPABundleError(f"OPA bundle deploy returned HTTP {resp.status_code}: {resp.text}")
         bundle_hash = _compute_hash(rego_content)
         version = OPAPolicyVersion(
             version=_next_version(),
@@ -170,8 +234,11 @@ class PolicyService:
         limit: int = 10,
         offset: int = 0,
     ) -> list[OPAPolicyVersion]:
-        """List deployed policy versions ordered by most recent first."""
+        """List deployed policy versions ordered by most recent first.
 
+        WHY: Admin UI — view policy version history for audit and rollback.
+        The rego_content field allows re-deploying a previous version.
+        """
         stmt = (
             select(OPAPolicyVersion)
             .order_by(OPAPolicyVersion.deployed_at.desc())
@@ -182,8 +249,16 @@ class PolicyService:
         return list(result.scalars().all())
 
     async def create_agent_class(self, params: AgentClassCreate) -> AgentClassResponse:
-        """Create a new agent class."""
+        """Create a new agent class.
 
+        WHY: Admin user journey — define a new agent class for grouping
+        agents with shared policy context and capability access.
+
+        Agent classes are linked to packs (via pack_service) and to
+        trust assignments (via this service).
+
+        SIDE EFFECTS: Persists AgentClass row.
+        """
         ac = AgentClass(
             name=params.name,
             description=params.description,
@@ -204,8 +279,11 @@ class PolicyService:
         self,
         team_namespace: str | None = None,
     ) -> list[AgentClassResponse]:
-        """List agent classes, optionally filtered by team namespace."""
+        """List agent classes, optionally filtered by team namespace.
 
+        WHY: Admin UI — browse agent classes. Used in class selection
+        dropdowns and management dashboards.
+        """
         stmt = select(AgentClass).order_by(AgentClass.name)
         if team_namespace:
             stmt = stmt.where(AgentClass.team_namespace == team_namespace)
@@ -223,11 +301,12 @@ class PolicyService:
         ]
 
     async def get_agent_class(self, class_id: UUID) -> AgentClassResponse | None:
-        """Get a single agent class by ID, or None if not found."""
+        """Get a single agent class by ID.
 
-        result = await self.db.execute(
-            select(AgentClass).where(AgentClass.id == class_id)
-        )
+        WHY: Admin UI — view a specific agent class's details.
+        RETURN: AgentClassResponse or None if not found.
+        """
+        result = await self.db.execute(select(AgentClass).where(AgentClass.id == class_id))
         ac = result.scalar_one_or_none()
         if ac is None:
             return None
@@ -244,11 +323,14 @@ class PolicyService:
         class_id: UUID,
         params: AgentClassCreate,
     ) -> AgentClassResponse | None:
-        """Update an existing agent class. Returns None if not found."""
+        """Update an existing agent class.
 
-        result = await self.db.execute(
-            select(AgentClass).where(AgentClass.id == class_id)
-        )
+        WHY: Admin user journey — modify the name, description, or
+        namespace of an agent class.
+
+        RETURN: Updated AgentClassResponse or None if not found.
+        """
+        result = await self.db.execute(select(AgentClass).where(AgentClass.id == class_id))
         ac = result.scalar_one_or_none()
         if ac is None:
             return None
@@ -266,14 +348,16 @@ class PolicyService:
         )
 
     async def delete_agent_class(self, class_id: UUID) -> bool:
-        """\
-        Delete an agent class by ID. Returns False if not found. \
-        Invalidates policy cache on success.
-        """
+        """Delete an agent class by ID. Invalidates policy cache on success.
 
-        result = await self.db.execute(
-            select(AgentClass).where(AgentClass.id == class_id)
-        )
+        WHY: Admin user journey — remove an agent class that is no longer needed.
+        After deletion, the policy cache is invalidated so stale class references
+        in cached decisions are cleared.
+
+        RETURN: True if deleted, False if not found.
+        SIDE EFFECTS: Invalidates all policy:* Redis cache keys.
+        """
+        result = await self.db.execute(select(AgentClass).where(AgentClass.id == class_id))
         ac = result.scalar_one_or_none()
         if ac is None:
             return False
@@ -287,8 +371,20 @@ class PolicyService:
         agent_class_id: UUID,
         params: TrustAssignmentCreate,
     ) -> TrustAssignmentResponse:
-        """Create or update a trust assignment between an agent class and a server."""
+        """Create or update a trust assignment between an agent class and a server.
 
+        WHY: Admin user journey — define the trust level for how a class
+        of agents can interact with a server. Upsert pattern: if an assignment
+        already exists for this (class, server) pair, update it; otherwise create.
+
+        The trust level determines what policies OPA applies (e.g., 'trusted'
+        agents may skip certain checks). The optional tool_scope restricts
+        which tools on the server the class can use.
+
+        SIDE EFFECTS:
+          - Creates or updates TrustAssignment row
+          - Invalidates the policy cache so new trust levels take effect immediately
+        """
         result = await self.db.execute(
             select(TrustAssignment).where(
                 TrustAssignment.agent_class_id == agent_class_id,
@@ -296,6 +392,7 @@ class PolicyService:
             )
         )
         existing = result.scalar_one_or_none()
+        # Wrap tool_scope in a dict for consistent JSON storage format.
         tool_scope: dict[str, Any] | None = (
             {"tools": params.tool_scope} if params.tool_scope else None
         )
@@ -327,8 +424,11 @@ class PolicyService:
         agent_class_id: UUID | None = None,
         server_id: UUID | None = None,
     ) -> list[TrustAssignmentResponse]:
-        """List trust assignments, optionally filtered by agent class or server."""
+        """List trust assignments, optionally filtered by agent class or server.
 
+        WHY: Admin UI — view and manage trust relationships.
+        Sorted by trust_level to group related assignments together.
+        """
         stmt = select(TrustAssignment).order_by(TrustAssignment.trust_level)
         if agent_class_id:
             stmt = stmt.where(TrustAssignment.agent_class_id == agent_class_id)
@@ -352,8 +452,14 @@ class PolicyService:
         agent_class_id: UUID,
         server_id: UUID,
     ) -> bool:
-        """Remove a trust assignment and invalidate the policy cache. Returns True if deleted."""
+        """Remove a trust assignment and invalidate the policy cache.
 
+        WHY: Admin user journey — revoke a trust relationship.
+        Uses bulk DELETE (not load-and-delete) for efficiency.
+
+        RETURN: True if a row was deleted, False otherwise.
+        SIDE EFFECTS: Invalidates the policy cache.
+        """
         stmt = delete(TrustAssignment).where(
             TrustAssignment.agent_class_id == agent_class_id,
             TrustAssignment.server_id == server_id,
@@ -365,23 +471,39 @@ class PolicyService:
 
 
 def _compute_hash(content: str) -> str:
-    """Compute the SHA-256 hex digest of the given content string."""
+    """Compute the SHA-256 hex digest of the given content string.
+
+    WHY: Used to generate a content-addressed hash for policy bundles.
+    This enables detecting whether the policy content has changed between
+    deployments.
+    """
     import hashlib
 
     return hashlib.sha256(content.encode()).hexdigest()
 
 
 def _next_version() -> str:
-    """Generate a version string based on the current UTC timestamp."""
+    """Generate a version string based on the current UTC timestamp.
+
+    WHY: Policy versions are identified by timestamp (e.g., v20250101120000).
+    This provides a human-readable, sortable, and unique version identifier
+    without requiring a monotonic counter.
+    """
     from datetime import UTC, datetime
 
     return datetime.now(UTC).strftime("v%Y%m%d%H%M%S")
 
 
 def _extract_tool_scope(value: Any) -> list[str] | None:
-    """\
-    Extract a list of tool names from a trust assignment's tool_scope \
-    field, supporting dict and list formats.
+    """Extract a list of tool names from a trust assignment's tool_scope field.
+
+    WHY: The tool_scope is stored as a JSON dict in the database, but the
+    response schema expects a flat list of tool names. This function handles
+    the normalization, supporting both dict format ({tools: [...]}) and
+    explicit list format.
+
+    The dual-format support is for backward compatibility with different
+    API versions that may send tool_scope differently.
     """
     if value is None:
         return None

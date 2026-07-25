@@ -1,5 +1,31 @@
 """Authentication and account management routes.
 
+Handles the full auth lifecycle: login, MFA enrollment/verification,
+password reset, admin bootstrap, agent connection tokens, and logout.
+
+This is the most security-critical router in the system. Every endpoint
+here is a potential attack surface. Special attention is given to:
+  - Timing-safe error messages (don't reveal whether an email is registered)
+  - Account lockout after failed attempts
+  - MFA recovery codes (SHA-256 hashed at rest, one-time use)
+  - Session token invalidation on logout
+
+User journeys:
+  - First-time admin bootstrap: POST /v1/auth/setup (only works once)
+  - Admin login with password: POST /v1/auth/login
+  - Admin login with MFA TOTP: POST /v1/auth/mfa/verify
+  - MFA enrollment: POST /v1/auth/mfa/setup → verify-setup
+  - Lost authenticator: POST /v1/auth/mfa/recover (uses recovery codes)
+  - Password reset flow: POST /v1/auth/password-reset → .../complete
+  - Agent connection: POST /v1/auth/connect (creates a machine token)
+
+Architectural notes:
+  - Some endpoints directly inject `db: AsyncSession` for simple queries
+    rather than routing through the service layer. This is an anti-pattern
+    that should be refactored — see MFA recovery and password reset endpoints.
+  - Session management is token-based (not cookie-based), stored in-memory
+    with configurable TTL. Future: migrate to Redis-backed sessions.
+
 Endpoints: POST /v1/auth/login, /connect, /setup, /logout, /mfa/*, /password-reset.
 """
 
@@ -49,15 +75,16 @@ def _get_admin_id(request: Request) -> UUID:
     return UUID(aid)
 
 
+# Authenticate an admin user with password credentials.
+# Returns a signed session token on success.
+# 423 Locked — too many failed attempts, account is temporarily locked.
+# 401 Unauthorized — bad credentials (same message regardless of which
+#     field was wrong, to avoid leaking whether the email exists).
 @router.post("/login")
 async def login(
     body: LoginRequest,
     svc: AuthService = Depends(get_auth_service),
 ) -> TokenResponse:
-    """Authenticate an admin user and return a token.
-
-    Returns 423 if account locked, 401 if credentials invalid.
-    """
     try:
         return await svc.admin_login(body)
     except AccountLockedError as exc:
@@ -72,12 +99,16 @@ async def login(
         ) from exc
 
 
+# Create an agent connection (machine-to-machine) token.
+# Unlike admin login, this does NOT verify credentials against the DB —
+# it signs a JWT with the agent's identity for use in subsequent API calls.
+# The agent class is derived from the username field; in a future version
+# agents will authenticate via pre-provisioned API keys instead.
 @router.post("/connect")
 async def connect_agent(
     body: LoginRequest,
     svc: AuthService = Depends(get_auth_service),
 ) -> TokenResponse:
-    """Create an agent connection token. Returns a signed token for the agent."""
     token = svc.create_token(
         subject=body.username,
         token_type="agent",
@@ -87,12 +118,16 @@ async def connect_agent(
     return TokenResponse(token=token)
 
 
+# Bootstrap the first admin user. This is a one-time setup that creates
+# the initial admin account with default credentials (username "admin",
+# email "admin@mcp-fabric.local"). Returns 409 if an admin already exists.
+# The email default is intentionally a local-only address — in production
+# deployments this should be overridden during deployment configuration.
 @router.post("/setup", status_code=201)
 async def setup_admin(
     body: SetupCompleteRequest,
     svc: AuthService = Depends(get_auth_service),
 ) -> TokenResponse:
-    """Perform first-time admin setup. Returns 409 if already set up."""
     try:
         return await svc.first_admin_bootstrap(
             username="admin",
@@ -106,12 +141,15 @@ async def setup_admin(
         ) from exc
 
 
+# Initiate MFA enrollment for the authenticated admin.
+# Generates a TOTP secret and returns it along with a QR code URL
+# for the authenticator app. The admin must call /mfa/verify-setup
+# next to confirm the secret was properly scanned.
 @router.post("/mfa/setup")
 async def mfa_setup(
     request: Request,
     svc: AuthService = Depends(get_auth_service),
 ) -> MFASetupResponse:
-    """Initiate MFA setup for the authenticated admin. Returns 404 if admin not found."""
     admin_id = _get_admin_id(request)
     try:
         return await svc.mfa_setup(admin_id)
@@ -122,13 +160,17 @@ async def mfa_setup(
         ) from exc
 
 
+# Complete MFA enrollment by verifying that the admin successfully
+# scanned the TOTP secret into their authenticator app. This is the
+# second step of a two-step enrollment flow (setup → verify-setup).
+# 400 if the TOTP code is wrong — the admin must try again with the
+# correct code or restart enrollment with a fresh /mfa/setup.
 @router.post("/mfa/verify-setup")
 async def mfa_verify_setup(
     request: Request,
     body: MFAVerifySetupRequest,
     svc: AuthService = Depends(get_auth_service),
 ) -> dict:
-    """Verify and enable MFA by confirming the TOTP code. Returns 400 if the code is invalid."""
     admin_id = _get_admin_id(request)
     ok = await svc.mfa_verify_setup(admin_id, body.secret, body.code)
     if not ok:
@@ -139,6 +181,13 @@ async def mfa_verify_setup(
     return {"status": "ok", "message": "MFA enabled"}
 
 
+# Verify a TOTP code as part of the login flow (after password auth).
+# This endpoint is called between login and session creation — the admin
+# has already provided their password and is now proving possession of the
+# authenticator device.
+# NOTE: This endpoint directly queries the DB instead of going through the
+# service layer. This bypasses the service abstraction and should be
+# refactored into AuthService for consistency.
 @router.post("/mfa/verify")
 async def mfa_verify(
     request: Request,
@@ -146,11 +195,8 @@ async def mfa_verify(
     svc: AuthService = Depends(get_auth_service),
     db: AsyncSession = Depends(get_db_session),
 ) -> dict:
-    """Verify a TOTP code during login. Returns 404 if admin not found, 400 if code invalid."""
     admin_id = _get_admin_id(request)
-    result = await db.execute(
-        select(AdminUser).where(AdminUser.id == admin_id)
-    )
+    result = await db.execute(select(AdminUser).where(AdminUser.id == admin_id))
     admin = result.scalar_one_or_none()
     if admin is None or not admin.mfa_secret:
         raise HTTPException(
@@ -165,6 +211,13 @@ async def mfa_verify(
     return {"status": "ok", "message": "Code verified"}
 
 
+# Recover MFA access using a pre-generated recovery code.
+# Recovery codes are stored as SHA-256 hashes (not plaintext) for security.
+# Once used, the recovery code is removed from the list (one-time use).
+# The admin should re-enroll MFA after recovery — this endpoint only
+# bypasses MFA for the current login session.
+# NOTE: Like /mfa/verify, this endpoint directly injects `db` instead of
+# using the service layer. This should be refactored.
 @router.post("/mfa/recover")
 async def mfa_recover(
     request: Request,
@@ -172,14 +225,8 @@ async def mfa_recover(
     svc: AuthService = Depends(get_auth_service),
     db: AsyncSession = Depends(get_db_session),
 ) -> dict:
-    """Recover MFA access using a recovery code.
-
-    Returns 404 if admin not found, 400 if code invalid.
-    """
     admin_id = _get_admin_id(request)
-    result = await db.execute(
-        select(AdminUser).where(AdminUser.id == admin_id)
-    )
+    result = await db.execute(select(AdminUser).where(AdminUser.id == admin_id))
     admin = result.scalar_one_or_none()
     if admin is None or not admin.recovery_codes:
         raise HTTPException(
@@ -197,16 +244,19 @@ async def mfa_recover(
     return {"status": "ok", "message": "Recovery code accepted"}
 
 
+# Request a password reset email.
+# Security: Always returns the same message ("If the email exists...")
+# regardless of whether the email exists, to prevent email enumeration
+# attacks. In development mode the reset token is returned in the response
+# body for convenience; in production it should only be sent via email.
+# The token is generated by auth_service._store_reset_token() with a TTL.
 @router.post("/password-reset")
 async def password_reset(
     body: PasswordResetRequest,
     svc: AuthService = Depends(get_auth_service),
     db: AsyncSession = Depends(get_db_session),
 ) -> dict:
-    """Request a password reset email. Returns a reset token in dev, emails it in production."""
-    result = await db.execute(
-        select(AdminUser).where(AdminUser.email == body.email)
-    )
+    result = await db.execute(select(AdminUser).where(AdminUser.email == body.email))
     admin = result.scalar_one_or_none()
     if admin is None:
         logger.info("auth:password_reset_not_found", email=body.email)
@@ -220,12 +270,14 @@ async def password_reset(
     }
 
 
+# Complete the password reset with the token from the email + new password.
+# 400 Bad Request — either the token is invalid/expired (AuthenticationError)
+# or the new password doesn't meet policy requirements (PasswordPolicyError).
 @router.post("/password-reset/complete")
 async def password_reset_complete(
     body: PasswordResetCompleteRequest,
     svc: AuthService = Depends(get_auth_service),
 ) -> dict:
-    """Complete a password reset using a token and new password."""
     try:
         await svc.complete_password_reset(body.token, body.password)
         return {"status": "ok", "message": "Password reset successful"}
@@ -241,12 +293,16 @@ async def password_reset_complete(
         ) from exc
 
 
+# Logout — invalidate the current session token.
+# Always returns 200 even if the token was already invalid or missing.
+# This prevents an attacker from distinguishing between valid and invalid
+# tokens via timing or response differences (though the security benefit
+# here is marginal since the token is sent in the request header anyway).
 @router.post("/logout")
 async def logout(
     request: Request,
     svc: AuthService = Depends(get_auth_service),
 ) -> dict:
-    """Invalidate the current admin session. Returns 200 regardless."""
     session_token = request.headers.get("X-Session-Token", "")
     if session_token:
         await svc.logout_admin_session(session_token)

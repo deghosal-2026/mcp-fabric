@@ -47,12 +47,8 @@ class TestPackCRUD:
         assert await pack_svc.list_packs() == []
 
     async def test_list_packs_filters_by_team(self, pack_svc):
-        await pack_svc.create_pack(
-            PackCreate(name="platform-pack", team_namespace="team:platform")
-        )
-        await pack_svc.create_pack(
-            PackCreate(name="sec-pack", team_namespace="team:security")
-        )
+        await pack_svc.create_pack(PackCreate(name="platform-pack", team_namespace="team:platform"))
+        await pack_svc.create_pack(PackCreate(name="sec-pack", team_namespace="team:security"))
         result = await pack_svc.list_packs(team_namespace="team:platform")
         assert len(result) == 1
         assert result[0].name == "platform-pack"
@@ -92,9 +88,7 @@ class TestPackCapabilityAssignment:
     async def test_assign_capability_not_found(self, pack_svc):
         pack = await pack_svc.create_pack(PackCreate(name="pack"))
         with pytest.raises(CapabilityNotFoundError):
-            await pack_svc.assign_capability(
-                pack.id, PackAssignmentRequest(capability_id=uuid4())
-            )
+            await pack_svc.assign_capability(pack.id, PackAssignmentRequest(capability_id=uuid4()))
 
     async def test_assign_capability_duplicate(self, pack_svc, capability):
         pack = await pack_svc.create_pack(PackCreate(name="pack"))
@@ -145,9 +139,7 @@ class TestPackClone:
         )
         await pack_svc.assign_to_class(pack.id, agent_class.id)
 
-        cloned = await pack_svc.clone_pack(
-            pack.id, ClonePackRequest(name="cloned-pack")
-        )
+        cloned = await pack_svc.clone_pack(pack.id, ClonePackRequest(name="cloned-pack"))
         assert cloned.name == "cloned-pack"
         assert cloned.capabilities_count == 1
         assert cloned.classes_count == 1
@@ -155,9 +147,7 @@ class TestPackClone:
 
     async def test_clone_pack_not_found(self, pack_svc):
         with pytest.raises(PackNotFoundError):
-            await pack_svc.clone_pack(
-                uuid4(), ClonePackRequest(name="ghost-pack")
-            )
+            await pack_svc.clone_pack(uuid4(), ClonePackRequest(name="ghost-pack"))
 
 
 class TestPackUsageStats:
@@ -169,9 +159,7 @@ class TestPackUsageStats:
         assert stats["classes_count"] == 0
         assert stats["usage_count"] == 0
 
-    async def test_get_usage_stats_with_data(
-        self, pack_svc, capability, db_session: AsyncSession
-    ):
+    async def test_get_usage_stats_with_data(self, pack_svc, capability, db_session: AsyncSession):
         from api.models.audit import AuditEvent
 
         pack = await pack_svc.create_pack(PackCreate(name="stats-pack"))

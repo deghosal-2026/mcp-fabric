@@ -94,9 +94,7 @@ class TestPolicyServiceAgentClassCRUD:
 
     async def test_update_agent_class_not_found(self, db_session: AsyncSession):
         svc = PolicyService(db=db_session)
-        result = await svc.update_agent_class(
-            uuid4(), AgentClassCreate(name="agent:nope")
-        )
+        result = await svc.update_agent_class(uuid4(), AgentClassCreate(name="agent:nope"))
         assert result is None
 
     async def test_delete_agent_class(self, db_session: AsyncSession):

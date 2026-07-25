@@ -1,6 +1,14 @@
-"""Convenience re-exports for all ORM models.
+"""
+Convenience re-exports for all ORM models.
 
-Import models from `api.models` rather than individual modules.
+Why all models must be imported here:
+  SQLAlchemy's declarative Base metadata (Base.metadata) is the source of truth
+  for Alembic autogeneration. Alembic inspects Base.metadata to detect table
+  changes, but it only sees tables whose models have been imported and thus
+  registered. If a model module is never imported at application startup,
+  Alembic will silently ignore that table and try to drop it (or never create
+  it). This __init__.py guarantees every model class is loaded and registered
+  on Base.metadata simply by importing from api.models.
 """
 
 from api.models.admin import AdminUser, BackgroundTask

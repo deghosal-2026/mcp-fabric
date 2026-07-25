@@ -3,6 +3,17 @@
 Packs are curated groups of capabilities assigned to agent classes.
 Provides create, assign capabilities, assign to class, clone, and
 usage statistics.
+
+Architectural notes:
+  - Packs sit between capabilities and agent classes: a pack groups
+    related capabilities (e.g., "data-processing" pack might contain
+    "transform", "aggregate", "filter" capabilities).
+  - Agent classes get capabilities through packs (not directly).
+    This indirection enables grouping and simplifies administration.
+  - PackAssignment links packs to capabilities. AgentClassPack links
+    packs to agent classes. Both use separate join tables.
+  - The clone operation uses multiple DB round-trips rather than a
+    single bulk-copy. For large packs, this could be optimized.
 """
 
 from uuid import UUID
@@ -32,13 +43,28 @@ class DuplicateAssignmentError(Exception):
 
 
 class PackService:
-    """Capability pack management — create, assign, clone, and query packs."""
+    """Capability pack management — create, assign, clone, and query packs.
+
+    Depends on: AsyncSession for DB access.
+    Used by: admin pack management UI, auth_service (for computing
+    capability surfaces from class -> pack -> capability chain).
+
+    Packs are the unit of capability distribution. Instead of assigning
+    individual capabilities to classes, administrators compose packs
+    and assign the pack to a class.
+    """
 
     def __init__(self, db: AsyncSession):
         self.db = db
 
     async def create_pack(self, params: PackCreate) -> PackResponse:
-        """Create a new capability pack."""
+        """Create a new capability pack.
+
+        WHY: Admin user journey — define a new pack for grouping capabilities.
+
+        SIDE EFFECTS: Persists CapabilityPack row.
+        RETURN: The created pack with server-generated id and timestamps.
+        """
         pack = CapabilityPack(
             name=params.name,
             description=params.description,
@@ -50,10 +76,13 @@ class PackService:
         return await self._to_response(pack)
 
     async def get_pack(self, pack_id: UUID) -> PackResponse:
-        """Get a single pack by ID. Raises PackNotFoundError if missing."""
-        result = await self.db.execute(
-            select(CapabilityPack).where(CapabilityPack.id == pack_id)
-        )
+        """Get a single pack by ID.
+
+        WHY: Admin UI — view pack details including capability and class counts.
+
+        RAISES: PackNotFoundError if missing.
+        """
+        result = await self.db.execute(select(CapabilityPack).where(CapabilityPack.id == pack_id))
         pack = result.scalar_one_or_none()
         if pack is None:
             raise PackNotFoundError(f"Pack {pack_id} not found")
@@ -65,7 +94,12 @@ class PackService:
         limit: int = 50,
         offset: int = 0,
     ) -> list[PackResponse]:
-        """List packs with optional team namespace filter."""
+        """List packs with optional team namespace filter.
+
+        WHY: Admin UI — browse all packs or filter by team.
+        Uses offset/limit pagination and bulk-loads counts via
+        _to_response_batch to avoid N+1 queries.
+        """
         stmt = select(CapabilityPack).order_by(CapabilityPack.name)
         if team_namespace:
             stmt = stmt.where(CapabilityPack.team_namespace == team_namespace)
@@ -79,10 +113,14 @@ class PackService:
         pack_id: UUID,
         params: PackCreate,
     ) -> PackResponse:
-        """Update all fields of an existing pack."""
-        result = await self.db.execute(
-            select(CapabilityPack).where(CapabilityPack.id == pack_id)
-        )
+        """Update all fields of an existing pack.
+
+        WHY: Admin user journey — modify pack name, description, or namespace.
+        Full-field replacement (not partial patch).
+
+        RAISES: PackNotFoundError if missing.
+        """
+        result = await self.db.execute(select(CapabilityPack).where(CapabilityPack.id == pack_id))
         pack = result.scalar_one_or_none()
         if pack is None:
             raise PackNotFoundError(f"Pack {pack_id} not found")
@@ -94,10 +132,16 @@ class PackService:
         return await self._to_response(pack)
 
     async def delete_pack(self, pack_id: UUID) -> None:
-        """Delete a pack by ID. Raises PackNotFoundError if missing."""
-        result = await self.db.execute(
-            select(CapabilityPack).where(CapabilityPack.id == pack_id)
-        )
+        """Delete a pack by ID.
+
+        WHY: Admin user journey — remove a pack.
+        Note: Does NOT cascade-delete PackAssignment or AgentClassPack rows
+        (those are separate join tables). The ORM cascade settings on the
+        CapabilityPack model handle that.
+
+        RAISES: PackNotFoundError if missing.
+        """
+        result = await self.db.execute(select(CapabilityPack).where(CapabilityPack.id == pack_id))
         pack = result.scalar_one_or_none()
         if pack is None:
             raise PackNotFoundError(f"Pack {pack_id} not found")
@@ -109,7 +153,16 @@ class PackService:
         pack_id: UUID,
         params: PackAssignmentRequest,
     ) -> None:
-        """Assign a capability to a pack. Raises DuplicateAssignmentError if already assigned."""
+        """Assign a capability to a pack.
+
+        WHY: Admin user journey — add a capability to a pack.
+        Validates that the capability exists and is not already assigned.
+
+        RAISES:
+          - CapabilityNotFoundError if the capability_id doesn't exist.
+          - DuplicateAssignmentError if the capability is already in the pack.
+        SIDE EFFECTS: Creates a PackAssignment row.
+        """
         cap = await self.db.get(Capability, params.capability_id)
         if cap is None:
             raise CapabilityNotFoundError(f"Capability {params.capability_id} not found")
@@ -137,8 +190,13 @@ class PackService:
         pack_id: UUID,
         capability_id: UUID,
     ) -> None:
-        """Remove a capability from a pack. No-op if the assignment does not exist."""
+        """Remove a capability from a pack.
 
+        WHY: Admin user journey — remove a capability from a pack.
+        No-op if the assignment does not exist (idempotent removal).
+
+        SIDE EFFECTS: Deletes the PackAssignment row if it exists.
+        """
         result = await self.db.execute(
             select(PackAssignment).where(
                 PackAssignment.pack_id == pack_id,
@@ -156,8 +214,18 @@ class PackService:
         pack_id: UUID,
         agent_class_id: UUID,
     ) -> None:
-        """Assign a pack to an agent class. Raises DuplicateAssignmentError if already assigned."""
+        """Assign a pack to an agent class.
 
+        WHY: Admin user journey — grant a class access to all capabilities
+        in the pack. This is the primary mechanism for capability authorization.
+
+        Validates that the agent class exists and the assignment is not a duplicate.
+
+        RAISES:
+          - AgentClassNotFoundError if the agent_class_id doesn't exist.
+          - DuplicateAssignmentError if the pack is already assigned to this class.
+        SIDE EFFECTS: Creates an AgentClassPack row.
+        """
         ac = await self.db.get(AgentClass, agent_class_id)
         if ac is None:
             raise AgentClassNotFoundError(f"Agent class {agent_class_id} not found")
@@ -185,8 +253,13 @@ class PackService:
         pack_id: UUID,
         agent_class_id: UUID,
     ) -> None:
-        """Remove a pack assignment from an agent class. No-op if the assignment does not exist."""
+        """Remove a pack assignment from an agent class.
 
+        WHY: Admin user journey — revoke a class's access to a pack.
+        No-op if the assignment does not exist (idempotent removal).
+
+        SIDE EFFECTS: Deletes the AgentClassPack row if it exists.
+        """
         result = await self.db.execute(
             select(AgentClassPack).where(
                 AgentClassPack.pack_id == pack_id,
@@ -204,11 +277,21 @@ class PackService:
         pack_id: UUID,
         params: ClonePackRequest,
     ) -> PackResponse:
-        """Clone an existing pack including all capability and class assignments."""
+        """Clone an existing pack including all capability and class assignments.
 
-        result = await self.db.execute(
-            select(CapabilityPack).where(CapabilityPack.id == pack_id)
-        )
+        WHY: Admin user journey — create a variant of an existing pack
+        (e.g., for a different team or environment). The clone copies
+        all capability assignments and class assignments from the source.
+
+        The clone is a deep copy of the pack structure:
+          1. Create a new CapabilityPack with the source's description/namespace.
+          2. Copy all PackAssignment rows (capabilities).
+          3. Copy all AgentClassPack rows (class assignments).
+
+        RAISES: PackNotFoundError if the source pack doesn't exist.
+        SIDE EFFECTS: Creates CapabilityPack + multiple PackAssignment + AgentClassPack rows.
+        """
+        result = await self.db.execute(select(CapabilityPack).where(CapabilityPack.id == pack_id))
         source = result.scalar_one_or_none()
         if source is None:
             raise PackNotFoundError(f"Source pack {pack_id} not found")
@@ -248,42 +331,49 @@ class PackService:
         return await self._to_response(clone)
 
     async def get_usage_stats(self, pack_id: UUID) -> dict:
-        """Return usage statistics for a pack including capability count,
+        """Return usage statistics for a pack.
 
-        class count, and invocation count.
+        WHY: Admin insight — understand how much a pack is being used.
+        Returns:
+          - capabilities_count: number of capabilities in the pack
+          - classes_count: number of agent classes using the pack
+          - usage_count: number of AuditEvent rows with event_type='capability_request'
+            referencing any capability in this pack
+
+        The usage_count query uses json_extract to filter AuditEvent.details
+        for the capability_id. This is a JSON path query and may be slow
+        on large audit tables — consider adding a GIN index for production use.
+
+        RAISES: PackNotFoundError if the pack doesn't exist.
         """
         from api.models.audit import AuditEvent
 
-        result = await self.db.execute(
-            select(CapabilityPack).where(CapabilityPack.id == pack_id)
-        )
+        result = await self.db.execute(select(CapabilityPack).where(CapabilityPack.id == pack_id))
         pack = result.scalar_one_or_none()
         if pack is None:
             raise PackNotFoundError(f"Pack {pack_id} not found")
 
         cap_count = (
             await self.db.execute(
-                select(func.count(PackAssignment.id)).where(
-                    PackAssignment.pack_id == pack_id
-                )
+                select(func.count(PackAssignment.id)).where(PackAssignment.pack_id == pack_id)
             )
         ).scalar() or 0
 
         class_count = (
             await self.db.execute(
-                select(func.count(AgentClassPack.id)).where(
-                    AgentClassPack.pack_id == pack_id
-                )
+                select(func.count(AgentClassPack.id)).where(AgentClassPack.pack_id == pack_id)
             )
         ).scalar() or 0
 
         cap_ids = (
-            await self.db.execute(
-                select(PackAssignment.capability_id).where(
-                    PackAssignment.pack_id == pack_id
+            (
+                await self.db.execute(
+                    select(PackAssignment.capability_id).where(PackAssignment.pack_id == pack_id)
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         usage_count = 0
         if cap_ids:
@@ -291,7 +381,7 @@ class PackService:
                 await self.db.execute(
                     select(func.count(AuditEvent.id)).where(
                         AuditEvent.event_type == "capability_request",
-                        func.json_extract(AuditEvent.details, '$.capability_id').in_(
+                        func.json_extract(AuditEvent.details, "$.capability_id").in_(
                             [str(c) for c in cap_ids]
                         ),
                     )
@@ -310,13 +400,25 @@ class PackService:
         self,
         agent_class_id: UUID,
     ) -> list[dict]:
-        """Return all capabilities available to an agent class through its assigned packs."""
+        """Return all capabilities available to an agent class through its assigned packs.
 
+        WHY: Used by auth_service.get_agent_capability_surface() to compute
+        the capability surface for an agent identity. Also used by admin UI
+        to show what capabilities a class has access to.
+
+        Traverses: AgentClassPack -> CapabilityPack -> PackAssignment -> Capability.
+        Uses selectinload to eagerly load the pack and its assignments in one query,
+        avoiding N+1 queries for each class pack.
+
+        RETURN: Sorted list of {id, name, domain} dicts.
+        """
         from sqlalchemy.orm import selectinload
 
         result = await self.db.execute(
             select(AgentClassPack)
-            .options(selectinload(AgentClassPack.pack).selectinload(CapabilityPack.pack_assignments))
+            .options(
+                selectinload(AgentClassPack.pack).selectinload(CapabilityPack.pack_assignments)
+            )
             .where(AgentClassPack.agent_class_id == agent_class_id)
         )
         class_packs = result.unique().scalars().all()
@@ -328,9 +430,7 @@ class PackService:
         if not cap_ids:
             return []
 
-        caps_result = await self.db.execute(
-            select(Capability).where(Capability.id.in_(cap_ids))
-        )
+        caps_result = await self.db.execute(select(Capability).where(Capability.id.in_(cap_ids)))
         capabilities = [
             {"id": str(cap.id), "name": cap.name, "domain": cap.domain}
             for cap in caps_result.scalars().all()
@@ -351,8 +451,13 @@ class PackService:
         )
 
     async def _to_response_batch(self, packs: list[CapabilityPack]) -> list[PackResponse]:
-        """Convert multiple packs to responses with bulk-loaded counts."""
+        """Convert multiple packs to responses with bulk-loaded counts.
 
+        WHY: Performance optimization — when listing packs, this method loads
+        counts for ALL packs in a single query each (2 queries total: one for
+        cap counts, one for class counts) instead of 2 queries per pack.
+        This is the classic N+1 query optimization pattern.
+        """
         if not packs:
             return []
         pack_ids = [p.id for p in packs]
@@ -376,8 +481,11 @@ class PackService:
             class_counts[row[0]] = row[1]
         return [
             PackResponse(
-                id=p.id, name=p.name, description=p.description,
-                team_namespace=p.team_namespace, created_at=p.created_at,
+                id=p.id,
+                name=p.name,
+                description=p.description,
+                team_namespace=p.team_namespace,
+                created_at=p.created_at,
                 capabilities_count=cap_counts.get(p.id, 0),
                 classes_count=class_counts.get(p.id, 0),
             )
@@ -385,20 +493,19 @@ class PackService:
         ]
 
     async def _count_for_pack(self, pack_id: UUID) -> tuple[int, int]:
-        """Return (capabilities_count, classes_count) for a given pack."""
+        """Return (capabilities_count, classes_count) for a given pack.
 
+        Uses scalar subqueries with func.count and a WHERE filter.
+        Both queries are indexed on the foreign key columns.
+        """
         cap = (
             await self.db.execute(
-                select(func.count(PackAssignment.id)).where(
-                    PackAssignment.pack_id == pack_id
-                )
+                select(func.count(PackAssignment.id)).where(PackAssignment.pack_id == pack_id)
             )
         ).scalar() or 0
         cls = (
             await self.db.execute(
-                select(func.count(AgentClassPack.id)).where(
-                    AgentClassPack.pack_id == pack_id
-                )
+                select(func.count(AgentClassPack.id)).where(AgentClassPack.pack_id == pack_id)
             )
         ).scalar() or 0
         return cap, cls

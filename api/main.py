@@ -1,3 +1,27 @@
+"""FastAPI application entrypoint for MCP Fabric.
+
+This module is the root of the HTTP service. It:
+  - Creates the FastAPI app with metadata, lifespan hooks, and all middleware
+  - Registers 11 route modules (admin, registry, auth, routing, policy, etc.)
+  - Defines three health-check endpoints (/health, /health/ready, /health/live)
+  - Exposes a /v1/metrics endpoint for Prometheus scraping
+  - Registers three exception handlers that convert exceptions into a
+    consistent JSON error envelope
+
+Architecture notes:
+  - Middleware order matters: CORSMiddleware runs first (outermost), then
+    APIVersion, RequestID, Tracing, IPRateLimit, Auth, Tenant, RateLimit,
+    and Audit runs last (innermost, closest to the router). This ordering
+    ensures auth and tenant context are set before rate-limit checks and
+    audit logging.
+  - The lifespan context manager handles graceful startup (engine creation,
+    seeder execution, signal handlers) and shutdown (engine disposal).
+  - Exception handlers are registered on the app so FabricError subclasses
+    produce structured JSON, validation errors produce 422 with field-level
+    details, and truly unhandled exceptions produce 500 with a generic
+    message (no stack trace leakage).
+"""
+
 import asyncio
 import signal
 import traceback
@@ -41,6 +65,24 @@ from api.telemetry.metrics import fabric_info
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """FastAPI lifespan context manager for startup and shutdown logic.
+
+    WHAT: Runs on application startup (before handling the first request)
+    and shutdown (after the last response is sent). Startup creates the
+    async SQLAlchemy engine, attaches OpenTelemetry instrumentation,
+    runs database seeders (e.g., admin user, default capabilities), and
+    registers signal handlers for graceful SIGTERM/SIGINT shutdown.
+
+    WHY: This replaces the deprecated on_event("startup")/on_event("shutdown")
+    pattern. It guarantees the engine is created exactly once and disposed
+    cleanly, and it gives the app a chance to set readiness state before
+    the load balancer sends traffic.
+
+    IMPORTANT: The signal handler registration is wrapped in
+    suppress(NotImplementedError) because asyncio signal handlers are
+    not supported on Windows or in some event loop implementations
+    (e.g., uvloop may not support add_signal_handler on all platforms).
+    """
     from sqlalchemy.ext.asyncio import create_async_engine
 
     app.state.readiness = "healthy"
@@ -59,6 +101,16 @@ async def lifespan(app: FastAPI):
 
 
 async def _shutdown(app: FastAPI):
+    """Graceful shutdown handler for SIGTERM/SIGINT.
+
+    WHAT: Sets readiness to "shutting_down" and waits 5 seconds so
+    in-flight requests can complete and the load balancer can route
+    traffic away before the engine is disposed.
+
+    WHY: Without this delay, the engine disposal in lifespan() would
+    cut off active database operations, causing 500 errors for users
+    whose requests are still being processed.
+    """
     app.state.readiness = "shutting_down"
     await asyncio.sleep(5)
 
@@ -72,6 +124,16 @@ app = FastAPI(
     license_info={"name": "MIT", "identifier": "MIT"},
 )
 
+# Middleware registration order (outermost → innermost):
+#   1. CORSMiddleware       — handle CORS preflight and headers
+#   2. APIVersionMiddleware — negotiate API version from Accept header
+#   3. RequestIDMiddleware  — assign a unique traceable ID per request
+#   4. TracingMiddleware    — create OpenTelemetry span and record metrics
+#   5. IPRateLimitMiddleware— rate-limit by client IP before auth
+#   6. AuthMiddleware       — validate Bearer JWT, set agent identity
+#   7. TenantMiddleware     — extract tenant namespace from agent_class
+#   8. RateLimitMiddleware  — rate-limit by authenticated agent identity
+#   9. AuditMiddleware      — log request/response summary to audit trail
 app.add_middleware(CORSMiddleware, **CORS_CONFIG)
 app.add_middleware(APIVersionMiddleware)
 app.add_middleware(RequestIDMiddleware)
@@ -94,8 +156,23 @@ app.include_router(approval_router)
 app.include_router(pack_router)
 app.include_router(webhooks_router)
 
+
 @app.get("/health")
 async def health(request: Request):
+    """Detailed health check probing database, Redis, and OPA connectivity.
+
+    WHAT: Probes all three core dependencies in parallel and returns a
+    per-component status dict. The overall status is "healthy" only if
+    every dependency reports "connected"; otherwise it is "degraded".
+
+    WHY: Load balancers and Kubernetes probes use this to determine if
+    the service can accept traffic. A degraded status does not kill the
+    pod — it alerts operators that a dependency is down while the
+    service may still serve cached or unaffected requests.
+
+    IMPORTANT: Falls back to creating a temporary engine if the lifespan
+    engine was not yet initialized (edge case during early startup).
+    """
     from sqlalchemy.ext.asyncio import create_async_engine
 
     engine = getattr(request.app.state, "db_engine", None) or create_async_engine(
@@ -115,6 +192,16 @@ async def health(request: Request):
 
 @app.get("/health/ready")
 async def readiness(request: Request):
+    """Kubernetes readiness probe — returns 503 if shutting down or DB is down.
+
+    WHAT: A lightweight check that only verifies the database connection.
+    Returns 503 immediately if the app is in shutting_down state (graceful
+    shutdown in progress) or if the database is unreachable.
+
+    WHY: Kubernetes uses this probe to stop sending traffic to a pod
+    that is draining or unhealthy. A 503 response causes the pod to be
+    removed from the service's endpoint list, avoiding request failures.
+    """
     if app.state.readiness == "shutting_down":
         return JSONResponse({"status": "shutting_down"}, status_code=503)
     from sqlalchemy.ext.asyncio import create_async_engine
@@ -130,11 +217,30 @@ async def readiness(request: Request):
 
 @app.get("/health/live")
 async def liveness():
+    """Kubernetes liveness probe — returns 200 if the process is alive.
+
+    WHAT: The simplest possible health check — does not probe any
+    dependency. Returns {"status": "alive"} immediately.
+
+    WHY: Kubernetes uses this probe to detect if the process has frozen
+    or deadlocked (no response at all). This probe should never depend
+    on any external service to avoid cascading failures.
+    """
     return {"status": "alive"}
 
 
 @app.get("/v1/metrics")
 async def metrics():
+    """Prometheus metrics endpoint.
+
+    WHAT: Exposes all Prometheus metrics (counters, histograms, gauges)
+    registered via api/telemetry/metrics.py in the standard Prometheus
+    text format.
+
+    WHY: Prometheus scrapes this endpoint periodically. By using
+    generate_latest(), we avoid maintaining a separate metrics server
+    and keep everything in-process.
+    """
     from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
@@ -142,6 +248,25 @@ async def metrics():
 
 @app.exception_handler(FabricError)
 async def fabric_error_handler(request: Request, exc: FabricError):
+    """Structured JSON error response for all FabricError subclasses.
+
+    WHAT: Catches any FabricError (or subclass) raised anywhere in the
+    application and returns a consistent JSON envelope containing:
+      - error:      machine-readable error code (e.g., "invalid_token")
+      - message:    human-readable description
+      - details:    optional dict with additional context
+      - request_id: correlated request ID for log tracing
+      - suggestion: optional guidance on how to fix the issue
+      - retry_after: optional seconds to wait before retrying (429/503)
+
+    WHY: Returning a consistent error format lets API clients (especially
+    other agents) parse errors programmatically without guessing the
+    response structure.
+
+    IMPORTANT: The request_id is read from request.state (set by
+    RequestIDMiddleware). It is set to None if the middleware has not
+    yet run or if an error occurs before the middleware chain.
+    """
     rid = getattr(request.state, "request_id", None)
     return JSONResponse(
         status_code=exc.status_code,
@@ -158,6 +283,25 @@ async def fabric_error_handler(request: Request, exc: FabricError):
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handles Pydantic/FastAPI request validation errors (422).
+
+    WHAT: Catches RequestValidationError (raised by FastAPI when request
+    body, query parameters, or path parameters fail validation against
+    Pydantic schemas) and returns a 422 with field-level error details
+    from exc.errors().
+
+    WHY: Without this handler, FastAPI returns the default 422 response
+    which uses a different format than FabricError responses. This
+    handler ensures all error responses follow the same envelope pattern
+    (error code + message + details) so clients have a consistent
+    contract.
+
+    IMPORTANT: The request_id is intentionally omitted here because
+    this error path is triggered by FastAPI's request parsing, which
+    may happen before the middleware chain has set request.state.
+    Using getattr with a default would mask bugs, so we lean toward
+    omission in the response.
+    """
     return JSONResponse(
         status_code=422,
         content={
@@ -170,6 +314,24 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Catch-all for unexpected/unhandled exceptions (500).
+
+    WHAT: Catches any Exception that is NOT a FabricError or
+    RequestValidationError. Logs the full traceback at ERROR level
+    with request context (method, path, error string) and returns a
+    generic 500 response with no stack trace.
+
+    WHY: This is a safety net — if a bug or unexpected condition
+    surfaces, we want to:
+      1) Log enough context for debugging without leaking internals
+      2) Return a safe, non-revealing error to the client
+      3) Avoid crashing the process (the server keeps running)
+
+    IMPORTANT: The response intentionally omits details and stack trace
+    to avoid leaking sensitive information. Logging the traceback to
+    the structured logger allows operators to correlate the 500 with
+    the full context in the log aggregator.
+    """
     logger.error(
         "unhandled_exception",
         method=request.method,

@@ -1,3 +1,37 @@
+"""Prometheus metric definitions for MCP Fabric.
+
+Naming convention:
+    All metrics use the "fabric_" prefix followed by a descriptive name.
+    Units are appended where applicable (e.g. _seconds, _minutes).
+    Labels follow the pattern: lowercase_with_underscores.
+
+Metric types used:
+    - Counter: Cumulative count that only increases (requests, decisions, events).
+    - Gauge: Snapshot value that goes up and down (connections, health, pending).
+    - Histogram: Distribution of values across configurable buckets (latency, duration).
+    - Info: Static key-value metadata about the instance.
+
+Every metric includes a HELP string as the second argument, and most include
+labelnames for dimensional slicing. The histogram buckets are tuned to the
+expected value ranges for each use case.
+
+Metric families (15 total):
+    1.  fabric_requests_total              — Counter  — HTTP requests (method, path, status)
+    2.  fabric_request_duration_seconds    — Histogram — HTTP latency
+    3.  fabric_routing_overhead_seconds    — Histogram — routing time (excludes server call)
+    4.  fabric_server_health               — Gauge    — per-server health (1/0)
+    5.  fabric_server_tool_count           — Gauge    — number of tools per server
+    6.  fabric_policy_decisions_total      — Counter  — policy allow/deny decisions
+    7.  fabric_policy_evaluation_duration  — Histogram — policy evaluation time
+    8.  fabric_approvals_pending           — Gauge    — pending approval count
+    9.  fabric_approval_duration_minutes   — Histogram — approval resolution time
+    10. fabric_audit_events_total          — Counter  — audit events by type
+    11. fabric_db_connections              — Gauge    — database pool connections
+    12. fabric_redis_connections           — Gauge    — Redis pool connections
+    13. fabric_celery_tasks_total          — Counter  — Celery tasks by type/status
+    14. fabric_info                        — Info     — static instance metadata
+"""
+
 from prometheus_client import Counter, Gauge, Histogram, Info
 
 fabric_requests_total = Counter(

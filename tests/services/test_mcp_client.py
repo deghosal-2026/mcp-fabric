@@ -37,17 +37,13 @@ async def client() -> AsyncGenerator[MCPClient, None]:
 class TestListTools:
     """Tests for MCPClient.list_tools()."""
 
-    async def test_list_tools_returns_tools(
-        self, client: MCPClient, mock_mcp_server: str
-    ) -> None:
+    async def test_list_tools_returns_tools(self, client: MCPClient, mock_mcp_server: str) -> None:
         tools = await client.list_tools(mock_mcp_server)
         assert len(tools) >= 1
         assert isinstance(tools[0], ToolDefinition)
         assert tools[0].name == "test_tool"
 
-    async def test_list_tools_parses_schema(
-        self, client: MCPClient, mock_mcp_server: str
-    ) -> None:
+    async def test_list_tools_parses_schema(self, client: MCPClient, mock_mcp_server: str) -> None:
         tools = await client.list_tools(mock_mcp_server)
         tool = next(t for t in tools if t.name == "test_tool")
         assert tool.input_schema == {
@@ -101,9 +97,7 @@ class TestListTools:
 class TestCallTool:
     """Tests for MCPClient.call_tool()."""
 
-    async def test_call_tool_returns_result(
-        self, client: MCPClient, mock_mcp_server: str
-    ) -> None:
+    async def test_call_tool_returns_result(self, client: MCPClient, mock_mcp_server: str) -> None:
         response = await client.call_tool(mock_mcp_server, "test_tool", {"x": "hello"})
         assert response.result == "done"
         assert response.tool_name == "test_tool"
@@ -117,17 +111,13 @@ class TestCallTool:
         assert response.metadata == {"count": 2}
 
     async def test_call_tool_not_found(self, client: MCPClient) -> None:
-        async with async_mock_server(
-            create_mock_mcp_server(fail_call="nonexistent")
-        ) as url:
+        async with async_mock_server(create_mock_mcp_server(fail_call="nonexistent")) as url:
             with pytest.raises(MCPToolError) as exc:
                 await client.call_tool(url, "nonexistent")
             assert "nonexistent" in str(exc.value)
 
     async def test_call_tool_timeout(self, client: MCPClient) -> None:
-        async with async_mock_server(
-            create_mock_mcp_server(call_delay=0.5)
-        ) as url:
+        async with async_mock_server(create_mock_mcp_server(call_delay=0.5)) as url:
             c = MCPClient(default_timeout=0.1, connect_timeout=0.1)
             with pytest.raises(MCPTimeoutError):
                 await c.call_tool(url, "test_tool")
@@ -162,18 +152,14 @@ class TestCallTool:
 class TestDiffTools:
     """Tests for MCPClient.diff_tools()."""
 
-    async def test_diff_identical_tools(
-        self, client: MCPClient, mock_mcp_server: str
-    ) -> None:
+    async def test_diff_identical_tools(self, client: MCPClient, mock_mcp_server: str) -> None:
         prev = await client.list_tools(mock_mcp_server)
         diff = await client.diff_tools(mock_mcp_server, prev)
         assert len(diff.tools_added) == 0
         assert len(diff.tools_removed) == 0
         assert len(diff.tools_changed) == 0
 
-    async def test_diff_detects_added_tool(
-        self, client: MCPClient, mock_mcp_server: str
-    ) -> None:
+    async def test_diff_detects_added_tool(self, client: MCPClient, mock_mcp_server: str) -> None:
         prev = [ToolDefinition(name="old_tool", input_schema={})]
         diff = await client.diff_tools(mock_mcp_server, prev)
         assert any(t.name == "test_tool" for t in diff.tools_added)
@@ -181,9 +167,7 @@ class TestDiffTools:
         assert any(t.name == "old_tool" for t in diff.tools_removed)
         assert diff.tools_changed == []
 
-    async def test_diff_detects_removed_tool(
-        self, client: MCPClient, mock_mcp_server: str
-    ) -> None:
+    async def test_diff_detects_removed_tool(self, client: MCPClient, mock_mcp_server: str) -> None:
         prev = await client.list_tools(mock_mcp_server)
         extra = ToolDefinition(name="extra_tool", input_schema={})
         prev.append(extra)
@@ -267,9 +251,7 @@ class TestMCPClientErrors:
         await c.close()
         assert len(c._clients) == 0
 
-    async def test_connection_pool_reuse(
-        self, client: MCPClient, mock_mcp_server: str
-    ) -> None:
+    async def test_connection_pool_reuse(self, client: MCPClient, mock_mcp_server: str) -> None:
         await client.list_tools(mock_mcp_server)
         await client.list_tools(mock_mcp_server)
         assert mock_mcp_server in client._clients

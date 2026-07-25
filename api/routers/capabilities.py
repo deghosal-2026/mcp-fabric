@@ -1,7 +1,28 @@
 """Capability definition and mapping routes.
 
+Capabilities are abstract function signatures (e.g. "send_email", "analyze_sentiment")
+that decouple what an agent wants to do from which MCP server provides the tool.
+This router manages capability CRUD, aliases, deprecation, and server mappings.
+
+User journeys:
+  - Admin defines a new capability (POST /v1/capabilities) — a named, versioned
+    function signature with input/output schemas
+  - Admin adds aliases so capabilities can be referenced by multiple names
+    (POST /v1/capabilities/{id}/aliases) — useful for backwards compatibility
+  - Admin maps a capability to a specific tool on an MCP server
+    (POST /v1/capabilities/{id}/mappings) — the routing engine uses these
+  - Admin deprecates old capabilities (POST /v1/capabilities/{id}/deprecate)
+  - Dashboard lists all capabilities with optional domain filter (GET /v1/capabilities)
+
+Architectural notes:
+  - The /mappings endpoint creates CapabilityMapping records directly (not through
+    the service layer) — an inconsistency that should be refactored.
+  - Capability aliases provide polymorphic lookup: during routing, the system
+    resolves the canonical capability by checking aliases.
+
 Endpoints: POST /v1/capabilities, GET /v1/capabilities, GET /v1/capabilities/{id},
-POST /v1/capabilities/{id}/deprecate, POST /v1/capabilities/{id}/mappings.
+POST /v1/capabilities/{id}/aliases, POST /v1/capabilities/{id}/deprecate,
+POST /v1/capabilities/{id}/mappings.
 """
 
 from uuid import UUID
@@ -29,30 +50,38 @@ async def get_capability_service(
     return CapabilityService(db=db)
 
 
+# Create a new capability definition.
+# 201 = resource created. Capabilities are the atomic units of function
+# that agents request — each has a name, domain, version, and JSON schemas
+# for input/output. No auth enforcement yet (v0.2 feature).
 @router.post("", status_code=201)
 async def create_capability(
     body: CapabilityCreate,
     svc: CapabilityService = Depends(get_capability_service),
 ) -> CapabilityResponse:
-    """Create a new capability definition. Returns 201 with the created capability."""
     return await svc.create(body)
 
 
+# List all capabilities, optionally filtered by domain.
+# The `domain` filter lets the frontend group capabilities by namespace
+# (e.g. "communication", "analytics", "storage"). Returns an empty list
+# when no capabilities exist or none match the filter.
 @router.get("")
 async def list_capabilities(
     domain: str | None = Query(None),
     svc: CapabilityService = Depends(get_capability_service),
 ) -> list[CapabilityResponse]:
-    """List capabilities, optionally filtered by domain."""
     return await svc.list(domain=domain)
 
 
+# Get a single capability by ID. Returns 404 if the capability doesn't
+# exist. Used by the capability detail view and also internally during
+# routing to resolve capability schemas.
 @router.get("/{capability_id}")
 async def get_capability(
     capability_id: UUID,
     svc: CapabilityService = Depends(get_capability_service),
 ) -> CapabilityResponse:
-    """Get a single capability by ID. Returns 404 if not found."""
     result = await svc.get(capability_id)
     if result is None:
         raise HTTPException(
@@ -62,13 +91,16 @@ async def get_capability(
     return result
 
 
+# Add an alternative name (alias) for a capability.
+# Aliases enable backwards-compatible renaming: old agents that request
+# "send_email_v1" still resolve to the canonical capability "send_email".
+# 404 if the capability doesn't exist; 201 on success.
 @router.post("/{capability_id}/aliases", status_code=201)
 async def add_capability_alias(
     capability_id: UUID,
     body: CapabilityAliasCreate,
     svc: CapabilityService = Depends(get_capability_service),
 ) -> CapabilityResponse:
-    """Add an alias to a capability. Returns 201 or 404 if not found."""
     result = await svc.add_alias(capability_id, body.alias)
     if result is None:
         raise HTTPException(
@@ -78,12 +110,15 @@ async def add_capability_alias(
     return result
 
 
+# Mark a capability as deprecated. Deprecated capabilities remain in the
+# system (existing mappings still work) but are excluded from new routing
+# suggestions and may surface a warning in the dashboard. This is a soft
+# delete — the capability is not actually removed.
 @router.post("/{capability_id}/deprecate")
 async def deprecate_capability(
     capability_id: UUID,
     svc: CapabilityService = Depends(get_capability_service),
 ) -> CapabilityResponse:
-    """Mark a capability as deprecated. Returns 404 if not found."""
     result = await svc.deprecate(capability_id)
     if result is None:
         raise HTTPException(
@@ -93,13 +128,20 @@ async def deprecate_capability(
     return result
 
 
+# Create a mapping from a capability to a specific tool on an MCP server.
+# This is the core linking mechanism: it says "capability X is provided by
+# tool Y on server Z". Multiple servers can provide the same capability;
+# the routing engine uses `is_primary` and `routing_weight` for load
+# distribution.
+# NOTE: This endpoint creates the mapping record directly (bypassing the
+# CapabilityService) — an architectural inconsistency with the other
+# endpoints. Future refactor should route through the service layer.
 @router.post("/{capability_id}/mappings", status_code=201)
 async def map_capability(
     capability_id: UUID,
     body: CapabilityMappingCreate,
     db: AsyncSession = Depends(get_db_session),
 ) -> CapabilityMappingResponse:
-    """Create a new capability-to-server mapping. Returns 201 with the mapping."""
     from api.models.server import CapabilityMapping
 
     mapping = CapabilityMapping(

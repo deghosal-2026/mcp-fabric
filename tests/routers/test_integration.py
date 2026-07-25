@@ -11,8 +11,8 @@ For local testing, start the stack: docker-compose up
 
 import os
 
-import pytest
 import httpx
+import pytest
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
@@ -46,12 +46,15 @@ def test_health_live(client):
 
 def test_register_and_list_servers(client):
     """T10-16: Register a server and verify it appears in the list."""
-    resp = client.post("/v1/servers", json={
-        "name": "e2e-test-server",
-        "endpoint": "http://e2e-test:3001",
-        "owner_team": "platform",
-        "labels": ["e2e"],
-    })
+    resp = client.post(
+        "/v1/servers",
+        json={
+            "name": "e2e-test-server",
+            "endpoint": "http://e2e-test:3001",
+            "owner_team": "platform",
+            "labels": ["e2e"],
+        },
+    )
     assert resp.status_code in (201, 200)
     data = resp.json()
     assert data["name"] == "e2e-test-server"
@@ -64,11 +67,14 @@ def test_register_and_list_servers(client):
 
 def test_capability_lifecycle(client):
     """T10-17: Create capability, list, verify it exists."""
-    resp = client.post("/v1/capabilities", json={
-        "name": "e2e:test-capability",
-        "domain": "e2e",
-        "description": "E2E test capability",
-    })
+    resp = client.post(
+        "/v1/capabilities",
+        json={
+            "name": "e2e:test-capability",
+            "domain": "e2e",
+            "description": "E2E test capability",
+        },
+    )
     assert resp.status_code in (201, 200)
 
     resp = client.get("/v1/capabilities")

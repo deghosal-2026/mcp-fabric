@@ -187,9 +187,9 @@ class TestExceptionHandlerIntegration:
 
     def _assert_error_response(self, exc_name: str, expected_status: int, expected_code: str):
         resp = client.get(f"/raise?exc={exc_name}")
-        assert (
-            resp.status_code == expected_status
-        ), f"Expected {expected_status} for {exc_name}, got {resp.status_code}"
+        assert resp.status_code == expected_status, (
+            f"Expected {expected_status} for {exc_name}, got {resp.status_code}"
+        )
         body = resp.json()
         assert body["error"] == expected_code
         assert "message" in body

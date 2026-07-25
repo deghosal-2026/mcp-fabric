@@ -1,3 +1,15 @@
+"""ORM models for audit logging, approval requests, and alerting.
+
+AuditEvent     – Immutable log of every significant action in the fabric.
+                  Used for compliance, debugging, and reconstructing history.
+ApprovalRequest – Tracks approval-gated capability invocations. When an agent
+                  class has trust_level='approval-gated', the router creates an
+                  ApprovalRequest and waits for an admin to approve or deny it.
+AlertRule      – Configurable conditions that trigger alerts (e.g. "failure rate
+                  exceeds 5% in 5 minutes").
+AlertEvent     – A specific firing of an AlertRule, with optional acknowledgment.
+"""
+
 import uuid
 from datetime import datetime
 from typing import Any
@@ -10,6 +22,34 @@ from api.models.base import Base, UUIDMixin
 
 
 class AuditEvent(UUIDMixin, Base):
+    """Immutable record of a security-relevant action in the fabric.
+
+    Table: audit_events
+
+    Every server registration, capability mapping change, trust assignment,
+    login, approval resolution, etc. writes an AuditEvent row. These rows
+    are append-only — never updated or deleted — to preserve a reliable
+    audit trail.
+
+    Indexing strategy:
+        idx_audit_type      – Filter by event_type (e.g. "server.created").
+        idx_audit_actor     – Find all actions by a specific actor.
+        idx_audit_time      – Time-range queries for dashboard / export.
+        idx_audit_type_time – Composite index for the most common query pattern:
+                              "show me all events of type X in the last N hours".
+
+    Columns:
+        event_type – Namespaced string: "server.created", "capability.mapped",
+                     "agent.connected", "approval.resolved", etc.
+        actor_type – 'admin_user', 'agent_identity', or 'system'.
+        actor_id   – UUID of the actor (as a string for flexibility).
+        target_type – Optional: what entity was acted upon ('server', 'capability').
+        target_id   – Optional: UUID of the target entity.
+        details (JSON) – Arbitrary structured payload describing the change
+                        (e.g. old_value / new_value, request params, IP address).
+        created_at – Timestamp of the event (server default, never client-supplied).
+    """
+
     __tablename__ = "audit_events"
 
     event_type: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -31,6 +71,34 @@ class AuditEvent(UUIDMixin, Base):
 
 
 class ApprovalRequest(UUIDMixin, Base):
+    """Tracks a pending / resolved approval for an approval-gated capability call.
+
+    Table: approval_requests
+
+    When the router intercepts a capability invocation for which the agent's
+    trust level is 'approval-gated', it creates an ApprovalRequest and returns
+    a pending status to the agent. An admin later approves or denies it via
+    the approval API, and the router completes (or rejects) the original call.
+
+    The request has a hard expiry (expires_at); if not resolved by that time
+    it is auto-denied.
+
+    Foreign keys:
+        agent_identity_id -> agent_identities.id  (who asked)
+        capability_id     -> capabilities.id       (what they want to do)
+        server_id         -> mcp_servers.id        (which server to call)
+        approver_id       -> admin_users.id        (who resolved it, nullable)
+
+    Columns:
+        request_params (JSON) – Parameters the agent wanted to pass to the capability.
+        result (JSON)  – Output returned from the capability after approval.
+        status         – 'pending' | 'approved' | 'denied' | 'expired'.
+        approver_note  – Optional reason for approval/denial.
+        requested_at   – When the request was created.
+        resolved_at    – When an admin acted (approved or denied).
+        expires_at     – Deadline; requests past this date are auto-denied.
+    """
+
     __tablename__ = "approval_requests"
 
     agent_identity_id: Mapped[uuid.UUID] = mapped_column(
@@ -67,6 +135,25 @@ class ApprovalRequest(UUIDMixin, Base):
 
 
 class AlertRule(UUIDMixin, Base):
+    """Configurable alert rule with a condition and notification channels.
+
+    Table: alert_rules
+
+    Example: "alert_type='error_rate', condition={'threshold': 0.05, 'window_minutes': 5}"
+
+    The fabric monitor evaluates rules periodically. When a rule's condition
+    evaluates to true, an AlertEvent is created.
+
+    Columns:
+        name           – Human-readable label (e.g. "High error rate on prod").
+        alert_type     – Discriminator: 'error_rate', 'latency_p99', 'auth_failures', etc.
+        condition (JSON) – Rule-specific condition payload (structure varies by alert_type).
+        channels (JSON)  – Notification destinations: ['log', 'slack', 'pagerduty', 'webhook'].
+        enabled        – Whether this rule is active. Disabled rules are still stored
+                         but not evaluated.
+        created_at     – When the rule was defined.
+    """
+
     __tablename__ = "alert_rules"
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -85,6 +172,26 @@ class AlertRule(UUIDMixin, Base):
 
 
 class AlertEvent(UUIDMixin, Base):
+    """A specific firing of an AlertRule, with optional administrative acknowledgment.
+
+    Table: alert_events
+
+    When a rule condition triggers, an AlertEvent is created. If the alert is
+    acknowledged, acknowledged_at and acknowledged_by are set.
+
+    Foreign keys:
+        rule_id (FK -> alert_rules)        – Which rule fired.
+        acknowledged_by (FK -> admin_users) – Admin who acknowledged the alert.
+
+    Columns:
+        rule_id         – FK to the AlertRule that generated this event.
+        message         – Human-readable alert description (e.g. "Error rate 7.2% > 5%").
+        details (JSON)  – Additional context (e.g. affected server IDs, metric values).
+        fired_at        – When the condition was met.
+        acknowledged_at – When an admin clicked "Acknowledge" in the UI.
+        acknowledged_by – FK to the admin user who acknowledged.
+    """
+
     __tablename__ = "alert_events"
 
     rule_id: Mapped[uuid.UUID] = mapped_column(

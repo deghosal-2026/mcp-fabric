@@ -2,6 +2,17 @@
 
 Handles the lifecycle of approval requests: creation, approval (with
 routing), denial, status polling, and expiration of stale requests.
+
+Architectural notes:
+  - All datetimes are naive UTC for cross-DB compatibility.
+    SQLite has no timezone awareness; PostgreSQL stores tz-aware.
+    We store naive UTC and compare with naive UTC everywhere.
+  - Import is at module level (not inline) for the _utcnow helper.
+  - Approval approval triggers optional routing execution. If routing
+    fails, the approval still succeeds but the result is not persisted.
+    This is a deliberate "approval succeeds even if routing fails" policy.
+  - Audit events are logged for every state transition (requested,
+    approved, denied) as an append-only trail.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -27,11 +38,13 @@ from api.services.routing_service import RoutingService
 from api.telemetry.logging import logger
 
 
-# All datetimes are naive UTC for cross-DB compatibility
-# (SQLite drops tzinfo; PostgreSQL stores it).
-# We store naive UTC and compare with naive UTC everywhere.
 def _utcnow() -> datetime:
-    """Return the current UTC datetime with tzinfo stripped for cross-DB compatibility."""
+    """Return the current UTC datetime with tzinfo stripped for cross-DB compatibility.
+
+    WHY: SQLite stores TIMESTAMP without timezone. If we store a tz-aware
+    datetime, comparisons against naive datetimes from the DB will fail.
+    Stripping tzinfo ensures uniform naive-UTC handling.
+    """
     return datetime.now(UTC).replace(tzinfo=None)
 
 
@@ -48,14 +61,33 @@ class ApprovalExpiredError(Exception):
 
 
 class ApprovalService:
-    """Approval-gated capability workflow — create, approve, deny, expire, and audit."""
+    """Approval-gated capability workflow — create, approve, deny, expire, and audit.
+
+    Depends on:
+      - AsyncSession for DB access
+      - RoutingService (optional) for executing capabilities on approval
+      - AuditService for recording state transitions
+
+    Used by: admin approval UI, agent capability pipeline.
+    """
 
     def __init__(self, db: AsyncSession, routing: RoutingService | None = None):
         self.db = db
+        # Routing is optional: approvals can function without a routing
+        # backend (e.g., for manual-approval-only workflows).
         self._routing = routing
 
     async def create_request(self, params: ApprovalRequestCreate) -> ApprovalRequestResponse:
-        """Create a new approval request with an expiry timestamp and log an audit event."""
+        """Create a new approval request with an expiry timestamp.
+
+        WHY: Agent user journey — an agent requests a capability that requires
+        approval. The request is created as 'pending' with a configurable TTL.
+
+        SIDE EFFECTS:
+          - Persists ApprovalRequest row
+          - Logs an 'approval_requested' audit event
+        RETURN: The created request with server-generated id and timestamps.
+        """
         expires_at = _utcnow() + timedelta(hours=settings.approval_expiry_hours)
         req = ApprovalRequest(
             agent_identity_id=params.agent_identity_id,
@@ -69,6 +101,9 @@ class ApprovalService:
         await self.db.commit()
         await self.db.refresh(req)
 
+        # Audit logging is fire-and-forget from the caller's perspective:
+        # the approval request has already been committed. An audit failure
+        # does not roll back the request creation.
         audit = AuditService(db=self.db)
         await audit.log_event(
             event_type="approval_requested",
@@ -84,12 +119,36 @@ class ApprovalService:
         return self._to_response(req)
 
     async def approve(self, request_id: UUID, action: ApprovalAction) -> ApprovalRequestResponse:
-        """Approve a pending request, execute routing if available, and log the audit event."""
+        """Approve a pending request, execute routing if available, and log the audit event.
+
+        WHY: Admin user journey — an admin approves a pending capability request.
+
+        The approval has three stages:
+          1. Validate: request exists, is pending, and has not expired.
+          2. Approve: set status, approver metadata, resolution timestamp.
+          3. Route: if a routing service is configured, execute the capability
+             and persist the result. Routing failure is non-fatal — the approval
+             still stands.
+
+        SIDE EFFECTS:
+          - Sets req.status to 'approved'
+          - If routing succeeds, stores the route result in req.result
+          - Logs an 'approval_approved' audit event
+
+        RAISES:
+          - ApprovalNotFoundError if request_id is missing
+          - ApprovalAlreadyResolvedError if already approved/denied/expired
+          - ApprovalExpiredError if the pending window has passed
+        """
+        # joinedload(capability) avoids an N+1 query when reading req.capability.name
+        # for the routing call below.
         result = await self.db.execute(
             select(ApprovalRequest)
             .options(joinedload(ApprovalRequest.capability))
             .where(ApprovalRequest.id == request_id)
         )
+        # unique() is required because joinedload on to-one relationships
+        # can produce duplicate rows in the SQL result set.
         req = result.unique().scalar_one_or_none()
         if req is None:
             raise ApprovalNotFoundError(f"Approval request {request_id} not found")
@@ -97,6 +156,7 @@ class ApprovalService:
             raise ApprovalAlreadyResolvedError(
                 f"Approval request {request_id} is already {req.status}"
             )
+        # Compare with _utcnow() (naive) against expires_at (also naive, stored that way).
         if req.expires_at < _utcnow():
             req.status = "expired"
             await self.db.commit()
@@ -119,9 +179,14 @@ class ApprovalService:
                     )
                 )
             except Exception:
+                # Routing failure is non-fatal. The approval is already committed,
+                # and we log the error but do NOT roll back. This matches the
+                # "approve first, route best-effort" pattern.
                 logger.exception("approval:route_failed", approval_id=str(req.id))
 
         if route_result:
+            # model_dump(mode="json") ensures all types are JSON-serializable
+            # (e.g., UUIDs become strings, datetimes become ISO strings).
             req.result = route_result.model_dump(mode="json")
             await self.db.commit()
 
@@ -129,7 +194,14 @@ class ApprovalService:
         return self._to_response(req)
 
     async def deny(self, request_id: UUID, action: ApprovalAction) -> ApprovalRequestResponse:
-        """Deny a pending approval request and log the audit event."""
+        """Deny a pending approval request and log the audit event.
+
+        WHY: Admin user journey — an admin rejects a pending capability request.
+        Simpler than approve: no routing execution, just status update + audit.
+
+        RAISES: ApprovalNotFoundError, ApprovalAlreadyResolvedError.
+        SIDE EFFECTS: Sets status to 'denied', logs 'approval_denied'.
+        """
         result = await self.db.execute(
             select(ApprovalRequest).where(ApprovalRequest.id == request_id)
         )
@@ -150,7 +222,15 @@ class ApprovalService:
         return self._to_response(req)
 
     async def get_status(self, request_id: UUID) -> ApprovalStatusResponse:
-        """Return the current status and result of an approval request."""
+        """Return the current status and result of an approval request.
+
+        WHY: Agent user journey — the requesting agent polls for resolution.
+        Used in the agent capability pipeline to check if a requested
+        capability has been approved/denied/expired.
+
+        RETURN: Lightweight status response (no full request metadata).
+        RAISES: ApprovalNotFoundError if missing.
+        """
         result = await self.db.execute(
             select(ApprovalRequest).where(ApprovalRequest.id == request_id)
         )
@@ -166,7 +246,16 @@ class ApprovalService:
         )
 
     async def expire_pending(self) -> int:
-        """Mark all expired pending requests as expired and return the count affected."""
+        """Mark all expired pending requests as expired and return the count affected.
+
+        WHY: Background job — periodic cleanup of stale pending requests.
+        Uses a bulk UPDATE to avoid loading individual rows into memory.
+        The resolved_at is set to the current time so expired requests
+        have a clear timestamp.
+
+        SIDE EFFECTS: Bulk UPDATE on ApprovalRequest table.
+        RETURN: Number of rows updated.
+        """
         now = _utcnow()
         stmt = (
             update(ApprovalRequest)
@@ -176,6 +265,7 @@ class ApprovalService:
             )
             .values(status="expired", resolved_at=now)
         )
+        # cast is needed because SQLAlchemy CursorResult typing varies by driver.
         result = cast(CursorResult, await self.db.execute(stmt))
         await self.db.commit()
 
@@ -190,7 +280,11 @@ class ApprovalService:
         limit: int = 50,
         offset: int = 0,
     ) -> list[ApprovalRequestResponse]:
-        """List approval requests with optional status filter, newest first."""
+        """List approval requests with optional status filter, newest first.
+
+        WHY: Admin user journey — browse all approval requests.
+        Default ordering by requested_at desc puts recent requests first.
+        """
         stmt = select(ApprovalRequest).order_by(ApprovalRequest.requested_at.desc())
         if status_filter:
             stmt = stmt.where(ApprovalRequest.status == status_filter)
@@ -204,7 +298,14 @@ class ApprovalService:
         event_type: str,
         action: ApprovalAction,
     ) -> None:
-        """Record an audit event for an approval action (approved/denied)."""
+        """Record an audit event for an approval action (approved/denied).
+
+        WHY: Audit trail requirement — every approval state transition
+        must be recorded for compliance and retrospective analysis.
+
+        The import is inside the method rather than at module top-level
+        to avoid circular import issues with audit_service.py.
+        """
         from api.services.audit_service import AuditService
 
         audit = AuditService(db=self.db)

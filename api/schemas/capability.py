@@ -1,7 +1,12 @@
 """Pydantic schemas for capability definition and mapping.
 
-CapabilityCreate accepts the normalized name + schemas;
-CapabilityMappingCreate links a capability to a server tool.
+Endpoints:
+  POST /api/v1/capabilities               -> CapabilityCreate -> CapabilityResponse
+  GET  /api/v1/capabilities               -> list[CapabilityResponse]
+  GET  /api/v1/capabilities/{id}          -> CapabilityResponse
+  POST /api/v1/capabilities/{id}/aliases  -> CapabilityAliasCreate
+  POST /api/v1/capability-mappings         -> CapabilityMappingCreate -> CapabilityMappingResponse
+  GET  /api/v1/capability-mappings         -> list[CapabilityMappingResponse]
 """
 
 from datetime import datetime
@@ -11,14 +16,32 @@ from pydantic import BaseModel, Field
 
 
 class CapabilityAliasCreate(BaseModel):
-    """Request body for adding an alias to a capability."""
+    """Request body for adding an alias to a capability.
+
+    POST /api/v1/capabilities/{id}/aliases
+
+    The alias must be 1-255 chars and will be validated for uniqueness
+    across all aliases (not just for this capability).
+    """
 
     alias: str = Field(min_length=1, max_length=255)
 
 
 class CapabilityCreate(BaseModel):
-    """Request body for defining a new normalized capability."""
+    """Request body for defining a new normalized capability.
 
+    POST /api/v1/capabilities
+
+    name must follow the pattern `domain:verb`:
+      - Lowercase domain prefix (e.g. "code", "search", "deploy").
+      - Colon separator.
+      - Lowercase verb with hyphens allowed (e.g. "review", "create-pr").
+
+    Example valid names: "code:review", "search:web", "deploy:create-release".
+
+    The normalized_input_schema and normalized_output_schema define the
+    canonical interface that agents use when invoking this capability.
+    """
 
     name: str = Field(min_length=1, max_length=255, pattern=r"^[a-z]+:[a-z][a-z-]*$")
     domain: str | None = None
@@ -28,7 +51,17 @@ class CapabilityCreate(BaseModel):
 
 
 class CapabilityResponse(BaseModel):
-    """Full capability representation returned by the API."""
+    """Full capability representation returned by the API.
+
+    model_config = {"from_attributes": True} for ORM conversion.
+
+    Includes computed aggregate fields:
+      - mappings_count: number of server mappings for this capability.
+      - aliases: list of alias name strings rather than full alias objects.
+
+    Also includes deprecation metadata (deprecated_at, grace_period_days,
+    migration_guidance) when applicable.
+    """
 
     id: UUID
     name: str
@@ -48,7 +81,20 @@ class CapabilityResponse(BaseModel):
 
 
 class CapabilityMappingCreate(BaseModel):
-    """Request body for mapping a capability to a server tool."""
+    """Request body for mapping a capability to a server tool.
+
+    POST /api/v1/capability-mappings
+
+    Fields:
+        server_id:     Target MCP server UUID.
+        tool_name:     The tool on that server that implements this capability.
+        input_mapping: Optional JSON describing parameter transformation from
+                       capability normalized schema to tool native schema.
+        output_mapping: Optional JSON describing result transformation from
+                        tool native schema to capability normalized schema.
+        is_primary:    Whether this should be the default/primary mapping
+                       (used for routing when no routing rules apply).
+    """
 
     server_id: UUID
     tool_name: str
@@ -58,7 +104,13 @@ class CapabilityMappingCreate(BaseModel):
 
 
 class CapabilityMappingResponse(BaseModel):
-    """Capability-to-server mapping as returned by the API."""
+    """Capability-to-server mapping as returned by the API.
+
+    model_config = {"from_attributes": True} for ORM conversion.
+
+    Matches the CapabilityMapping ORM model. Includes routing_weight for
+    load-balancing across multiple mappings.
+    """
 
     id: UUID
     capability_id: UUID

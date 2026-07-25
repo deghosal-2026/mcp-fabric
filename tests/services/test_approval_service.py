@@ -228,9 +228,7 @@ class TestApprovalWithRouting:
         self, db_session: AsyncSession, server, capability
     ):
         routing = AsyncMock()
-        routing.execute = AsyncMock(
-            side_effect=Exception("MCP connection refused")
-        )
+        routing.execute = AsyncMock(side_effect=Exception("MCP connection refused"))
         svc = ApprovalService(db=db_session, routing=routing)
         created = await _create_request(svc, server, capability)
         approved = await svc.approve(created.id, ApprovalAction(approver_id=uuid4()))

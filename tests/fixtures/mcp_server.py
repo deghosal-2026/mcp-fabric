@@ -49,26 +49,30 @@ def create_mock_mcp_server(
         A configured FastAPI application.
     """
     app = FastAPI()
-    tool_list = tools if tools is not None else [
-        {
-            "name": "test_tool",
-            "description": "A test tool",
-            "input_schema": {
-                "type": "object",
-                "properties": {"x": {"type": "string"}},
-                "required": ["x"],
+    tool_list = (
+        tools
+        if tools is not None
+        else [
+            {
+                "name": "test_tool",
+                "description": "A test tool",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"x": {"type": "string"}},
+                    "required": ["x"],
+                },
+                "output_schema": {"type": "object", "properties": {"result": {"type": "string"}}},
             },
-            "output_schema": {"type": "object", "properties": {"result": {"type": "string"}}},
-        },
-        {
-            "name": "search",
-            "description": "Search for items",
-            "input_schema": {
-                "type": "object",
-                "properties": {"query": {"type": "string"}, "limit": {"type": "integer"}},
+            {
+                "name": "search",
+                "description": "Search for items",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}, "limit": {"type": "integer"}},
+                },
             },
-        },
-    ]
+        ]
+    )
 
     responses: dict[str, Any] = call_responses or {
         "test_tool": {"result": "done", "metadata": {"duration_ms": 10}},

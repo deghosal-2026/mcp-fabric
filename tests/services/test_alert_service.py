@@ -34,9 +34,7 @@ class TestAlertRuleCRUD:
         assert rule.id is not None
 
     async def test_get_rule(self, alert_svc):
-        created = await alert_svc.create_rule(
-            AlertRuleCreate(name="test-rule", alert_type="test")
-        )
+        created = await alert_svc.create_rule(AlertRuleCreate(name="test-rule", alert_type="test"))
         fetched = await alert_svc.get_rule(created.id)
         assert fetched.name == "test-rule"
 
@@ -54,20 +52,14 @@ class TestAlertRuleCRUD:
         assert await alert_svc.list_rules() == []
 
     async def test_list_rules_filters_type(self, alert_svc):
-        await alert_svc.create_rule(
-            AlertRuleCreate(name="health-rule", alert_type="health")
-        )
-        await alert_svc.create_rule(
-            AlertRuleCreate(name="sec-rule", alert_type="security")
-        )
+        await alert_svc.create_rule(AlertRuleCreate(name="health-rule", alert_type="health"))
+        await alert_svc.create_rule(AlertRuleCreate(name="sec-rule", alert_type="security"))
         result = await alert_svc.list_rules(alert_type="health")
         assert len(result) == 1
         assert result[0].name == "health-rule"
 
     async def test_update_rule(self, alert_svc):
-        created = await alert_svc.create_rule(
-            AlertRuleCreate(name="old-name", alert_type="test")
-        )
+        created = await alert_svc.create_rule(AlertRuleCreate(name="old-name", alert_type="test"))
         updated = await alert_svc.update_rule(
             created.id, AlertRuleCreate(name="new-name", alert_type="test")
         )
@@ -75,14 +67,10 @@ class TestAlertRuleCRUD:
 
     async def test_update_rule_not_found(self, alert_svc):
         with pytest.raises(AlertRuleNotFoundError):
-            await alert_svc.update_rule(
-                uuid4(), AlertRuleCreate(name="nope", alert_type="test")
-            )
+            await alert_svc.update_rule(uuid4(), AlertRuleCreate(name="nope", alert_type="test"))
 
     async def test_delete_rule(self, alert_svc):
-        created = await alert_svc.create_rule(
-            AlertRuleCreate(name="to-delete", alert_type="test")
-        )
+        created = await alert_svc.create_rule(AlertRuleCreate(name="to-delete", alert_type="test"))
         await alert_svc.delete_rule(created.id)
         with pytest.raises(AlertRuleNotFoundError):
             await alert_svc.get_rule(created.id)
@@ -92,9 +80,7 @@ class TestAlertRuleCRUD:
             await alert_svc.delete_rule(uuid4())
 
     async def test_toggle_rule(self, alert_svc):
-        created = await alert_svc.create_rule(
-            AlertRuleCreate(name="toggle-me", alert_type="test")
-        )
+        created = await alert_svc.create_rule(AlertRuleCreate(name="toggle-me", alert_type="test"))
         disabled = await alert_svc.toggle_rule(created.id, enabled=False)
         assert disabled.enabled is False
         enabled_again = await alert_svc.toggle_rule(created.id, enabled=True)
@@ -103,12 +89,8 @@ class TestAlertRuleCRUD:
 
 class TestAlertFire:
     async def test_fire_alert(self, alert_svc):
-        rule = await alert_svc.create_rule(
-            AlertRuleCreate(name="fire-test", alert_type="test")
-        )
-        event = await alert_svc.fire_alert(
-            rule.id, "Server is down", {"server": "api-1"}
-        )
+        rule = await alert_svc.create_rule(AlertRuleCreate(name="fire-test", alert_type="test"))
+        event = await alert_svc.fire_alert(rule.id, "Server is down", {"server": "api-1"})
         assert event.rule_id == rule.id
         assert event.message == "Server is down"
         assert event.details == {"server": "api-1"}
@@ -119,9 +101,7 @@ class TestAlertFire:
             await alert_svc.fire_alert(uuid4(), "test")
 
     async def test_list_events(self, alert_svc):
-        rule = await alert_svc.create_rule(
-            AlertRuleCreate(name="event-list", alert_type="test")
-        )
+        rule = await alert_svc.create_rule(AlertRuleCreate(name="event-list", alert_type="test"))
         await alert_svc.fire_alert(rule.id, "event 1")
         await alert_svc.fire_alert(rule.id, "event 2")
         events = await alert_svc.list_events()
@@ -131,12 +111,8 @@ class TestAlertFire:
         assert await alert_svc.list_events() == []
 
     async def test_list_events_filter_by_rule(self, alert_svc):
-        r1 = await alert_svc.create_rule(
-            AlertRuleCreate(name="r1", alert_type="test")
-        )
-        r2 = await alert_svc.create_rule(
-            AlertRuleCreate(name="r2", alert_type="test")
-        )
+        r1 = await alert_svc.create_rule(AlertRuleCreate(name="r1", alert_type="test"))
+        r2 = await alert_svc.create_rule(AlertRuleCreate(name="r2", alert_type="test"))
         await alert_svc.fire_alert(r1.id, "from r1")
         await alert_svc.fire_alert(r2.id, "from r2")
         r1_events = await alert_svc.list_events(rule_id=r1.id)
@@ -146,9 +122,7 @@ class TestAlertFire:
 
 class TestAlertAcknowledge:
     async def test_acknowledge_alert(self, alert_svc):
-        rule = await alert_svc.create_rule(
-            AlertRuleCreate(name="ack-test", alert_type="test")
-        )
+        rule = await alert_svc.create_rule(AlertRuleCreate(name="ack-test", alert_type="test"))
         event = await alert_svc.fire_alert(rule.id, "needs ack")
         acked = await alert_svc.acknowledge_alert(
             event.id, AcknowledgeRequest(acknowledged_by=uuid4())
@@ -158,9 +132,7 @@ class TestAlertAcknowledge:
 
     async def test_acknowledge_not_found(self, alert_svc):
         with pytest.raises(AlertEventNotFoundError):
-            await alert_svc.acknowledge_alert(
-                uuid4(), AcknowledgeRequest(acknowledged_by=uuid4())
-            )
+            await alert_svc.acknowledge_alert(uuid4(), AcknowledgeRequest(acknowledged_by=uuid4()))
 
 
 class TestAlertThresholds:

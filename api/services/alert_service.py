@@ -2,6 +2,14 @@
 
 Provides create, fire, acknowledge lifecycle for alert rules, and
 threshold evaluation against recent metrics and events.
+
+Architectural notes:
+  - Uses naive UTC datetimes throughout for cross-DB compatibility
+    (SQLite has no timezone support; PostgreSQL stores tz-aware).
+  - Threshold evaluation queries the AuditEvent table as a metrics
+    source rather than maintaining a separate metrics store.
+  - Alert events are a separate model from alert rules to support
+    1:many firing (one rule can fire many times).
 """
 
 from uuid import UUID
@@ -28,13 +36,22 @@ class AlertEventNotFoundError(Exception):
 
 
 class AlertService:
-    """Alert rule management and threshold evaluation for MCP Fabric."""
+    """Alert rule management and threshold evaluation for MCP Fabric.
+
+    Depends on: AsyncSession for DB access.
+    Used by: admin alert UI, automated monitoring pipeline.
+    """
 
     def __init__(self, db: AsyncSession):
         self.db = db
 
     async def create_rule(self, params: AlertRuleCreate) -> AlertRuleResponse:
-        """Create a new alert rule with the given parameters."""
+        """Create a new alert rule with the given parameters.
+
+        WHY: Admin user journey — define a new alert threshold.
+        SIDE EFFECTS: Persists to DB, new rules start enabled.
+        RETURN: The created rule with server-generated id and timestamps.
+        """
         rule = AlertRule(
             name=params.name,
             alert_type=params.alert_type,
@@ -43,6 +60,7 @@ class AlertService:
             enabled=True,
         )
         self.db.add(rule)
+        # Commit triggers flush + DB insert; refresh loads server defaults (id, created_at).
         await self.db.commit()
         await self.db.refresh(rule)
         return self._rule_to_response(rule)
@@ -54,7 +72,11 @@ class AlertService:
         limit: int = 50,
         offset: int = 0,
     ) -> list[AlertRuleResponse]:
-        """List alert rules with optional type and enabled filters."""
+        """List alert rules with optional type and enabled filters.
+
+        WHY: Admin user journey — browse configured alert rules.
+        Uses offset/limit pagination (cursor pagination is overkill for rule lists).
+        """
         stmt = select(AlertRule).order_by(AlertRule.name)
         if alert_type:
             stmt = stmt.where(AlertRule.alert_type == alert_type)
@@ -65,10 +87,11 @@ class AlertService:
         return [self._rule_to_response(r) for r in result.scalars().all()]
 
     async def get_rule(self, rule_id: UUID) -> AlertRuleResponse:
-        """Get a single alert rule by ID. Raises AlertRuleNotFoundError if missing."""
-        result = await self.db.execute(
-            select(AlertRule).where(AlertRule.id == rule_id)
-        )
+        """Get a single alert rule by ID.
+
+        RAISES: AlertRuleNotFoundError if missing.
+        """
+        result = await self.db.execute(select(AlertRule).where(AlertRule.id == rule_id))
         rule = result.scalar_one_or_none()
         if rule is None:
             raise AlertRuleNotFoundError(f"Alert rule {rule_id} not found")
@@ -79,10 +102,14 @@ class AlertService:
         rule_id: UUID,
         params: AlertRuleCreate,
     ) -> AlertRuleResponse:
-        """Update all fields of an existing alert rule."""
-        result = await self.db.execute(
-            select(AlertRule).where(AlertRule.id == rule_id)
-        )
+        """Update all fields of an existing alert rule.
+
+        WHY: Admin user journey — modify an alert's condition or channels.
+        Full-field replacement (not partial patch); partial updates go through
+        a dedicated endpoint if needed.
+        RAISES: AlertRuleNotFoundError if missing.
+        """
+        result = await self.db.execute(select(AlertRule).where(AlertRule.id == rule_id))
         rule = result.scalar_one_or_none()
         if rule is None:
             raise AlertRuleNotFoundError(f"Alert rule {rule_id} not found")
@@ -95,10 +122,14 @@ class AlertService:
         return self._rule_to_response(rule)
 
     async def delete_rule(self, rule_id: UUID) -> None:
-        """Delete an alert rule by ID. Raises AlertRuleNotFoundError if missing."""
-        result = await self.db.execute(
-            select(AlertRule).where(AlertRule.id == rule_id)
-        )
+        """Delete an alert rule by ID.
+
+        WHY: Admin user journey — remove a stale alert rule.
+        Note: Does not cascade-delete associated AlertEvents; those remain
+        for audit trail purposes.
+        RAISES: AlertRuleNotFoundError if missing.
+        """
+        result = await self.db.execute(select(AlertRule).where(AlertRule.id == rule_id))
         rule = result.scalar_one_or_none()
         if rule is None:
             raise AlertRuleNotFoundError(f"Alert rule {rule_id} not found")
@@ -106,10 +137,12 @@ class AlertService:
         await self.db.commit()
 
     async def toggle_rule(self, rule_id: UUID, enabled: bool) -> AlertRuleResponse:
-        """Enable or disable an alert rule by ID."""
-        result = await self.db.execute(
-            select(AlertRule).where(AlertRule.id == rule_id)
-        )
+        """Enable or disable an alert rule by ID.
+
+        WHY: Admin user journey — silence a rule without deleting it.
+        RAISES: AlertRuleNotFoundError if missing.
+        """
+        result = await self.db.execute(select(AlertRule).where(AlertRule.id == rule_id))
         rule = result.scalar_one_or_none()
         if rule is None:
             raise AlertRuleNotFoundError(f"Alert rule {rule_id} not found")
@@ -126,11 +159,12 @@ class AlertService:
     ) -> AlertEventResponse:
         """Create a new alert event for the given rule.
 
-        Raises AlertRuleNotFoundError if rule is missing.
+        WHY: Automated pipeline / monitoring — fires when a threshold is breached.
+        This is the 'raise' action separate from the evaluation logic.
+        RAISES: AlertRuleNotFoundError if rule is missing.
+        SIDE EFFECTS: Creates an AlertEvent row.
         """
-        result = await self.db.execute(
-            select(AlertRule).where(AlertRule.id == rule_id)
-        )
+        result = await self.db.execute(select(AlertRule).where(AlertRule.id == rule_id))
         rule = result.scalar_one_or_none()
         if rule is None:
             raise AlertRuleNotFoundError(f"Alert rule {rule_id} not found")
@@ -158,7 +192,11 @@ class AlertService:
         limit: int = 50,
         offset: int = 0,
     ) -> list[AlertEventResponse]:
-        """List alert events, optionally filtered by rule ID."""
+        """List alert events, optionally filtered by rule ID.
+
+        WHY: Admin user journey — review alert history for a rule or globally.
+        Ordered newest-first by fired_at so operators see recent events immediately.
+        """
         stmt = select(AlertEvent).order_by(AlertEvent.fired_at.desc())
         if rule_id:
             stmt = stmt.where(AlertEvent.rule_id == rule_id)
@@ -182,12 +220,17 @@ class AlertService:
         event_id: UUID,
         params: AcknowledgeRequest,
     ) -> AlertEventResponse:
-        """Mark an alert event as acknowledged with the given actor details."""
+        """Mark an alert event as acknowledged with the given actor details.
+
+        WHY: Operator user journey — signal that an alert has been seen/handled.
+        Uses timezone-aware UTC via Python's UTC class, but the stored value
+        is naive (tzinfo stripped by the column type).
+        RAISES: AlertEventNotFoundError if missing.
+        SIDE EFFECTS: Sets acknowledged_at and acknowledged_by on the event.
+        """
         from datetime import UTC, datetime
 
-        result = await self.db.execute(
-            select(AlertEvent).where(AlertEvent.id == event_id)
-        )
+        result = await self.db.execute(select(AlertEvent).where(AlertEvent.id == event_id))
         event = result.scalar_one_or_none()
         if event is None:
             raise AlertEventNotFoundError(f"Alert event {event_id} not found")
@@ -208,17 +251,26 @@ class AlertService:
     async def evaluate_thresholds(self) -> list[ThresholdEvaluation]:
         """Evaluate all enabled alert rules against recent metrics.
 
-        Returns their triggered state.
+        WHY: Monitoring pipeline — periodic evaluation of threshold conditions.
+        Queries AuditEvent as a lightweight metrics source rather than pulling
+        from dedicated monitoring infrastructure. This is intentionally simple:
+        each rule's condition defines a metric name and threshold, and we count
+        matching events within a fixed lookback window.
+
+        SIDE EFFECTS: Read-only; does NOT fire alerts. The caller is responsible
+        for calling fire_alert on triggered rules.
+
+        The _naive helper strips tzinfo for cross-DB compatibility (SQLite
+        doesn't store timezone info, so comparing tz-aware against naive fails).
         """
         from api.models.audit import AuditEvent as AuditEventModel
 
-        result = await self.db.execute(
-            select(AlertRule).where(AlertRule.enabled.is_(True))
-        )
+        result = await self.db.execute(select(AlertRule).where(AlertRule.enabled.is_(True)))
         rules = result.scalars().all()
         evaluations = []
         from datetime import UTC, datetime, timedelta
 
+        # Strips tzinfo to produce a naive UTC datetime for SQLite compatibility.
         def _naive(minutes: int) -> datetime:
             return datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=minutes)
 
@@ -230,6 +282,7 @@ class AlertService:
             threshold = condition.get("threshold")
 
             if metric == "degraded_servers" and threshold is not None:
+                # Counts AuditEvent rows with event_type='server_degraded' in last 5 min.
                 count = (
                     await self.db.execute(
                         select(func.count(AuditEventModel.id)).where(
@@ -243,6 +296,7 @@ class AlertService:
                     message = f"{count} servers degraded in last 5 minutes (threshold: {threshold})"
 
             elif metric == "denied_requests" and threshold is not None:
+                # Counts AuditEvent rows with event_type='access_denied' in last 15 min.
                 count = (
                     await self.db.execute(
                         select(func.count(AuditEventModel.id)).where(
@@ -266,7 +320,11 @@ class AlertService:
         return evaluations
 
     def _rule_to_response(self, rule: AlertRule) -> AlertRuleResponse:
-        """Convert an AlertRule ORM object to an AlertRuleResponse schema."""
+        """Convert an AlertRule ORM object to an AlertRuleResponse schema.
+
+        Handles the enabled field: SQLite may store it as 0/1 (integer) while
+        PostgreSQL stores it as boolean. The `is not False` check normalizes this.
+        """
         return AlertRuleResponse(
             id=rule.id,
             name=rule.name,

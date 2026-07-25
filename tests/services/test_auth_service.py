@@ -42,9 +42,7 @@ class TestTokenBasics:
 
     def test_admin_token(self):
         svc = AuthService(testing_mode=True)
-        token = svc.create_token(
-            subject="admin-1", token_type="admin", role="admin"
-        )
+        token = svc.create_token(subject="admin-1", token_type="admin", role="admin")
         payload = svc.validate_token(token)
         assert payload["type"] == "admin"
         assert payload["role"] == "admin"
@@ -68,9 +66,7 @@ class TestAgentIdentityLifecycle:
     async def test_create_identity_invalid_class(self, db_session: AsyncSession):
         svc = AuthService(db=db_session)
         with pytest.raises(ValueError, match="Agent class"):
-            await svc.create_agent_identity(
-                AgentIdentityCreate(name="bot", agent_class_id=uuid4())
-            )
+            await svc.create_agent_identity(AgentIdentityCreate(name="bot", agent_class_id=uuid4()))
 
     async def test_rotate_agent_token(self, db_session: AsyncSession, agent_class):
         svc = AuthService(db=db_session)
@@ -209,9 +205,7 @@ class TestAdminLogin:
         await svc.first_admin_bootstrap(
             username="admin", email="admin@fabric.io", password="SecurePass1"
         )
-        result = await svc.admin_login(
-            LoginRequest(username="admin", password="SecurePass1")
-        )
+        result = await svc.admin_login(LoginRequest(username="admin", password="SecurePass1"))
         assert result.token is not None
 
     async def test_admin_login_wrong_password(self, db_session: AsyncSession):
@@ -220,9 +214,7 @@ class TestAdminLogin:
             username="admin", email="admin@fabric.io", password="SecurePass1"
         )
         with pytest.raises(AuthenticationError):
-            await svc.admin_login(
-                LoginRequest(username="admin", password="wrong")
-            )
+            await svc.admin_login(LoginRequest(username="admin", password="wrong"))
 
     async def test_admin_login_account_locked(self, db_session: AsyncSession):
         svc = AuthService(db=db_session)
@@ -231,20 +223,14 @@ class TestAdminLogin:
         )
         for _ in range(5):
             with pytest.raises(AuthenticationError):
-                await svc.admin_login(
-                    LoginRequest(username="admin", password="wrong")
-                )
+                await svc.admin_login(LoginRequest(username="admin", password="wrong"))
         with pytest.raises(AccountLockedError):
-            await svc.admin_login(
-                LoginRequest(username="admin", password="SecurePass1")
-            )
+            await svc.admin_login(LoginRequest(username="admin", password="SecurePass1"))
 
     async def test_admin_login_not_found(self, db_session: AsyncSession):
         svc = AuthService(db=db_session)
         with pytest.raises(AuthenticationError):
-            await svc.admin_login(
-                LoginRequest(username="ghost", password="anything")
-            )
+            await svc.admin_login(LoginRequest(username="ghost", password="anything"))
 
 
 class TestAdminPasswordReset:
@@ -253,16 +239,12 @@ class TestAdminPasswordReset:
         await svc.first_admin_bootstrap(
             username="admin", email="admin@fabric.io", password="SecurePass1"
         )
-        result = await db_session.execute(
-            select(AdminUser).where(AdminUser.username == "admin")
-        )
+        result = await db_session.execute(select(AdminUser).where(AdminUser.username == "admin"))
         admin = result.scalar_one()
         await svc.admin_password_reset(
             admin.id, old_password="SecurePass1", new_password="NewPass123"
         )
-        login = await svc.admin_login(
-            LoginRequest(username="admin", password="NewPass123")
-        )
+        login = await svc.admin_login(LoginRequest(username="admin", password="NewPass123"))
         assert login.token is not None
 
     async def test_password_reset_wrong_old(self, db_session: AsyncSession):
@@ -270,9 +252,7 @@ class TestAdminPasswordReset:
         await svc.first_admin_bootstrap(
             username="admin", email="admin@fabric.io", password="SecurePass1"
         )
-        result = await db_session.execute(
-            select(AdminUser).where(AdminUser.username == "admin")
-        )
+        result = await db_session.execute(select(AdminUser).where(AdminUser.username == "admin"))
         admin = result.scalar_one()
         with pytest.raises(AuthenticationError, match="Current password"):
             await svc.admin_password_reset(
@@ -284,9 +264,7 @@ class TestAdminPasswordReset:
         await svc.first_admin_bootstrap(
             username="admin", email="admin@fabric.io", password="SecurePass1"
         )
-        result = await db_session.execute(
-            select(AdminUser).where(AdminUser.username == "admin")
-        )
+        result = await db_session.execute(select(AdminUser).where(AdminUser.username == "admin"))
         admin = result.scalar_one()
         # First change to force SecurePass1 into history
         await svc.admin_password_reset(
@@ -303,9 +281,7 @@ class TestAdminPasswordReset:
         await svc.first_admin_bootstrap(
             username="admin", email="admin@fabric.io", password="SecurePass1"
         )
-        result = await db_session.execute(
-            select(AdminUser).where(AdminUser.username == "admin")
-        )
+        result = await db_session.execute(select(AdminUser).where(AdminUser.username == "admin"))
         admin = result.scalar_one()
         with pytest.raises(PasswordPolicyError):
             await svc.admin_password_reset(
@@ -359,9 +335,7 @@ class TestMFASetup:
         await svc.first_admin_bootstrap(
             username="admin", email="admin@fabric.io", password="SecurePass1"
         )
-        result = await db_session.execute(
-            select(AdminUser).where(AdminUser.username == "admin")
-        )
+        result = await db_session.execute(select(AdminUser).where(AdminUser.username == "admin"))
         admin = result.scalar_one()
 
         setup = await svc.mfa_setup(admin.id)
@@ -379,9 +353,7 @@ class TestMFASetup:
         await svc.first_admin_bootstrap(
             username="admin", email="admin@fabric.io", password="SecurePass1"
         )
-        result = await db_session.execute(
-            select(AdminUser).where(AdminUser.username == "admin")
-        )
+        result = await db_session.execute(select(AdminUser).where(AdminUser.username == "admin"))
         admin = result.scalar_one()
 
         import pyotp
@@ -403,9 +375,7 @@ class TestMFASetup:
         await svc.first_admin_bootstrap(
             username="admin", email="admin@fabric.io", password="SecurePass1"
         )
-        result = await db_session.execute(
-            select(AdminUser).where(AdminUser.username == "admin")
-        )
+        result = await db_session.execute(select(AdminUser).where(AdminUser.username == "admin"))
         admin = result.scalar_one()
 
         secret = pyotp.random_base32()

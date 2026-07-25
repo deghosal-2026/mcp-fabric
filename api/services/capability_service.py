@@ -2,6 +2,17 @@
 
 Provides create, list, get, and deprecate operations for capabilities
 that define the normalized interface for MCP server tools.
+
+Architectural notes:
+  - Capabilities are the "what" — they define a normalized interface
+    (input/output schema) independently of any specific MCP server.
+  - Mappings (CapabilityMapping, managed by registry_service) connect
+    capabilities to actual server endpoints.
+  - Aliases provide alternative names for a capability, supporting
+    backward compatibility and cross-team naming conventions.
+  - Deprecation is a soft-delete: status='deprecated' with a grace period
+    before the capability can be removed. Callers can check the status
+    to warn about deprecated capabilities.
 """
 
 from uuid import UUID
@@ -14,13 +25,29 @@ from api.schemas.capability import CapabilityCreate, CapabilityResponse
 
 
 class CapabilityService:
-    """CRUD operations for capability definitions."""
+    """CRUD operations for capability definitions.
+
+    Depends on: AsyncSession for DB access.
+    Used by: admin capability UI, pack_service (for assigning capabilities
+    to packs), routing_service (for capability resolution).
+
+    Capabilities are the fundamental building block of the MCP Fabric
+    abstraction layer. Every MCP server tool is mapped to a capability.
+    """
 
     def __init__(self, db: AsyncSession):
         self.db = db
 
     async def create(self, params: CapabilityCreate) -> CapabilityResponse:
-        """Create a new capability definition."""
+        """Create a new capability definition.
+
+        WHY: Admin user journey — define a new capability that MCP servers
+        can map to. The normalized schemas define the contract that all
+        mapped servers must conform to.
+
+        SIDE EFFECTS: Persists Capability row.
+        RETURN: The created capability with server-generated id and timestamps.
+        """
         cap = Capability(
             name=params.name,
             domain=params.domain,
@@ -34,7 +61,11 @@ class CapabilityService:
         return await self._to_response(cap)
 
     async def list(self, domain: str | None = None) -> list[CapabilityResponse]:
-        """List capabilities, optionally filtered by domain."""
+        """List capabilities, optionally filtered by domain.
+
+        WHY: Admin UI — browse available capabilities.
+        Sorted alphabetically by name for a predictable ordering.
+        """
         stmt = select(Capability).order_by(Capability.name)
         if domain:
             stmt = stmt.where(Capability.domain == domain)
@@ -43,7 +74,11 @@ class CapabilityService:
         return [await self._to_response(c) for c in caps]
 
     async def get(self, cap_id: UUID) -> CapabilityResponse | None:
-        """Get a single capability by ID, or None if not found."""
+        """Get a single capability by ID.
+
+        WHY: Admin UI — view/edit a specific capability's details.
+        RETURN: CapabilityResponse or None if not found.
+        """
         result = await self.db.execute(select(Capability).where(Capability.id == cap_id))
         cap = result.scalar_one_or_none()
         if cap is None:
@@ -51,7 +86,16 @@ class CapabilityService:
         return await self._to_response(cap)
 
     async def deprecate(self, cap_id: UUID) -> CapabilityResponse | None:
-        """Mark a capability as deprecated. Returns None if not found."""
+        """Mark a capability as deprecated.
+
+        WHY: Admin user journey — soft-delete a capability that should
+        no longer be used. Deprecated capabilities remain in the database
+        with their mappings intact, but callers should warn when they
+        are used. After the grace period, the capability can be removed.
+
+        SIDE EFFECTS: Sets status to 'deprecated'.
+        RETURN: Updated CapabilityResponse or None if not found.
+        """
         result = await self.db.execute(select(Capability).where(Capability.id == cap_id))
         cap = result.scalar_one_or_none()
         if cap is None:
@@ -62,7 +106,18 @@ class CapabilityService:
         return await self._to_response(cap)
 
     async def add_alias(self, cap_id: UUID, alias: str) -> CapabilityResponse | None:
-        """Add an alias to a capability. Returns None if capability not found."""
+        """Add an alias to a capability.
+
+        WHY: Admin user journey — provide an alternative name for a capability.
+        This supports backward compatibility (old agent configurations using
+        a previous name) and cross-team naming conventions.
+
+        Aliases are resolved in routing_service.resolve_capability(): when
+        a capability name is not found directly, aliases are checked.
+
+        SIDE EFFECTS: Creates a CapabilityAlias row.
+        RETURN: Updated CapabilityResponse or None if capability not found.
+        """
         result = await self.db.execute(select(Capability).where(Capability.id == cap_id))
         cap = result.scalar_one_or_none()
         if cap is None:
@@ -73,7 +128,12 @@ class CapabilityService:
         return await self._to_response(cap)
 
     async def _to_response(self, cap: Capability) -> CapabilityResponse:
-        """Convert a Capability ORM object to a CapabilityResponse schema."""
+        """Convert a Capability ORM object to a CapabilityResponse schema.
+
+        Computes mappings_count (number of server mappings for this capability)
+        and aliases list from the ORM relationships. These are not stored as
+        columns but are derived from related tables.
+        """
         return CapabilityResponse(
             id=cap.id,
             name=cap.name,

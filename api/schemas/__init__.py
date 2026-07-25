@@ -1,6 +1,9 @@
-"""Convenience re-exports for all Pydantic schemas.
+"""
+Convenience re-exports for all Pydantic schemas.
 
 Import schemas from `api.schemas` rather than individual modules.
+The model_rebuild() calls after imports resolve forward references
+(used in PaginatedServers and ServerDetail which reference each other).
 """
 
 from api.schemas.admin import AdminUserInvite, AdminUserResponse, AdminUserUpdate

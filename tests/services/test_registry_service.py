@@ -43,9 +43,7 @@ async def registry_service_with_audit(
     mock_audit_service: Any,
 ) -> RegistryService:
     client = MCPClient()
-    return RegistryService(
-        db=db_session, mcp_client=client, audit_service=mock_audit_service
-    )
+    return RegistryService(db=db_session, mcp_client=client, audit_service=mock_audit_service)
 
 
 @pytest_asyncio.fixture
@@ -76,9 +74,7 @@ class TestRegister:
         assert result.trust_level == "unreviewed"
         assert result.health_status == "unknown"
 
-        result2 = await db_session.execute(
-            select(MCPServer).where(MCPServer.id == result.id)
-        )
+        result2 = await db_session.execute(select(MCPServer).where(MCPServer.id == result.id))
         server = result2.scalar_one()
         assert server.name == "test-server"
 
@@ -185,9 +181,7 @@ class TestRegister:
     ) -> None:
         audit_mock = AsyncMock()
         audit_mock.log_event.side_effect = Exception("audit down")
-        svc = RegistryService(
-            db=db_session, mcp_client=MCPClient(), audit_service=audit_mock
-        )
+        svc = RegistryService(db=db_session, mcp_client=MCPClient(), audit_service=audit_mock)
         params = ServerCreate(name="audit-fail", endpoint=mock_server_url)
         result = await svc.register(params)
         assert result.name == "audit-fail"
@@ -238,12 +232,10 @@ class TestInspect:
         ]
         app = create_mock_mcp_server(tools=original_tools)
         async with async_mock_server(app) as url:
-            reg_result = await registry_service.register(
-                ServerCreate(name="srv", endpoint=url)
-            )
-            server_obj = (await db_session.execute(
-                select(MCPServer).where(MCPServer.id == reg_result.id)
-            )).scalar_one()
+            reg_result = await registry_service.register(ServerCreate(name="srv", endpoint=url))
+            server_obj = (
+                await db_session.execute(select(MCPServer).where(MCPServer.id == reg_result.id))
+            ).scalar_one()
 
             app2 = create_mock_mcp_server(tools=new_tools)
             async with async_mock_server(app2) as url2:
@@ -271,12 +263,10 @@ class TestInspect:
         ]
         app = create_mock_mcp_server(tools=original_tools)
         async with async_mock_server(app) as url:
-            reg_result = await registry_service.register(
-                ServerCreate(name="srv", endpoint=url)
-            )
-            server_obj = (await db_session.execute(
-                select(MCPServer).where(MCPServer.id == reg_result.id)
-            )).scalar_one()
+            reg_result = await registry_service.register(ServerCreate(name="srv", endpoint=url))
+            server_obj = (
+                await db_session.execute(select(MCPServer).where(MCPServer.id == reg_result.id))
+            ).scalar_one()
 
             app2 = create_mock_mcp_server(tools=reduced_tools)
             async with async_mock_server(app2) as url2:
@@ -306,12 +296,10 @@ class TestInspect:
         ]
         app = create_mock_mcp_server(tools=original_tools)
         async with async_mock_server(app) as url:
-            reg_result = await registry_service.register(
-                ServerCreate(name="srv", endpoint=url)
-            )
-            server_obj = (await db_session.execute(
-                select(MCPServer).where(MCPServer.id == reg_result.id)
-            )).scalar_one()
+            reg_result = await registry_service.register(ServerCreate(name="srv", endpoint=url))
+            server_obj = (
+                await db_session.execute(select(MCPServer).where(MCPServer.id == reg_result.id))
+            ).scalar_one()
 
             app2 = create_mock_mcp_server(tools=changed_tools)
             async with async_mock_server(app2) as url2:
@@ -336,12 +324,10 @@ class TestInspect:
         ]
         app = create_mock_mcp_server(tools=original_tools)
         async with async_mock_server(app) as url:
-            reg_result = await registry_service.register(
-                ServerCreate(name="srv", endpoint=url)
-            )
-            server_obj = (await db_session.execute(
-                select(MCPServer).where(MCPServer.id == reg_result.id)
-            )).scalar_one()
+            reg_result = await registry_service.register(ServerCreate(name="srv", endpoint=url))
+            server_obj = (
+                await db_session.execute(select(MCPServer).where(MCPServer.id == reg_result.id))
+            ).scalar_one()
 
             app2 = create_mock_mcp_server(tools=reduced_tools)
             async with async_mock_server(app2) as url2:
@@ -394,9 +380,9 @@ class TestInspect:
             reg = await registry_service_with_audit.register(
                 ServerCreate(name="inspect-audit", endpoint=url)
             )
-            srv = (await db_session.execute(
-                select(MCPServer).where(MCPServer.id == reg.id)
-            )).scalar_one()
+            srv = (
+                await db_session.execute(select(MCPServer).where(MCPServer.id == reg.id))
+            ).scalar_one()
             app2 = create_mock_mcp_server(tools=new_tools)
             async with async_mock_server(app2) as url2:
                 srv.endpoint = url2
@@ -411,9 +397,7 @@ class TestInspect:
     ) -> None:
         audit_mock = AsyncMock()
         audit_mock.log_event.side_effect = Exception("audit down")
-        svc = RegistryService(
-            db=db_session, mcp_client=MCPClient(), audit_service=audit_mock
-        )
+        svc = RegistryService(db=db_session, mcp_client=MCPClient(), audit_service=audit_mock)
         original_tools = [
             {"name": "tool_old", "input_schema": {"type": "object", "properties": {}}},
         ]
@@ -422,12 +406,10 @@ class TestInspect:
         ]
         app = create_mock_mcp_server(tools=original_tools)
         async with async_mock_server(app) as url:
-            created = await svc.register(
-                ServerCreate(name="inspect-audit-fail", endpoint=url)
-            )
-            srv = (await db_session.execute(
-                select(MCPServer).where(MCPServer.id == created.id)
-            )).scalar_one()
+            created = await svc.register(ServerCreate(name="inspect-audit-fail", endpoint=url))
+            srv = (
+                await db_session.execute(select(MCPServer).where(MCPServer.id == created.id))
+            ).scalar_one()
             app2 = create_mock_mcp_server(tools=new_tools)
             async with async_mock_server(app2) as url2:
                 srv.endpoint = url2
@@ -495,9 +477,7 @@ class TestHealth:
         params = ServerCreate(name="redis-health", endpoint=mock_server_url)
         created = await svc.register(params)
         await svc.update_health(created.id, "healthy")
-        redis_mock.set.assert_awaited_once_with(
-            f"health:{created.id}", "healthy", ex=60
-        )
+        redis_mock.set.assert_awaited_once_with(f"health:{created.id}", "healthy", ex=60)
 
     async def test_get_server_health_from_redis(
         self,
@@ -549,9 +529,7 @@ class TestDecommission:
         assert result.timeline.decommissioned_at is not None
 
         server = (
-            await registry_service.db.execute(
-                select(MCPServer).where(MCPServer.id == created.id)
-            )
+            await registry_service.db.execute(select(MCPServer).where(MCPServer.id == created.id))
         ).scalar_one()
         assert server.decommission_phase == "grace_period"
         assert server.decommissioned_at is not None
@@ -589,9 +567,7 @@ class TestDecommission:
         app1 = create_mock_mcp_server()
         app2 = create_mock_mcp_server()
         async with async_mock_server(app1) as url1, async_mock_server(app2) as url2:
-            old_srv = await registry_service.register(
-                ServerCreate(name="old", endpoint=url1)
-            )
+            old_srv = await registry_service.register(ServerCreate(name="old", endpoint=url1))
             replacement = await registry_service.register(
                 ServerCreate(name="replacement", endpoint=url2)
             )
@@ -601,9 +577,7 @@ class TestDecommission:
             )
 
             old_obj = (
-                await db_session.execute(
-                    select(MCPServer).where(MCPServer.id == old_srv.id)
-                )
+                await db_session.execute(select(MCPServer).where(MCPServer.id == old_srv.id))
             ).scalar_one()
             assert old_obj.decommission_phase == "migration"
 
@@ -655,9 +629,7 @@ class TestDecommission:
     ) -> None:
         audit_mock = AsyncMock()
         audit_mock.log_event.side_effect = Exception("audit down")
-        svc = RegistryService(
-            db=db_session, mcp_client=MCPClient(), audit_service=audit_mock
-        )
+        svc = RegistryService(db=db_session, mcp_client=MCPClient(), audit_service=audit_mock)
         params = ServerCreate(name="decom-audit-fail", endpoint=mock_server_url)
         created = await svc.register(params)
         result = await svc.decommission(created.id, phase="grace_period")
@@ -675,9 +647,7 @@ class TestDecommission:
                 ServerCreate(name="migrate-map", endpoint=url1)
             )
             old_obj = (
-                await db_session.execute(
-                    select(MCPServer).where(MCPServer.id == old_srv.id)
-                )
+                await db_session.execute(select(MCPServer).where(MCPServer.id == old_srv.id))
             ).scalar_one()
             cap = Capability(name="test:cap", status="active")
             db_session.add(cap)
@@ -709,13 +679,9 @@ class TestDecommission:
     ) -> None:
         app = create_mock_mcp_server()
         async with async_mock_server(app) as url:
-            srv = await registry_service.register(
-                ServerCreate(name="sunset-map", endpoint=url)
-            )
+            srv = await registry_service.register(ServerCreate(name="sunset-map", endpoint=url))
             srv_obj = (
-                await db_session.execute(
-                    select(MCPServer).where(MCPServer.id == srv.id)
-                )
+                await db_session.execute(select(MCPServer).where(MCPServer.id == srv.id))
             ).scalar_one()
             cap = Capability(name="test:sunset-cap", status="active")
             db_session.add(cap)
@@ -730,10 +696,14 @@ class TestDecommission:
             await registry_service.decommission(srv.id, phase="migration")
             await registry_service.decommission(srv.id, phase="sunset")
         remaining = (
-            await db_session.execute(
-                select(CapabilityMapping).where(CapabilityMapping.server_id == srv.id)
+            (
+                await db_session.execute(
+                    select(CapabilityMapping).where(CapabilityMapping.server_id == srv.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(remaining) == 0
 
     async def test_decommission_skip_phase_raises_error(
@@ -808,9 +778,7 @@ class TestGetServer:
         params = ServerCreate(name="decom-test", endpoint=mock_server_url)
         created = await registry_service.register(params)
         server = (
-            await registry_service.db.execute(
-                select(MCPServer).where(MCPServer.id == created.id)
-            )
+            await registry_service.db.execute(select(MCPServer).where(MCPServer.id == created.id))
         ).scalar_one()
         server.decommission_phase = "grace_period"
         server.decommissioned_at = dt(2026, 8, 1, 12, 0, 0)
@@ -848,13 +816,17 @@ class TestListServers:
             async with async_mock_server(app) as url:
                 result = await registry_service.register(
                     ServerCreate(
-                        name=name, endpoint=url,
-                        owner_team=team, team_namespace=team,
+                        name=name,
+                        endpoint=url,
+                        owner_team=team,
+                        team_namespace=team,
                     )
                 )
-                srv = (await registry_service.db.execute(
-                    select(MCPServer).where(MCPServer.id == result.id)
-                )).scalar_one()
+                srv = (
+                    await registry_service.db.execute(
+                        select(MCPServer).where(MCPServer.id == result.id)
+                    )
+                ).scalar_one()
                 srv.trust_level = trust
                 srv.health_status = health
                 srv.created_at = dt(2026, 7, 24, 0, 0, i)

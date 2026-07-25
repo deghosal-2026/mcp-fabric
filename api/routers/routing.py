@@ -1,5 +1,30 @@
 """Capability routing and routing rule management routes.
 
+This is the core execution engine: agents submit capability requests, and the
+routing service determines which MCP server provides that capability, formats
+the request according to the input mapping, executes it, and returns the result.
+Also manages explicit routing rules that override the default resolution logic.
+
+User journeys:
+  - An agent sends a single capability request (POST /v1/capability/request) —
+    the system resolves the capability to a server, calls the tool, and returns
+    the result
+  - An agent sends a batch of requests (POST /v1/capability/batch) — useful
+    for workflows that need multiple capabilities simultaneously
+  - Admin creates explicit routing rules (POST /v1/routing-rules) to pin a
+    capability to a specific server (bypassing the default resolution)
+  - Admin lists/deletes routing rules (GET/DELETE /v1/routing-rules)
+
+Architectural notes:
+  - The router uses two prefixes: /v1/capability for execution endpoints and
+    /v1/routing-rules for rule management. This is because they serve different
+    consumers (agents vs. admins) but are logically related.
+  - The RoutingService instantiates an MCPClient() directly — a dependency
+    injection improvement would allow swapping the client for testing.
+  - Batch execution is sequential (requests execute one at a time). Parallel
+    execution would improve throughput but introduces complexity around error
+    isolation and rate limiting.
+
 Endpoints: POST /v1/capability/request, POST /v1/capability/batch,
 POST /v1/routing-rules, GET /v1/routing-rules, DELETE /v1/routing-rules/{id}.
 """
@@ -34,15 +59,16 @@ async def get_routing_service(
     return RoutingService(db=db, mcp=MCPClient())
 
 
+# Execute a single capability request: resolve capability → server, call the
+# tool, return the result. This is the primary execution endpoint for agents.
+# 404 = the capability name doesn't exist, or no server is registered that
+# provides it. Both errors return 404 but with different error codes so the
+# caller can distinguish "unknown capability" from "known but no provider".
 @router.post("/request")
 async def capability_request(
     body: CapabilityRequest,
     svc: RoutingService = Depends(get_routing_service),
 ) -> RouteResult:
-    """Execute a single capability request by routing to the appropriate server.
-
-    Returns 404 if capability or server not found.
-    """
     try:
         return await svc.execute(body)
     except CapabilityNotFoundError as exc:
@@ -57,15 +83,20 @@ async def capability_request(
         ) from exc
 
 
+# Execute multiple capability requests in a batch.
+# Unlike the single request endpoint, this does NOT return 404 for individual
+# failures — it captures errors per-request in the results list and returns
+# all results together. This allows the caller to handle partial failures
+# gracefully instead of losing all results when one request fails.
+# NOTE: Requests execute SEQUENTIALLY (not in parallel). This avoids
+# connection pool exhaustion on the MCP clients but means slow servers
+# delay the entire batch. A future optimization could execute independent
+# requests in parallel with a configurable concurrency limit.
 @router.post("/batch")
 async def capability_batch(
     body: BatchCapabilityRequest,
     svc: RoutingService = Depends(get_routing_service),
 ) -> BatchResult:
-    """Execute multiple capability requests in a batch.
-
-    Errors per request are captured in the results.
-    """
     results: list[RouteResult | dict] = []
     for req in body.requests:
         try:
@@ -79,12 +110,15 @@ async def capability_batch(
 router_rules = APIRouter(prefix="/v1/routing-rules", tags=["routing-rules"])
 
 
+# Create an explicit routing rule that pins a capability to a specific server.
+# Rules override the default resolution logic (which picks the server with
+# the highest routing_weight for the primary mapping). Higher priority rules
+# win when multiple rules match the same capability. 201 on success.
 @router_rules.post("", status_code=201)
 async def create_routing_rule(
     body: RoutingRuleCreate,
     svc: RoutingService = Depends(get_routing_service),
 ) -> dict:
-    """Create a new routing rule. Returns 201 with the rule details."""
     rule = await svc.create_routing_rule(body)
     return {
         "id": str(rule.id),
@@ -94,11 +128,12 @@ async def create_routing_rule(
     }
 
 
+# List all routing rules. Returns an empty list if no rules are defined.
+# Rules are evaluated in priority order during capability resolution.
 @router_rules.get("")
 async def list_routing_rules(
     svc: RoutingService = Depends(get_routing_service),
 ) -> list[dict]:
-    """List all routing rules."""
     rules = await svc.list_routing_rules()
     return [
         {
@@ -111,12 +146,14 @@ async def list_routing_rules(
     ]
 
 
+# Delete a routing rule by ID. Returns 204 on success (standard for DELETE).
+# 404 if the rule does not exist — the caller can safely retry the request
+# without side effects (idempotent for the "rule doesn't exist" case).
 @router_rules.delete("/{rule_id}", status_code=204)
 async def delete_routing_rule(
     rule_id: UUID,
     svc: RoutingService = Depends(get_routing_service),
 ) -> None:
-    """Delete a routing rule by ID. Returns 404 if not found, 204 on success."""
     deleted = await svc.delete_routing_rule(rule_id)
     if not deleted:
         raise HTTPException(
