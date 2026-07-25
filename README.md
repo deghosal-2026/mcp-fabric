@@ -1,5 +1,11 @@
 # MCP Fabric
 
+[![CI](https://github.com/deghosal-2026/mcp-fabric/actions/workflows/ci.yml/badge.svg)](https://github.com/deghosal-2026/mcp-fabric/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Ruff](https://img.shields.io/badge/code%20style-ruff-000000)](https://github.com/astral-sh/ruff)
+[![Type checked](https://img.shields.io/badge/mypy-strict-blue)](https://github.com/python/mypy)
+
 A composable tool mesh for MCP ecosystems — server registry, capability normalization, trust policies, capability routing, and audit for agentic tool platforms.
 
 MCP solves one important problem: a standard interface for AI tools and data. It does not solve the next problem that appears immediately after success: **tool ecosystem sprawl**.
@@ -15,6 +21,28 @@ Once a team adds multiple MCP servers, several hard questions emerge:
 - What trust level should be assigned to each server?
 - How should an agent choose between several tools that look similar?
 - How should a platform team audit and govern usage across the whole tool ecosystem?
+
+## Quick Start
+
+```bash
+# Clone and start the full stack
+git clone https://github.com/deghosal-2026/mcp-fabric.git
+cd mcp-fabric
+docker-compose up -d
+
+# API: http://localhost:8000
+# Docs: http://localhost:8000/docs
+# Admin UI: http://localhost:3000 (cd ui && npm run dev)
+```
+
+Or run locally without Docker:
+
+```bash
+poetry install
+cd ui && npm install && cd ..
+poetry run uvicorn api.main:app --reload &
+cd ui && npm run dev
+```
 
 ## What MCP Fabric Does
 
@@ -96,6 +124,25 @@ Everything runs locally. No enterprise dependencies required.
 - Analytics and usage heatmaps
 - Stronger auth adapters
 - Reference integrations with popular OSS MCP servers
+
+## Test Status
+
+| Suite | Tests | Status |
+|---|---|---|
+| Backend unit (services, middleware, errors) | 295 | ✅ Passing |
+| Backend integration (HTTP routes) | 12 | ✅ Passing |
+| OPA policy (Rego) | 12 | ✅ Passing |
+| UI unit/integration (Vitest) | 128 | ✅ Passing |
+| UI E2E + screenshots (Playwright) | 21 | ✅ Passing |
+| Docker Compose E2E (curl) | 6 | ✅ Scripts ready |
+| **Total** | **474** | |
+
+```bash
+make test        # Backend unit tests
+make test-unit   # Unit tests only
+cd ui && npm test  # UI tests
+make opa-test    # OPA policy tests
+```
 
 ## Who It's For
 
