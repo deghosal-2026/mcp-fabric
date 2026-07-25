@@ -37,7 +37,7 @@ jobs:
           DATABASE_URL: sqlite+aiosqlite://
           REDIS_URL: redis://localhost:6379/0
           ENVIRONMENT: testing
-      - uses: codecov/codecov-action@v4
+      - uses: codecov/codecov-action@v7
         with: { file: ./coverage.xml }
 
   opa-tests:
