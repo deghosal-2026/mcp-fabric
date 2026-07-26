@@ -74,9 +74,11 @@ cd ui && npm install && npm run dev
 
 ## Code Style
 
-- Python: Black formatting, 88-char line length, type hints on public functions
-- React: Prettier formatting, functional components, TypeScript
-- Commit messages: conventional commits (`feat:`, `fix:`, `docs:`, `test:`)
+All contributions must follow these coding standards:
+
+- **Python:** [PEP 8](https://peps.python.org/pep-0008/) via Ruff with the ruleset defined in [`pyproject.toml`](pyproject.toml). Line length 100. Type hints required on all public functions.
+- **React/TypeScript:** Prettier formatting, functional components, TypeScript strict mode.
+- **Commit messages:** [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, `test:`).
 
 ## Testing Policy
 
