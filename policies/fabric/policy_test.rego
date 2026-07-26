@@ -1,6 +1,9 @@
 package fabric.policy
 
-test_allow_trusted_server_for_admin {
+import future.keywords.if
+import future.keywords.in
+
+test_allow_trusted_server_for_admin if {
     allow with input as {
         "agent_class": "agent:admin",
         "server_trust_level": "trusted",
@@ -9,7 +12,7 @@ test_allow_trusted_server_for_admin {
     }
 }
 
-test_allow_trusted_server_for_incident_responder {
+test_allow_trusted_server_for_incident_responder if {
     allow with input as {
         "agent_class": "agent:incident-responder",
         "server_trust_level": "trusted",
@@ -18,7 +21,7 @@ test_allow_trusted_server_for_incident_responder {
     }
 }
 
-test_allow_restricted_for_incident_responder {
+test_allow_restricted_for_incident_responder if {
     allow with input as {
         "agent_class": "agent:incident-responder",
         "server_trust_level": "restricted",
@@ -26,14 +29,14 @@ test_allow_restricted_for_incident_responder {
     }
 }
 
-test_deny_unreviewed_server_for_incident_responder {
+test_deny_unreviewed_server_for_incident_responder if {
     not allow with input as {
         "agent_class": "agent:incident-responder",
         "server_trust_level": "unreviewed",
     }
 }
 
-test_allow_unreviewed_for_new_hire {
+test_allow_unreviewed_for_new_hire if {
     allow with input as {
         "agent_class": "agent:new-hire",
         "server_trust_level": "unreviewed",
@@ -41,35 +44,35 @@ test_allow_unreviewed_for_new_hire {
     }
 }
 
-test_approval_required_for_gated_capability {
+test_approval_required_for_gated_capability if {
     approval_required with input as {
         "agent_class": "agent:code-reviewer",
         "server_trust_level": "approval-gated",
     }
 }
 
-test_admin_bypasses_approval {
+test_admin_bypasses_approval if {
     not approval_required with input as {
         "agent_class": "agent:admin",
         "server_trust_level": "approval-gated",
     }
 }
 
-test_cross_team_allowed_same_namespace {
+test_cross_team_allowed_same_namespace if {
     cross_team_allowed with input as {
         "agent_namespace": "team:platform",
         "server_namespace": "team:platform",
     }
 }
 
-test_cross_team_allowed_global_server {
+test_cross_team_allowed_global_server if {
     cross_team_allowed with input as {
         "agent_namespace": "team:security",
         "server_namespace": "",
     }
 }
 
-test_cross_team_denied_different_namespace {
+test_cross_team_denied_different_namespace if {
     not cross_team_allowed with input as {
         "agent_namespace": "team:platform",
         "server_namespace": "team:security",
@@ -78,7 +81,7 @@ test_cross_team_denied_different_namespace {
 
 # ─── Resource-Aware Policy Tests ───
 
-test_resource_allowed_all_dimensions_match {
+test_resource_allowed_all_dimensions_match if {
     allow with input as {
         "agent_class": "agent:release-engineer",
         "server_trust_level": "trusted",
@@ -97,7 +100,7 @@ test_resource_allowed_all_dimensions_match {
     }
 }
 
-test_resource_denied_when_dimension_mismatches {
+test_resource_denied_when_dimension_mismatches if {
     not allow with input as {
         "agent_class": "agent:release-engineer",
         "server_trust_level": "trusted",
@@ -114,7 +117,7 @@ test_resource_denied_when_dimension_mismatches {
     }
 }
 
-test_resource_allowed_capability_without_dimensions {
+test_resource_allowed_capability_without_dimensions if {
     allow with input as {
         "agent_class": "agent:developer",
         "server_trust_level": "trusted",
@@ -122,7 +125,7 @@ test_resource_allowed_capability_without_dimensions {
     }
 }
 
-test_resource_denied_when_identity_bindings_empty {
+test_resource_denied_when_identity_bindings_empty if {
     not allow with input as {
         "agent_class": "agent:release-engineer",
         "server_trust_level": "trusted",
@@ -136,7 +139,7 @@ test_resource_denied_when_identity_bindings_empty {
     }
 }
 
-test_resource_violations_populated_on_deny {
+test_resource_violations_populated_on_deny if {
     violations := resource_violations with input as {
         "agent_class": "agent:release-engineer",
         "server_trust_level": "trusted",
@@ -172,7 +175,7 @@ test_resource_violations_populated_on_deny {
     }
 }
 
-test_resource_empty_violations_when_all_match {
+test_resource_empty_violations_when_all_match if {
     violations := resource_violations with input as {
         "agent_class": "agent:release-engineer",
         "server_trust_level": "trusted",
@@ -208,7 +211,7 @@ test_resource_empty_violations_when_all_match {
     }
 }
 
-test_resource_allowed_multi_value_identity_binding {
+test_resource_allowed_multi_value_identity_binding if {
     allow with input as {
         "agent_class": "agent:release-engineer",
         "server_trust_level": "trusted",
@@ -227,7 +230,7 @@ test_resource_allowed_multi_value_identity_binding {
     }
 }
 
-test_resource_denied_missing_tenant_dimension {
+test_resource_denied_missing_tenant_dimension if {
     not allow with input as {
         "agent_class": "agent:release-engineer",
         "server_trust_level": "trusted",
@@ -243,7 +246,7 @@ test_resource_denied_missing_tenant_dimension {
     }
 }
 
-test_resource_allowed_for_database_query {
+test_resource_allowed_for_database_query if {
     allow with input as {
         "agent_class": "agent:developer",
         "server_trust_level": "restricted",
@@ -260,7 +263,7 @@ test_resource_allowed_for_database_query {
     }
 }
 
-test_resource_denied_for_database_query_wrong_tenant {
+test_resource_denied_for_database_query_wrong_tenant if {
     not allow with input as {
         "agent_class": "agent:developer",
         "server_trust_level": "restricted",
@@ -277,7 +280,7 @@ test_resource_denied_for_database_query_wrong_tenant {
     }
 }
 
-test_resource_denied_for_rollback_wrong_env {
+test_resource_denied_for_rollback_wrong_env if {
     not allow with input as {
         "agent_class": "agent:release-engineer",
         "server_trust_level": "approval-gated",
@@ -291,5 +294,99 @@ test_resource_denied_for_rollback_wrong_env {
             "tenant": "acme-corp",
         },
         "declared_dimensions": ["env", "tenant"],
+    }
+}
+
+# ─── Schema-Digest Tests ───
+
+# Confirms that an admin with "trusted" trust level is blocked when the
+# mapping status is "stale" — stale mappings are never routable.
+test_deny_stale_mapping_blocks_allow if {
+    not allow with input as {
+        "agent_class": "agent:admin",
+        "server_trust_level": "trusted",
+        "capability": "code:search",
+        "mapping_status": "stale",
+    }
+}
+
+# Verifies deny_stale_mapping fires when the mapping status is "rejected".
+test_deny_stale_mapping_rejected if {
+    deny_stale_mapping with input as {
+        "mapping_status": "rejected",
+    }
+}
+
+# Verifies deny_stale_mapping does NOT fire when status is "active".
+test_deny_stale_mapping_not_triggered_active if {
+    not deny_stale_mapping with input as {
+        "mapping_status": "active",
+    }
+}
+
+# Verifies deny_stale_mapping fires on an empty status string,
+# treating missing/empty status as stale.
+test_deny_stale_mapping_empty_is_stale if {
+    deny_stale_mapping with input as {
+        "mapping_status": "",
+    }
+}
+
+# ─── Untrusted Write Tests ───
+
+# Verifies that a write tool (deploy_service) on an "unreviewed" server
+# triggers the untrusted_write deny rule.
+test_untrusted_write_blocks_write_on_unreviewed if {
+    untrusted_write with input as {
+        "server_trust_level": "unreviewed",
+        "tool_name": "deploy_service",
+    }
+}
+
+# Verifies that a read-only tool (get_status) on an "unreviewed" server
+# is exempt from untrusted_write — reads are safe even without review.
+test_untrusted_write_allows_read_on_unreviewed if {
+    not untrusted_write with input as {
+        "server_trust_level": "unreviewed",
+        "tool_name": "get_status",
+    }
+}
+
+# Verifies that write tools on "trusted" servers do NOT trigger untrusted_write.
+test_untrusted_write_not_triggered_on_trusted if {
+    not untrusted_write with input as {
+        "server_trust_level": "trusted",
+        "tool_name": "deploy_service",
+    }
+}
+
+# Verifies that a query-prefixed tool on an "unreviewed" server is
+# exempt (query is in the read-only prefix list).
+test_untrusted_write_allows_query_on_unreviewed if {
+    not untrusted_write with input as {
+        "server_trust_level": "unreviewed",
+        "tool_name": "query_users",
+    }
+}
+
+# ─── Raw Context Tests ───
+
+# Verifies that raw_context returns the full input document as-is.
+# This ensures the debug/audit field is always populated.
+test_raw_context_returns_input if {
+    raw_context == {"agent_class": "agent:test"} with input as {"agent_class": "agent:test"}
+}
+
+# ─── New Combo: stale + unreviewed = double deny ───
+
+# Verifies that a tool is denied when BOTH conditions are true:
+# the mapping is stale AND the server is unreviewed.
+test_deny_stale_and_unreviewed if {
+    not allow with input as {
+        "agent_class": "agent:developer",
+        "server_trust_level": "unreviewed",
+        "capability": "doc:write",
+        "mapping_status": "stale",
+        "tool_name": "create_doc",
     }
 }

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { fetchPacks, createPack, assignPackToClass, fetchAgentClasses,
   fetchPackResourceBindings, setPackResourceBindings } from '../api/client'
 import { Modal } from '../components/shared/Modal'
+import { PackBreadthWarning } from '../components/shared/PackBreadthWarning'
 import { PageState } from '../components/shared/PageState'
 import { useToast } from '../components/shared/Toast'
 import type { CapabilityPack, ResourceBinding } from '../types'
@@ -156,6 +157,7 @@ export function PacksPage() {
       <Modal open={!!resTarget} onClose={() => { setResTarget(null); setResInput({ dimension_key: '', allowed_value: '' }) }}
         title="Pack Resource Bindings" size="lg">
         <div className="space-y-4">
+          {resTarget && <PackBreadthWarning packId={resTarget} variant="banner" />}
           {packBindings.isLoading && <p className="text-gray-500">Loading bindings...</p>}
           {packBindings.data && packBindings.data.length === 0 && (
             <p className="text-gray-400 text-sm">No resource bindings. This pack has unrestricted resource access.</p>

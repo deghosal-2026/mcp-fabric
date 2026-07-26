@@ -61,6 +61,17 @@ class PackAssignmentRequest(BaseModel):
     capability_id: UUID
 
 
+class PackSecurityMetricsResponse(BaseModel):
+    id: UUID
+    name: str
+    resource_count: int = 0
+    total_resources_in_domain: int = 0
+    implied_catch_rate: float = 1.0
+    warning_tier: str = "none"
+
+    model_config = {"from_attributes": True}
+
+
 class ClonePackRequest(BaseModel):
     """Request body for cloning an existing capability pack.
 

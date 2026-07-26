@@ -141,6 +141,18 @@ test('exercise all UI controls on every page', async ({ page }) => {
   await page.waitForTimeout(500)
   await page.screenshot({ path: path.join(D, 'ctrl-11-trust.png'), fullPage: true })
 
+  // ── 12. SCHEMA REVIEWS ──────────────────────────────────────
+  // Navigate to /reviews, click the first approve button on a stale mapping,
+  // then capture the post-approval state.
+  await page.goto('/reviews')
+  await page.waitForTimeout(500)
+  const approveBtn = page.getByRole('button', { name: /approve/i })
+  if (await approveBtn.first().isVisible().catch(() => false)) {
+    await approveBtn.first().click()
+    await page.waitForTimeout(300)
+  }
+  await page.screenshot({ path: path.join(D, 'ctrl-12-reviews.png'), fullPage: true })
+
   // ── LOGOUT ────────────────────────────────────────────────────
   await page.getByRole('button', { name: /logout/i }).click()
   await expect(page).toHaveURL(/\/login/)

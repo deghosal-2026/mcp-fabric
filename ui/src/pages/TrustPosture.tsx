@@ -1,8 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { fetchServers, fetchAgentClasses, setTrustAssignment } from '../api/client'
 import { Badge } from '../components/shared/Badge'
 import { PageState } from '../components/shared/PageState'
+import { PackBreadthCard } from '../components/shared/PackBreadthCard'
 import { useToast } from '../components/shared/Toast'
 import type { MCPServer } from '../types'
 
@@ -55,6 +57,12 @@ export function TrustPosturePage() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Trust Posture</h1>
         <div className="flex items-center gap-3">
+          // Link button to navigate to the schema-digest reviews page where admins
+          // can approve or reject mappings whose tool schemas have drifted.
+          <Link
+            to="/reviews"
+            className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >Pending Reviews</Link>
           <label className="text-sm text-gray-600">Agent Class:</label>
           <PageState query={classes}>
             {data => (
@@ -112,6 +120,8 @@ export function TrustPosturePage() {
           })()
         )}
       </PageState>
+
+      <PackBreadthCard />
     </div>
   )
 }

@@ -119,6 +119,15 @@ class PolicyDecision(BaseModel):
         agent_class:       The agent class name for audit/logging.
         cross_team:        Whether the request crosses team namespace boundaries
                            (may trigger additional policy checks).
+        resource_allowed:  Whether resource dimension bindings allow the request.
+        resource_violations: List of violated resource constraints, if any.
+        deny_stale_mapping: New in v0.3.0 — when True, OPA has detected that the
+            mapping is stale or rejected and routing should deny the request
+            regardless of trust level. Controlled by the deny_stale_mapping Rego rule.
+        untrusted_write:   New in v0.3.0 — when True, OPA has detected a write
+            operation (non-read tool) on an unreviewed server. Controlled by the
+            untrusted_write Rego rule; designed as a safety net to prevent accidental
+            mutations on servers that haven't been vetted.
     """
 
     allow: bool
@@ -128,3 +137,5 @@ class PolicyDecision(BaseModel):
     cross_team: bool = False
     resource_allowed: bool = True
     resource_violations: list[dict[str, object]] = []
+    deny_stale_mapping: bool = False
+    untrusted_write: bool = False

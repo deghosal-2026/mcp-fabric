@@ -91,7 +91,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.readiness = "healthy"
     app.state.db_engine = create_async_engine(settings.database_url, echo=False)
     instrument_engine(app.state.db_engine)
-    fabric_info.info({"version": "0.1.0", "environment": settings.environment})
+    fabric_info.info({"version": "0.3.0", "environment": settings.environment})
     await run_seeders()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -121,7 +121,7 @@ async def _shutdown(app: FastAPI) -> None:
 app = FastAPI(
     title="MCP Fabric",
     description="Composable tool mesh for MCP ecosystems",
-    version="0.1.0",
+    version="0.3.0",
     lifespan=lifespan,
     contact={"name": "Debashish Ghosal", "email": "debashish@ghosal.dev"},
     license_info={"name": "MIT", "identifier": "MIT"},
@@ -190,7 +190,7 @@ async def health(request: Request) -> dict[str, object]:
     overall = "healthy" if all(v == "connected" for v in checks.values()) else "degraded"
     return {
         "status": overall,
-        "version": "0.1.0",
+        "version": "0.3.0",
         "checks": checks,
     }
 

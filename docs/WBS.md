@@ -1,12 +1,14 @@
-# MCP Fabric — Work Breakdown Structure (v0.1.0)
+# MCP Fabric — Work Breakdown Structure
 
-> **Status:** Approved  
-> **Total tasks:** 488 across 14 phases  
-> **Estimated effort:** 492 hours (12 weeks)  
-> **Milestone:** [v0.1.0 - Core Platform](https://github.com/deghosal-2026/mcp-fabric/milestone/1)  
+> **Status:** Active  
+> **Total tasks:** 500 across 15 phases  
+> **Estimated effort:** 692 hours (17 weeks)  
+> **Milestones:**
+> - [v0.1.0 — Core Platform](https://github.com/deghosal-2026/mcp-fabric/milestone/1) (shipped)
+> - [v0.3.0 — Security Hardening & Compliance](https://github.com/deghosal-2026/mcp-fabric/milestone/2) (in progress)
 > **Based on:** `docs/PRD.md`, `docs/spec.md`, `docs/DESIGN.md`, `docs/ARCHITECTURE.md`
 
-> **Issues:** All 368 tasks created as GitHub issues under milestone [v0.1.0 - Core Platform](https://github.com/deghosal-2026/mcp-fabric/milestone/1). Each task in phase files below links to its issue.
+> **Issues:** v0.1.0 tasks were created under milestone [v0.1.0 — Core Platform](https://github.com/deghosal-2026/mcp-fabric/milestone/1) (368 issues, shipped). v0.3.0 tasks tracked via milestone issues on GitHub under [v0.3.0 milestones](https://github.com/deghosal-2026/mcp-fabric/milestones?state=open). Each task in phase files below links to its issue.
 
 ## Phase Index
 
@@ -27,6 +29,7 @@
 | [12](wbs/phase-12-docs.md) | Documentation | 27 | 16h | Code docs, Operator docs, API reference, Deployment guide |
 | [OSS](wbs/phase-oss-prep.md) | Open Source Preparation | 10 | 12h | Community profile, README badges, governance, release automation, docs site, security scanning, health files |
 | [13](wbs/phase-13-resource-policy.md) | Resource-Aware Policy | 12 | 184h | DB schema (4 tables), OPA Rego rules, API endpoints (dimensions + bindings), routing service resource validation, Admin UI (3 tabs + approval mismatch), audit logging, integration/E2E tests, developer guide, doc updates, release |
+| [14](wbs/phase-14-v030.md) | v0.3.0 — Security Hardening & Compliance | 12 | 200h | 4 milestones: Docs & Tests, Audit & Observability, UI Safety Signals, Schema-Digest Mappings. See milestone issues for tracking. |
 
 ## Task Format
 
@@ -59,10 +62,16 @@ P0 (Scaffolding) ──► P1 (Database) ──► P2 (MCP Client) ──► P3 
                                                                                     │
                           P9 (Admin UI) ──────────────────────────────────────────┘
                                                                                     │
-                           P10 (Testing) ─── runs alongside P1-P9 ─────────────────┘
-                           OSS (OSS Prep) ── runs alongside all phases ───────────┘
+P10 (Testing) ─── runs alongside P1-P9 ─────────────────┘
+                            OSS (OSS Prep) ── runs alongside all phases ───────────┘
                                                                                     │
-                          P11 (CI/CD) ──► P12 (Docs) ──► v0.1.0 Release ────────────┘
+                           P11 (CI/CD) ──► P12 (Docs) ──► v0.1.0 Release ────────────┘
+
+v0.1.0 ──► P13 (Resource-Aware Policy / v0.2.0) ──► P14 (v0.3.0 Security Hardening)
+
+P14 phases:
+  M1 (Docs & Tests) ──► M2 (Audit) ──► M3 (UI Safety)
+  M4 (Schema-Digest) ── runs in parallel with M1-M3 ──► v0.3.0 Release
 ```
 
 ## Tracking

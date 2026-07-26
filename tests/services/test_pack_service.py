@@ -211,3 +211,19 @@ class TestPackCapabilitiesForClass:
     async def test_get_capabilities_for_class_empty(self, pack_svc, agent_class):
         caps = await pack_svc.get_capabilities_for_class(agent_class.id)
         assert caps == []
+
+
+class TestPackSecurityMetrics:
+    async def test_security_metrics_no_bindings(self, pack_svc):
+        pack = await pack_svc.create_pack(PackCreate(name="no-bindings-pack"))
+        metrics = await pack_svc.get_security_metrics(pack.id)
+        assert metrics.resource_count == 0
+        assert metrics.total_resources_in_domain == 0
+        assert metrics.implied_catch_rate == 1.0
+        assert metrics.warning_tier == "none"
+
+    async def test_security_metrics_not_found(self, pack_svc):
+        from api.services.pack_service import PackNotFoundError
+
+        with pytest.raises(PackNotFoundError):
+            await pack_svc.get_security_metrics(uuid4())

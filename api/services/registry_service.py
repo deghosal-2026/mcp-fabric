@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from api.mcp import MCPClient, MCPError, ToolDefinition, compare_tool_definitions
-from api.models import MCPServer, ServerTool, ToolVersion
+from api.models import CapabilityMapping, MCPServer, ServerTool, ToolVersion
 from api.schemas.agent import TrustAssignmentResponse
 from api.schemas.capability import CapabilityMappingResponse
 from api.schemas.common import PaginatedServers, PaginationMeta
@@ -316,6 +316,26 @@ class RegistryService:
                     output_schema=tool.output_schema,
                 )
             )
+
+        # Collect all tool names that were removed or had schema changes.
+        # These are the tools whose CapabilityMappings need review.
+        affected_tool_names: set[str] = set()
+        affected_tool_names.update(removed_names)
+        for tc in changed_schema:
+            affected_tool_names.add(tc.tool_name)
+        if affected_tool_names:
+            # Find all active mappings for the affected tools on this server
+            # and mark them stale so routing stops using them until an admin reviews.
+            mapping_result = await self.db.execute(
+                select(CapabilityMapping).where(
+                    CapabilityMapping.server_id == server.id,
+                    CapabilityMapping.tool_name.in_(affected_tool_names),
+                    CapabilityMapping.status == "active",
+                )
+            )
+            stale_mappings: list[CapabilityMapping] = list(mapping_result.scalars().all())
+            for mapping in stale_mappings:
+                mapping.status = "stale"
 
         server.updated_at = now
         server.health_status = "reachable"

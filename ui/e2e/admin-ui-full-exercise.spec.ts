@@ -145,6 +145,9 @@ test.beforeEach(async ({ page }) => {
     if (path.match(/^\/v1\/packs\/.+\/classes$/)) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({}) })
     }
+    if (path.match(/\/v1\/packs\/.+\/security-metrics$/)) {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 'pck-1', name: 'Developer Tools', resource_count: 16, total_resources_in_domain: 512, implied_catch_rate: 0.97, warning_tier: 'strong' }) })
+    }
     if (path === '/v1/alerts') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_ALERTS) })
     }
@@ -159,6 +162,12 @@ test.beforeEach(async ({ page }) => {
     }
     if (path.match(/^\/v1\/admin\/users\/.+\/deactivate$/)) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_ADMIN_USERS[0]) })
+    }
+    if (path === '/v1/admin/trust-posture/pack-breadth') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
+        { agent_class_id: 'cls-1', agent_class_name: 'Developer Agents', pack_count: 2, resources_covered: 16, total_resources_in_domain: 512, catch_rate: 0.9706 },
+        { agent_class_id: 'cls-2', agent_class_name: 'Ops Agents', pack_count: 1, resources_covered: 500, total_resources_in_domain: 512, catch_rate: 0.02 },
+      ]) })
     }
 
     route.continue()
@@ -211,6 +220,9 @@ test('exercise major admin UI elements and interactions', async ({ page }) => {
   await page.goto('/packs')
   await expect(page.getByRole('heading', { name: 'Capability Packs' })).toBeVisible()
   await expect(page.getByText('New Hire Pack')).toBeVisible()
+  await page.getByRole('button', { name: /bindings/i }).first().click()
+  await expect(page.getByText('Strong coverage — catch rate ≥ 97%')).toBeVisible()
+  await expect(page.getByText('Pack granularity guide')).toBeVisible()
 
   await page.goto('/alerts')
   await expect(page.getByRole('heading', { name: 'Alerts' })).toBeVisible()
@@ -226,6 +238,11 @@ test('exercise major admin UI elements and interactions', async ({ page }) => {
   await page.goto('/trust')
   await expect(page.getByRole('heading', { name: 'Trust Posture' })).toBeVisible()
   await expect(page.getByText('KB Server')).toBeVisible()
+  await expect(page.getByText('Identity-Binding Coverage')).toBeVisible()
+  await expect(page.getByText('Developer Agents')).toBeVisible()
+  await expect(page.getByText('Ops Agents')).toBeVisible()
+  await expect(page.getByText('97.1%')).toBeVisible()
+  await expect(page.getByText('2.0%')).toBeVisible()
 
   await page.getByRole('button', { name: /logout/i }).click()
   await expect(page).toHaveURL(/\/login/)

@@ -101,9 +101,7 @@ class DimensionValueMap(UUIDMixin, TimestampMixin, Base):
 
     resource_dimension = relationship("ResourceDimension", back_populates="value_maps")
 
-    __table_args__ = (
-        Index("idx_dvm_dimension", "resource_dimension_id"),
-    )
+    __table_args__ = (Index("idx_dvm_dimension", "resource_dimension_id"),)
 
 
 class IdentityResourceBinding(UUIDMixin, TimestampMixin, Base):
@@ -148,7 +146,9 @@ class IdentityResourceBinding(UUIDMixin, TimestampMixin, Base):
         Index("idx_irb_dimension", "dimension_key"),
         Index(
             "uq_irb_identity_dimension_value",
-            "agent_identity_id", "dimension_key", "allowed_value",
+            "agent_identity_id",
+            "dimension_key",
+            "allowed_value",
             unique=True,
         ),
     )
@@ -197,7 +197,9 @@ class PackResourceBinding(UUIDMixin, TimestampMixin, Base):
         Index("idx_prb_dimension", "dimension_key"),
         Index(
             "uq_prb_pack_dimension_value",
-            "pack_id", "dimension_key", "allowed_value",
+            "pack_id",
+            "dimension_key",
+            "allowed_value",
             unique=True,
         ),
     )

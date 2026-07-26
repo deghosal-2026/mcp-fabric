@@ -51,6 +51,22 @@ class ServerNotFoundError(ServiceError):
         super().__init__(f"Server {server_id} not found")
 
 
+class ToolNotFoundError(ServiceError):
+    """Raised when a tool is not found on a server during mapping creation.
+
+    Used by: capability_service.create_mapping().
+    The tool must exist on the server before a capability can map to it.
+    This error prevents creating a CapabilityMapping that references a
+    non-existent ServerTool, which would result in a dead routing entry.
+
+    Carries both the tool_name and server_id so callers can log or surface
+    a precise error message identifying which tool on which server was missing.
+    """
+
+    def __init__(self, tool_name: str, server_id: str) -> None:
+        super().__init__(f"Tool '{tool_name}' not found on server {server_id}")
+
+
 class DecommissionError(ServiceError):
     """Raised when a decommission operation is invalid or out of sequence.
 

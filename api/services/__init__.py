@@ -20,6 +20,7 @@ from api.services.exceptions import (
     ServerNotFoundError,
     ServerUnreachableError,
     ServiceError,
+    ToolNotFoundError,  # Raised when a capability mapping references a nonexistent server tool
 )
 from api.services.pack_service import (
     PackNotFoundError,
@@ -55,4 +56,5 @@ __all__ = [
     "DuplicateServerError",
     "ServerNotFoundError",
     "ServerUnreachableError",
+    "ToolNotFoundError",
 ]

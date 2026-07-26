@@ -34,9 +34,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from api.mcp import MCPClient
 from api.services.approval_service import ApprovalService
 from api.services.auth_service import AuthService
+from api.services.capability_service import CapabilityService
 from api.services.pack_service import PackService
 from api.services.policy_service import PolicyService
 from api.services.registry_service import RegistryService
+from api.services.resource_service import ResourceService
 
 
 async def get_db_session(request: Request) -> AsyncGenerator[AsyncSession, None]:
@@ -133,3 +135,25 @@ async def get_auth_service(
     admin session records and API key hashes.
     """
     return AuthService(db=db)
+
+
+async def get_capability_service(
+    db: AsyncSession = Depends(get_db_session),
+) -> CapabilityService:
+    """Dependency: creates a CapabilityService.
+
+    WHAT: Instantiates CapabilityService with the database session.
+
+    WHY: CapabilityService manages capability definitions, mappings,
+    alias resolution, deprecation lifecycle, and the schema-digest
+    mapping review workflow (get_stale_mappings / review_mapping).
+    This dependency is shared across admin.py and capabilities.py
+    route handlers, providing a single injection point for testing.
+    """
+    return CapabilityService(db=db)
+
+
+async def get_resource_service(
+    db: AsyncSession = Depends(get_db_session),
+) -> ResourceService:
+    return ResourceService(db=db)

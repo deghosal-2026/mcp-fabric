@@ -1,7 +1,7 @@
 # MCP Fabric — Admin UI User Guide
 
-> **Version:** 1.1  
-> **Applies to:** v0.1.0  
+> **Version:** 1.2  
+> **Applies to:** v0.3.0  
 > **Last updated:** 2026-07-25
 
 ---
@@ -42,9 +42,10 @@ This guide walks through each step, starting from login.
 10. [Audit Log — Record Everything](#10-audit-log--record-everything)
 11. [Alerts — Surface Problems](#11-alerts--surface-problems)
 12. [Trust Posture — Security at a Glance](#12-trust-posture--security-at-a-glance)
-13. [Admin Users — Manage the Team](#13-admin-users--manage-the-team)
-14. [Navigation & Layout](#14-navigation--layout)
-15. [Troubleshooting](#15-troubleshooting)
+13. [Schema-Digest Reviews — Detect Tool Drift](#13-schema-digest-reviews--detect-tool-drift)
+14. [Admin Users — Manage the Team](#14-admin-users--manage-the-team)
+15. [Navigation & Layout](#15-navigation--layout)
+16. [Troubleshooting](#16-troubleshooting)
 
 ---
 
@@ -464,6 +465,54 @@ Changes are optimistic: the UI updates immediately and reverts if the API call f
 ### Reviewing Unreviewed Servers
 
 Servers with trust level "Unreviewed" show a "⚠ Needs review" badge. These servers should be reviewed and assigned a trust level before agents can use them. Use this dashboard to quickly identify and address unreviewed servers.
+
+---
+
+## Schema-Digest Reviews — Detect Tool Drift
+
+> **New in v0.3.0:** Schema-digest review lets platform engineers detect when a server's tool schema has changed after a mapping was established. Stale mappings are automatically excluded from routing until an admin reviews and approves the change.
+
+When a registered MCP server is re-inspected and its tool input/output schemas change, the affected capability mappings are marked as **stale**. The Pending Schema Reviews page shows all stale mappings and lets you approve or reject each one.
+
+![Pending Schema Reviews](/docs/ui-test/findings/screenshots/docker-18-reviews.png)
+
+### How It Works
+
+1. **Server re-inspection** detects tool schema changes (added, removed, or changed tools)
+2. Affected `CapabilityMapping` rows are marked `stale` — routing skips them automatically
+3. The **Reviews** page in the sidebar shows all pending mappings with server name, capability name, tool name, and digest prefix
+4. An admin reviews the mapping and clicks **Approve** or **Reject**
+5. **Approve** — The mapping is re-activated with an updated schema digest
+6. **Reject** — The mapping is permanently disabled and excluded from routing
+
+### Navigating to Reviews
+
+- Click **Reviews** in the sidebar (between Admin Users and Trust Posture)
+- Or click **Pending Reviews** button on the Trust Posture page header
+
+### Approval Workflow
+
+Each stale mapping row shows:
+
+| Column | Description |
+|--------|-------------|
+| Capability | The normalized capability name (e.g., `knowledge:search`) |
+| Server | The server whose tool schema changed (e.g., `KB Server`) |
+| Tool | The specific tool that changed |
+| Digest | The stored SHA-256 digest prefix (12 chars) |
+| Status | Current status: `stale` |
+
+Click **Approve** to re-activate the mapping with the new schema digest, or **Reject** to disable it permanently. Each decision is recorded in the `mapping_reviews` table for audit trail.
+
+### Audit Trail
+
+Every review decision creates a `MappingReview` record containing:
+- Previous and new schema digests
+- Admin decision (approved / rejected)
+- Optional reason
+- Reviewer identity and timestamp
+
+This provides a complete audit trail for compliance: "who approved which schema change, when, and why."
 
 ---
 

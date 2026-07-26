@@ -20,7 +20,7 @@ async function login(page: import('@playwright/test').Page) {
 }
 
 // ───────────────────────────────────────────────────────
-// 1. SIDEBAR — all 11 navigation links
+// 1. SIDEBAR — all 12 navigation links
 // ───────────────────────────────────────────────────────
 test.describe('Sidebar navigation links', () => {
   test.setTimeout(180_000)
@@ -37,6 +37,8 @@ test.describe('Sidebar navigation links', () => {
     { label: 'Alerts', expectedUrl: '/alerts' },
     { label: 'Admin Users', expectedUrl: '/admin/users' },
     { label: 'Trust Posture', expectedUrl: '/trust' },
+    // Schema Reviews: navigate to the stale-mapping-review page (12th sidebar link)
+    { label: 'Reviews', expectedUrl: '/reviews' },
   ]
 
   for (const link of sidebarLinks) {
@@ -642,7 +644,35 @@ test.describe('Trust Posture', () => {
 })
 
 // ───────────────────────────────────────────────────────
-// 15. FULL DEEP WALKTHROUGH — all pages, all actions
+// 15. REVIEWS — stale mappings, approve, reject
+// Tests the Docker review workflow: rendering the list of stale tool-schema
+// mappings and exercising the approve and reject buttons on each row.
+// ───────────────────────────────────────────────────────
+test.describe('Reviews', () => {
+  test.setTimeout(120_000)
+
+  test('Stale mappings list renders with approve/reject buttons', async ({ page }) => {
+    await login(page)
+    await page.goto('/reviews')
+    await page.waitForLoadState('networkidle')
+    await page.screenshot({ path: path.join(SHOTS, 'docker-reviews-list.png'), fullPage: true })
+
+    const approveBtn = page.getByRole('button', { name: /approve/i })
+    if (await approveBtn.first().isVisible().catch(() => false)) {
+      await approveBtn.first().click()
+      await page.waitForTimeout(500)
+    }
+
+    const rejectBtn = page.getByRole('button', { name: /reject/i })
+    if (await rejectBtn.first().isVisible().catch(() => false)) {
+      await rejectBtn.first().click()
+      await page.waitForTimeout(500)
+    }
+  })
+})
+
+// ───────────────────────────────────────────────────────
+// 16. FULL DEEP WALKTHROUGH — all pages, all actions
 // ───────────────────────────────────────────────────────
 test.describe('Full walkthrough', () => {
   test.setTimeout(600_000)
@@ -737,6 +767,16 @@ test.describe('Full walkthrough', () => {
     await page.waitForLoadState('networkidle')
     await page.waitForTimeout(1000)
     await page.screenshot({ path: path.join(SHOTS, 'docker-walk-11-trust-posture.png'), fullPage: true })
+
+    // Schema Reviews: navigate to /reviews, click approve, then screenshot results
+    await page.goto('/reviews')
+    await page.waitForLoadState('networkidle')
+    const reviewsApprove = page.getByRole('button', { name: /approve/i })
+    if (await reviewsApprove.first().isVisible().catch(() => false)) {
+      await reviewsApprove.first().click()
+      await page.waitForTimeout(500)
+    }
+    await page.screenshot({ path: path.join(SHOTS, 'docker-walk-12-reviews.png'), fullPage: true })
 
     await page.getByRole('button', { name: /logout/i }).click()
     await page.waitForURL(/\/login/)

@@ -46,6 +46,13 @@ export interface CapabilityMapping {
   tool_name: string;
   is_primary: boolean;
   routing_weight: number;
+  // Tracks the review lifecycle: 'active' when current, 'stale' when the
+  // server's tool schema has drifted, 'pending_review' after being flagged,
+  // or 'rejected' if an admin denied the schema change.
+  status?: 'active' | 'stale' | 'pending_review' | 'rejected';
+  // Hash of the server-side tool schema at last review. Compared against
+  // the current server schema to detect drift; a mismatch generates a stale entry.
+  tool_schema_digest?: string | null;
   server?: MCPServer;
 }
 
@@ -209,6 +216,24 @@ export interface DimensionValueMap {
   constant_value: string | null;
 }
 
+export interface PackSafetyMetrics {
+  id: string;
+  name: string;
+  resource_count: number;
+  total_resources_in_domain: number;
+  implied_catch_rate: number;
+  warning_tier: 'none' | 'full' | 'strong' | 'moderate' | 'reduced' | 'low';
+}
+
+export interface PackBreadthRow {
+  agent_class_id: string;
+  agent_class_name: string;
+  pack_count: number;
+  resources_covered: number;
+  total_resources_in_domain: number;
+  catch_rate: number;
+}
+
 export interface ResourceBinding {
   id: string;
   agent_identity_id?: string;
@@ -224,4 +249,17 @@ export interface DashboardStats {
   pending_approvals: number;
   recent_audit_events: number;
   degraded_servers: number;
+}
+
+// Record of an admin review decision on a capability mapping whose tool schema
+// digest changed. Stores both the old and new digest for audit trail purposes.
+export interface MappingReview {
+  id: string;
+  mapping_id: string;
+  previous_digest: string | null;
+  new_digest: string | null;
+  decision: 'approved' | 'rejected';
+  reason: string | null;
+  reviewed_by: string | null;
+  created_at: string;
 }

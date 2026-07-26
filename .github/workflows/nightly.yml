@@ -1,0 +1,41 @@
+name: Nightly Security Fuzz
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install poetry
+          poetry lock && poetry install
+
+      - name: Run confused-deputy fuzz test
+        run: |
+          poetry run python tests/security/test_confused_deputy_fuzz.py \
+            --iterations 40000 \
+            --output /tmp/fuzz-report.json
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fuzz-report
+          path: /tmp/fuzz-report.json
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "Fuzz test failed — max error exceeded threshold."
+          echo "See fuzz-report artifact for details."

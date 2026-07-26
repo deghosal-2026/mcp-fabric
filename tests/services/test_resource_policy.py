@@ -464,3 +464,174 @@ async def test_merge_bindings_identity_only(db_session: AsyncSession):
 
     assert "env" in merged
     assert merged["env"] == ["prod"]
+
+
+@pytest.mark.asyncio
+async def test_giant_pack_zero_protection_is_expected(db_session: AsyncSession):
+    """P=R=512: giant pack with all resource bindings → catch rate = 0.0
+
+    Demonstrates the intra-pack confused-deputy residual: when a pack
+    covers every resource in a domain, resource-aware policy provides
+    zero protection against confused-deputy attacks within the pack.
+    """
+    n = 512
+    mutations = 1000
+
+    cap = Capability(name="test:giant-pack", domain="test")
+    db_session.add(cap)
+    await db_session.commit()
+    await db_session.refresh(cap)
+
+    svc = ResourceService(db=db_session)
+    await svc.create_dimension(cap.id, ResourceDimensionCreate(dimension_key="tool"))
+
+    ac = AgentClass(name="agent:giant-pack")
+    db_session.add(ac)
+    await db_session.commit()
+    await db_session.refresh(ac)
+
+    identity = AgentIdentity(name="giant-pack-id", agent_class_id=ac.id, token_hash="ghp")
+    db_session.add(identity)
+    await db_session.commit()
+    await db_session.refresh(identity)
+
+    pack = CapabilityPack(name="giant-pack-pack")
+    db_session.add(pack)
+    await db_session.commit()
+    await db_session.refresh(pack)
+
+    values = [
+        ResourceBindingValue(dimension_key="tool", allowed_value=f"tool-{i}") for i in range(n)
+    ]
+    await svc.set_identity_bindings(identity.id, ResourceBindingBulkRequest(bindings=values))
+    await svc.set_pack_bindings(pack.id, ResourceBindingBulkRequest(bindings=values))
+
+    from api.services.routing_service import RoutingService
+
+    routing = RoutingService(db=db_session)
+    merged = await routing.merge_bindings(identity_id=identity.id, pack_ids=[pack.id])
+
+    assert "tool" in merged
+    assert len(merged["tool"]) == n
+
+    import random
+
+    random.seed(42)
+    blocked = 0
+    for _ in range(mutations):
+        resource = f"tool-{random.randint(0, n - 1)}"
+        if resource not in merged["tool"]:
+            blocked += 1
+
+    assert blocked == 0
+    catch = blocked / mutations
+    formula_catch = 1.0 - (n - 1) / (n - 1)
+    assert catch == formula_catch == 0.0
+
+
+@pytest.mark.asyncio
+async def test_per_resource_identity_full_close(db_session: AsyncSession):
+    """P=1: narrow pack with single resource binding → catch rate = 1.0
+
+    Mirror of the giant-pack test: when identity and pack both bind
+    exactly one resource, every confused-deputy request outside that
+    resource is blocked.
+    """
+    n = 512
+    mutations = 1000
+
+    cap = Capability(name="test:per-resource", domain="test")
+    db_session.add(cap)
+    await db_session.commit()
+    await db_session.refresh(cap)
+
+    svc = ResourceService(db=db_session)
+    await svc.create_dimension(cap.id, ResourceDimensionCreate(dimension_key="tool"))
+
+    ac = AgentClass(name="agent:per-resource")
+    db_session.add(ac)
+    await db_session.commit()
+    await db_session.refresh(ac)
+
+    identity = AgentIdentity(name="per-resource-id", agent_class_id=ac.id, token_hash="prh")
+    db_session.add(identity)
+    await db_session.commit()
+    await db_session.refresh(identity)
+
+    pack = CapabilityPack(name="per-resource-pack")
+    db_session.add(pack)
+    await db_session.commit()
+    await db_session.refresh(pack)
+
+    await svc.set_identity_bindings(
+        identity.id,
+        ResourceBindingBulkRequest(
+            bindings=[ResourceBindingValue(dimension_key="tool", allowed_value="tool-0")]
+        ),
+    )
+    await svc.set_pack_bindings(
+        pack.id,
+        ResourceBindingBulkRequest(
+            bindings=[ResourceBindingValue(dimension_key="tool", allowed_value="tool-0")]
+        ),
+    )
+
+    from api.services.routing_service import RoutingService
+
+    routing = RoutingService(db=db_session)
+    merged = await routing.merge_bindings(identity_id=identity.id, pack_ids=[pack.id])
+
+    assert "tool" in merged
+    assert len(merged["tool"]) == 1
+    assert merged["tool"] == ["tool-0"]
+
+    import random
+
+    random.seed(43)
+    blocked = 0
+    for _ in range(mutations):
+        resource = f"tool-{random.randint(1, n)}"
+        if resource not in merged["tool"]:
+            blocked += 1
+
+    assert blocked == mutations
+    catch = blocked / mutations
+    formula_catch = 1.0 - (1 - 1) / (n - 1)
+    assert catch == formula_catch == 1.0
+
+
+@pytest.mark.asyncio
+async def test_pack_breadth_empty(db_session: AsyncSession):
+    """No classes or packs → empty list."""
+    svc = ResourceService(db=db_session)
+    result = await svc.get_pack_breadth()
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_pack_breadth_with_class_and_pack(db_session: AsyncSession):
+    """Class with one pack and no bindings → catch=1.0, pack_count=1."""
+    cls = AgentClass(name="test-pack-breadth-class")
+    db_session.add(cls)
+    await db_session.commit()
+    await db_session.refresh(cls)
+
+    pack = CapabilityPack(name="bp-pack")
+    db_session.add(pack)
+    await db_session.commit()
+    await db_session.refresh(pack)
+
+    from api.models.agent import AgentClassPack
+
+    db_session.add(AgentClassPack(agent_class_id=cls.id, pack_id=pack.id))
+    await db_session.commit()
+
+    svc = ResourceService(db=db_session)
+    result = await svc.get_pack_breadth()
+    assert len(result) == 1
+    row = result[0]
+    assert row["agent_class_name"] == "test-pack-breadth-class"
+    assert row["pack_count"] == 1
+    assert row["resources_covered"] == 0
+    assert row["total_resources_in_domain"] == 0
+    assert row["catch_rate"] == 1.0

@@ -144,7 +144,9 @@ services:
         tests/e2e/test_auth_flow.sh http://api:8000 &&
         tests/e2e/test_registration_flow.sh http://api:8000 &&
         tests/e2e/test_capability_flow.sh http://api:8000 &&
-        tests/e2e/test_deployment_walkthrough.sh http://api:8000
+        tests/e2e/test_deployment_walkthrough.sh http://api:8000 &&
+        echo 'Running integration tests...' &&
+        FABRIC_TEST_URL=http://api:8000 poetry run pytest tests/routers/test_integration.py -v --tb=short --junitxml=/app/test-results/integration.xml
       "
     volumes:
       - test-results:/app/test-results

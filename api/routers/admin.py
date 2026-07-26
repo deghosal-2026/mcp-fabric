@@ -22,18 +22,42 @@ Endpoints: POST /v1/admin/users/invite, GET /v1/admin/users,
 GET /v1/admin/users/{id}, PATCH /v1/admin/users/{id},
 POST /v1/admin/users/{id}/deactivate, POST /v1/admin/users/{id}/unlock,
 POST /v1/admin/users/{id}/reset-mfa.
+
+Schema-digest management endpoints:
+  - GET  /v1/admin/mappings/stale        — list stale mappings for review
+  - POST /v1/admin/mappings/{id}/review  — approve/reject a stale mapping
+  - GET  /v1/admin/capabilities/{id}/ambiguity — show mapping ambiguity
 """
 
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.dependencies import get_approval_service, get_auth_service, get_registry_service
-from api.schemas.admin import AdminUserInvite, AdminUserResponse, AdminUserUpdate
+from api.dependencies import (
+    get_approval_service,
+    get_auth_service,
+    get_capability_service,
+    get_db_session,
+    get_registry_service,
+    get_resource_service,
+)
+from api.schemas.admin import AdminUserInvite, AdminUserResponse, AdminUserUpdate, PackBreadthRow
+
+# Import capability schemas for schema-digest review endpoints
+# (CapabilityMappingResponse, MappingReviewCreate, MappingReviewResponse)
+# and CapabilityService for the review business logic.
+from api.schemas.capability import (
+    CapabilityMappingResponse,
+    MappingReviewCreate,
+    MappingReviewResponse,
+)
 from api.schemas.dashboard import DashboardStats
 from api.services.approval_service import ApprovalService
 from api.services.auth_service import AuthService
+from api.services.capability_service import CapabilityService
 from api.services.registry_service import RegistryService
+from api.services.resource_service import ResourceService
 
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
 
@@ -175,3 +199,83 @@ async def dashboard_stats(
         degraded_servers=counts.get("degraded", 0),
         pending_approvals=pending,
     )
+
+
+@router.get("/trust-posture/pack-breadth")
+async def pack_breadth(
+    svc: ResourceService = Depends(get_resource_service),
+) -> list[PackBreadthRow]:
+    rows = await svc.get_pack_breadth()
+    return [PackBreadthRow(**r) for r in rows]  # type: ignore[arg-type]
+
+
+# ============================================================================
+# Schema-Digest Mapping Review Endpoints
+# ============================================================================
+
+
+# List all stale mappings that need admin review.
+# The frontend Pending Reviews page polls this to show the review queue.
+# Returns CapabilityMappingResponse[] — each stale mapping includes the
+# stored tool_schema_digest so the frontend can show what changed.
+@router.get("/mappings/stale")
+async def list_stale_mappings(
+    svc: CapabilityService = Depends(get_capability_service),
+) -> list[CapabilityMappingResponse]:
+    return await svc.get_stale_mappings()
+
+
+# Review (approve or reject) a stale mapping.
+# Creates a MappingReview audit record. On approval, the mapping's digest
+# is recomputed from the current tool schema and status goes back to 'active'.
+# On rejection, the mapping stays rejected and is skipped by routing.
+# 422 is returned for invalid decisions (anything other than 'approved'/'rejected').
+@router.post("/mappings/{mapping_id}/review", status_code=201)
+async def review_mapping(
+    mapping_id: UUID,
+    body: MappingReviewCreate,
+    svc: CapabilityService = Depends(get_capability_service),
+) -> MappingReviewResponse:
+    try:
+        return await svc.review_mapping(mapping_id, body)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "invalid_decision", "message": str(exc)},
+        ) from exc
+
+
+# Get ambiguity details for a capability — shows all mappings with their
+# status, digest, and digest match vs current tool schema.
+# Useful for the admin dashboard's ambiguity visualization: when a capability
+# has multiple mappings, some may be stale or have different schemas.
+@router.get("/capabilities/{capability_id}/ambiguity")
+async def get_ambiguity(
+    capability_id: UUID,
+    db: AsyncSession = Depends(get_db_session),
+) -> list[CapabilityMappingResponse]:
+    from sqlalchemy import select
+
+    from api.models.server import CapabilityMapping
+
+    result = await db.execute(
+        select(CapabilityMapping)
+        .where(CapabilityMapping.capability_id == capability_id)
+        .order_by(CapabilityMapping.created_at.desc())
+    )
+    mappings = result.scalars().all()
+    return [
+        CapabilityMappingResponse(
+            id=m.id,
+            capability_id=m.capability_id,
+            server_id=m.server_id,
+            tool_name=m.tool_name,
+            input_mapping=m.input_mapping,
+            output_mapping=m.output_mapping,
+            is_primary=m.is_primary or True,
+            routing_weight=m.routing_weight or 1.0,
+            tool_schema_digest=m.tool_schema_digest,
+            status=m.status,
+        )
+        for m in mappings
+    ]

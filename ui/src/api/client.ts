@@ -5,6 +5,7 @@ import type {
   AgentClass, AgentIdentity, TrustAssignment,
   ApprovalRequest, AuditEvent, CapabilityPack,
   AlertEvent, AdminUser, DashboardStats, PaginatedResponse,
+  PackSafetyMetrics, PackBreadthRow,
 } from '../types'
 
 const BASE = '/v1'
@@ -136,6 +137,12 @@ export function mapTool(capabilityId: string, data: Partial<CapabilityMapping>) 
   })
 }
 
+// Resolve a single capability by ID to get its display name.
+  // Used by ReviewsPage to show human-readable capability names in the review table.
+export function fetchCapability(id: string) {
+  return fetcher<import('../types').Capability>(`/capabilities/${id}`)
+}
+
 // Agent Classes
 export function fetchAgentClasses() {
   return fetcher<AgentClass[]>('/agent-classes')
@@ -235,6 +242,14 @@ export function deployPolicy(regoContent: string) {
   })
 }
 
+export function fetchPackSecurityMetrics(packId: string) {
+  return fetcher<PackSafetyMetrics>(`/packs/${packId}/security-metrics`)
+}
+
+export function fetchPackBreadth() {
+  return fetcher<PackBreadthRow[]>('/admin/trust-posture/pack-breadth')
+}
+
 // Resource Dimensions (v0.2.0)
 export function fetchResourceDimensions(capabilityId: string) {
   return fetcher<import('../types').ResourceDimension[]>(
@@ -299,3 +314,20 @@ export function fetchDashboard() {
 }
 
 // Trust Posture — uses fetchServers directly; this function removed (dead code)
+
+// Schema-Digest Reviews
+// Fetch all capability mappings whose tool_schema_digest does not match the
+// server's current tool schema — these require an admin review decision.
+export function fetchStaleMappings() {
+  return fetcher<CapabilityMapping[]>('/admin/mappings/stale')
+}
+
+// Submit an admin review decision (approved / rejected) for a specific mapping.
+// The backend records the decision in a MappingReview and updates the mapping's status.
+// An optional reason can be provided, especially when rejecting.
+export function reviewMapping(mappingId: string, decision: 'approved' | 'rejected', reason?: string) {
+  return fetcher<import('../types').MappingReview>(`/admin/mappings/${mappingId}/review`, {
+    method: 'POST',
+    body: JSON.stringify({ decision, reason }),
+  })
+}

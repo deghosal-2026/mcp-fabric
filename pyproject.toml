@@ -1,6 +1,6 @@
 [project]
 name = "mcp-fabric-toolmesh"
-version = "0.1.0"
+version = "0.3.0"
 description = "Composable tool mesh for MCP ecosystems"
 authors = [
     {name = "Debashish Ghosal", email = "debashish@ghosal.dev"},

@@ -60,3 +60,14 @@ class AdminUserUpdate(BaseModel):
 
     role: str | None = Field(default=None, pattern=r"^(admin|editor|viewer)$")
     team_namespace: str | None = None
+
+
+class PackBreadthRow(BaseModel):
+    """Per-agent-class pack breadth summary for the Trust Posture dashboard."""
+
+    agent_class_id: UUID
+    agent_class_name: str
+    pack_count: int
+    resources_covered: int
+    total_resources_in_domain: int
+    catch_rate: float

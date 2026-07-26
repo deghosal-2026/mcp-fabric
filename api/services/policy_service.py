@@ -73,6 +73,8 @@ class PolicyService:
         team_namespace: str,
         identity_resources: dict[str, list[str]] | None = None,
         request_resources: dict[str, str] | None = None,
+        mapping_status: str | None = None,
+        tool_name: str | None = None,
     ) -> PolicyDecision:
         """Evaluate a policy decision from OPA for the given inputs.
 
@@ -84,13 +86,21 @@ class PolicyService:
         OPA returns: allow (bool), approval_required (bool), trust_level (str),
         agent_class (str), cross_team (bool).
 
+        New in v0.3.0:
+          - mapping_status: used by deny_stale_mapping rule to reject stale/rejected
+            mappings even if trust levels pass.
+          - tool_name: used by untrusted_write rule to deny write operations
+            on unreviewed servers.
+
         Uses OPA's REST API at /v1/data/fabric/policy/result with a 5s timeout.
 
         RAISES: OPAEvaluationError on connection failure, timeout, or
         non-200 response.
         RETURN: PolicyDecision with the evaluation result.
         """
-        input_data = {
+        # Build the OPA input dict including the new mapping_status and tool_name
+        # fields so OPA policies can enforce deny_stale_mapping and untrusted_write rules.
+        input_data: dict[str, dict[str, object]] = {
             "input": {
                 "agent_class": agent_class,
                 "server_id": server_id,
@@ -99,6 +109,8 @@ class PolicyService:
                 "identity_resources": identity_resources or {},
                 "request_resources": request_resources or {},
                 "declared_dimensions": list((identity_resources or {}).keys()),
+                "mapping_status": mapping_status or "",
+                "tool_name": tool_name or "",
             }
         }
         try:
@@ -123,6 +135,8 @@ class PolicyService:
             cross_team=result.get("cross_team", False),
             resource_allowed=result.get("resource_allowed", True),
             resource_violations=result.get("resource_violations", []),
+            deny_stale_mapping=result.get("deny_stale_mapping", False),
+            untrusted_write=result.get("untrusted_write", False),
         )
 
     async def evaluate_cached(
@@ -157,9 +171,11 @@ class PolicyService:
             cache_key = f"policy:eval:{agent_class}:{server_id}:{capability}"
             if identity_resources:
                 import json
+
                 cache_key += f":ir={json.dumps(identity_resources, sort_keys=True)}"
             if request_resources:
                 import json
+
                 cache_key += f":rr={json.dumps(request_resources, sort_keys=True)}"
             cache_ttl = 60 if (identity_resources or request_resources) else 300
             cached = await r.get(cache_key)
@@ -168,7 +184,10 @@ class PolicyService:
                 await r.aclose()
                 return PolicyDecision(**data)
             decision = await self.evaluate(
-                agent_class, server_id, capability, team_namespace,
+                agent_class,
+                server_id,
+                capability,
+                team_namespace,
                 identity_resources=identity_resources,
                 request_resources=request_resources,
             )
@@ -178,7 +197,10 @@ class PolicyService:
         except Exception:
             # Redis failure: fall through to uncached evaluation.
             return await self.evaluate(
-                agent_class, server_id, capability, team_namespace,
+                agent_class,
+                server_id,
+                capability,
+                team_namespace,
                 identity_resources=identity_resources,
                 request_resources=request_resources,
             )

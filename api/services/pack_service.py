@@ -24,7 +24,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.agent import AgentClass, AgentClassPack, CapabilityPack, PackAssignment
 from api.models.capability import Capability
-from api.schemas.pack import ClonePackRequest, PackAssignmentRequest, PackCreate, PackResponse
+from api.schemas.pack import (
+    ClonePackRequest,
+    PackAssignmentRequest,
+    PackCreate,
+    PackResponse,
+    PackSecurityMetricsResponse,
+)
+from api.services.resource_service import ResourceService
 
 
 class PackNotFoundError(Exception):
@@ -396,6 +403,52 @@ class PackService:
             "classes_count": class_count,
             "usage_count": usage_count,
         }
+
+    async def get_security_metrics(self, pack_id: UUID) -> PackSecurityMetricsResponse:
+        result = await self.db.execute(select(CapabilityPack).where(CapabilityPack.id == pack_id))
+        pack = result.scalar_one_or_none()
+        if pack is None:
+            raise PackNotFoundError(f"Pack {pack_id} not found")
+
+        rsvc = ResourceService(db=self.db)
+        pack_counts = await rsvc.get_pack_resource_counts([pack_id])
+        domain_counts = await rsvc.get_domain_resource_counts()
+
+        resource_count = sum(pack_counts.values())
+        total_in_domain = max(
+            (domain_counts.get(dim, 0) for dim in pack_counts),
+            default=0,
+        )
+        total_in_domain = max(total_in_domain, resource_count)
+
+        if total_in_domain <= 1 or resource_count == 0:
+            implied_catch_rate = 1.0
+        else:
+            implied_catch_rate = max(
+                0.0, min(1.0, 1.0 - (resource_count - 1) / (total_in_domain - 1))
+            )
+
+        if resource_count == 0:
+            warning_tier = "none"
+        elif implied_catch_rate >= 1.0:
+            warning_tier = "full"
+        elif implied_catch_rate >= 0.97:
+            warning_tier = "strong"
+        elif implied_catch_rate >= 0.87:
+            warning_tier = "moderate"
+        elif implied_catch_rate >= 0.50:
+            warning_tier = "reduced"
+        else:
+            warning_tier = "low"
+
+        return PackSecurityMetricsResponse(
+            id=pack.id,
+            name=pack.name,
+            resource_count=resource_count,
+            total_resources_in_domain=total_in_domain,
+            implied_catch_rate=round(implied_catch_rate, 4),
+            warning_tier=warning_tier,
+        )
 
     async def get_capabilities_for_class(
         self,

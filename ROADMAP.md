@@ -1,6 +1,6 @@
 # Roadmap
 
-## v0.1.0 — Current
+## v0.1.0 — Shipped
 
 - MCP server registry with auto-discovery of tools
 - Normalized capability catalog with deprecation lifecycle
@@ -15,27 +15,24 @@
 - Dashboard with stat cards and recent activity panels
 - 474 automated tests (backend, UI, OPA, E2E)
 
-## v0.2.0 — Planned (Q3 2026)
+## v0.3.0 — Current
 
-- Advanced routing engine (health/latency/fallback-aware)
-- Conflict detection across similar tools
-- Capability-to-tool mapping UI from the catalog
-- Persistent webhook storage (DB-backed, not in-memory)
-- Webhook auth middleware enforcement
-
-## v0.3.0 — Planned (Q4 2026)
-
-- Multi-tenant scopes and namespace isolation
-- Analytics and usage heatmaps
-- Webhook integrations for external tooling
-- Performance benchmarks and caching improvements
+- Schema-digest mappings — detect tool schema drift
+- OPA deny_stale_mapping + untrusted_write rules
+- Mapping review workflow (stale/approve/reject)
+- Reviews admin UI page
+- PackBreadthWarning for over-broad packs
+- 326 Python tests, 31 OPA tests, 75 E2E tests
 
 ## v0.4.0 — Planned (Q1 2027)
 
-- Reference integrations with popular OSS MCP servers
-- API versioning and SDK
-- OpenAPI-generated client libraries
-- Helm chart for Kubernetes deployment
+- Advanced routing engine (health/latency/fallback-aware)
+- Conflict detection across similar tools
+- Capability-to-tool mapping UI
+- Persistent webhook storage
+- Multi-tenant scopes and namespace isolation
+- Analytics and usage heatmaps
+- Performance benchmarks and caching improvements
 
 ## GA (v1.0.0)
 

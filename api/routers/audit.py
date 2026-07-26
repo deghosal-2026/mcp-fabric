@@ -54,6 +54,8 @@ async def list_audit_events(
     actor_type: str | None = Query(None),
     actor_id: str | None = Query(None, alias="q"),
     resource_violation: bool | None = Query(None),
+    min_pack_resource_count: int | None = Query(None, ge=0),
+    max_catch_rate: float | None = Query(None, ge=0.0, le=1.0),
     per_page: int = Query(100, le=500, alias="per_page"),
     offset: int = Query(0, ge=0),
     svc: AuditService = Depends(get_audit_service),
@@ -65,6 +67,8 @@ async def list_audit_events(
         actor_type=actor_type,
         actor_id=actor_id,
         resource_violation=resource_violation,
+        min_pack_resource_count=min_pack_resource_count,
+        max_catch_rate=max_catch_rate,
         limit=limit,
         offset=offset,
     )
@@ -93,6 +97,8 @@ async def export_audit_logs(
         event_type=body.event_type,
         actor_type=body.actor_type,
         actor_id=body.actor_id,
+        min_pack_resource_count=body.min_pack_resource_count,
+        max_catch_rate=body.max_catch_rate,
         limit=1000,
         offset=0,
     )

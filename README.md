@@ -24,21 +24,22 @@ Once a team adds multiple MCP servers, several hard questions emerge:
 - Which agents get access to which tools — and who needs to approve?
 - How should a platform team audit and govern usage across the whole tool ecosystem?
 
-## What's New in v0.2.0 — Resource-Aware Policy
+## What's New in v0.3.0 — Schema-Digest Security
 
 > **Full changelog:** [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 
-v0.2.0 brings **Resource-Aware Policy** — a dynamic resource dimension system that extends the policy engine from verb-only to verb+object authorization. The original OPA policy could answer "may agent:release-engineer use `deployment:promote`?" but not "may agent:release-engineer use `deployment:promote` on `env:prod`?"
+v0.3.0 brings **Schema-Digest Mappings** — a security layer that detects when server tool schemas drift from their capability mappings. When a re-inspected server shows a changed tool schema, affected mappings are automatically marked stale and excluded from routing until an admin reviews and approves the change.
 
-Now it can. Platform engineers define resource dimensions (e.g., `env`, `tenant`, `service`) per capability, bind allowed values to agent identities and capability packs, and OPA evaluates `(capability, resource)` pairs at request time. Resource violations are logged in the audit trail with full detail.
+**Key features:**
+- **Schema-digest computation** — SHA-256 hash of (tool_name + input_schema + output_schema) stored on each mapping at creation time
+- **Drift detection on re-inspect** — schema changes automatically mark affected mappings as stale
+- **Digest-bound routing** — only active mappings with matching digests are considered for routing
+- **OPA policy gates** — `deny_stale_mapping` and `untrusted_write` rules in Rego policies
+- **Admin review UI** — Pending Reviews page with approve/reject workflow and audit trail
+- **Trust Posture integration** — "Pending Reviews" button linking to the review page
 
 **Key resources:**
-- [Product Requirements — Problem 5, Journey 30, Feature 10](docs/PRD.md)
-- [Technical Spec — DB Schema, OPA Policy, Request Lifecycle, Tech Tradeoffs](docs/spec.md)
-- [Design Doc](docs/resource-aware-policy-design.md)
-- [User Guide — Resource Policy Section](docs/user-guide.md#5-resource-policy--constrain-capabilities-to-specific-resources)
-- [Work Breakdown — Phase 13](docs/wbs/phase-13-resource-policy.md)
-- [GitHub Issue — Parent Feature #394](https://github.com/deghosal-2026/mcp-fabric/issues/394)
+- [Work Breakdown — Phase 14](docs/wbs/phase-14-v030.md)
 
 ## Quick Start
 
@@ -137,47 +138,31 @@ Everything runs locally. No enterprise dependencies required.
 
 ## Roadmap
 
-**v0.1.0 — Current:**
-- MCP server registry with auto-discovery of tools
-- Normalized capability catalog with deprecation lifecycle
-- OPA Rego policy engine for access decisions
-- Agent classes with identity token management
-- Capability packs — bundle and assign to agent classes
-- Human-in-the-loop approvals for gated capabilities
-- Audit log with event filtering and JSON export
-- Trust posture dashboard with per-class trust levels
-- Operational alerts for server health and security issues
-- Admin user management with RBAC (Admin/Editor/Viewer) and MFA
-- Dashboard with stat cards and recent activity panels
-- 474 automated tests (backend, UI, OPA, E2E)
+**v0.3.0 — Current:**
+- Schema-digest mappings: detect tool drift, mark stale, block routing until re-approved
+- OPA deny rules: `deny_stale_mapping`, `untrusted_write`, `raw_context` for audit
+- Admin review UI: approve/reject stale mappings with audit trail
+- 326 automated tests (backend, UI, OPA, E2E) + 31 OPA policy tests
 
-**v0.2.0 — Planned:**
-- Advanced routing engine (health/latency/fallback-aware)
-- Conflict detection across similar tools
-- Capability-to-tool mapping UI from the catalog
-
-**v0.3.0 — Planned:**
+**v0.4.0 — Planned:**
 - Multi-tenant scopes and namespace isolation
 - Analytics and usage heatmaps
 - Webhook integrations for external tooling
-
-**v0.4.0 — Planned:**
 - Performance benchmarks and caching improvements
-- Reference integrations with popular OSS MCP servers
-- API versioning and SDK
+
+**GA (v1.0.0) — Planned:**
+- Stabilization, security audit, production hardening, and enterprise features
 
 ## Test Status
 
 | Suite | Tests | Status |
-|---|---|---|---|
-| Backend unit (services, middleware, errors) | 295 | ✅ Passing |
-| Backend integration (HTTP routes) | 12 | ✅ Passing |
-| Backend resource policy (services + models) | 36 | ✅ Passing |
-| OPA policy (Rego) | 21 | ✅ Passing |
+|---|---|---|---|---|
+| Backend unit (services, middleware, errors, models) | 326 | ✅ Passing |
+| OPA policy (Rego) | 31 | ✅ Passing |
 | UI unit/integration (Vitest) | 128 | ✅ Passing |
-| UI E2E + screenshots (Playwright) | 70 | ✅ Passing |
+| UI E2E + screenshots (Playwright) | 75 | ✅ Passing |
 | Docker Compose E2E (curl) | 6 | ✅ Scripts ready |
-| **Total** | **568** | |
+| **Total** | **566** | |
 
 ```bash
 make test        # Backend unit tests

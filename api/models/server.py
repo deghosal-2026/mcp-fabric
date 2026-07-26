@@ -195,6 +195,8 @@ class CapabilityMapping(UUIDMixin, Base):
         output_mapping (JSON) – Schema transformation: tool result -> capability result.
         is_primary            – Whether this is the preferred mapping (used as default route).
         routing_weight        – Weight for load-balanced routing. Higher weight = more traffic.
+        tool_schema_digest    – SHA-256 digest of (tool_name + input_schema + output_schema).
+        status                – 'active' | 'stale' | 'pending_review' | 'rejected'.
         created_at            – When this mapping was established.
     """
 
@@ -211,17 +213,86 @@ class CapabilityMapping(UUIDMixin, Base):
     output_mapping: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     is_primary: Mapped[bool | None] = mapped_column(default=True)
     routing_weight: Mapped[float | None] = mapped_column(Float, default=1.0)
+    tool_schema_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # SHA-256 hex digest of (tool_name + input_schema + output_schema).
+    # Used by routing to detect schema drift: if the current ServerTool's digest
+    # doesn't match this stored value, the mapping is stale and should not be used.
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    # Routing lifecycle status: 'active' (routable), 'stale' (schema changed, needs review),
+    # 'rejected' (admin denied the schema change, not routable).
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     capability = relationship("Capability", back_populates="mappings")
     server = relationship("MCPServer", back_populates="mappings")
+    reviews = relationship("MappingReview", back_populates="mapping", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_mappings_capability", "capability_id"),
         Index("idx_mappings_server", "server_id"),
+        Index("idx_mappings_status", "status"),
         Index("idx_mappings_unique", "capability_id", "server_id", "tool_name", unique=True),
+        Index(
+            "idx_mappings_digest_unique",
+            "capability_id",
+            "server_id",
+            "tool_schema_digest",
+            unique=True,
+        ),
+    )
+
+
+class MappingReview(UUIDMixin, Base):
+    """Records an admin review when a schema-digest drift is detected.
+
+    Table: mapping_reviews
+
+    When a server is re-inspected and a tool's schema has changed, the affected
+    CapabilityMapping is marked 'stale'. An admin reviews the change, compares
+    old/new digests, and either approves ('active') or rejects ('rejected') the
+    mapping. Each decision creates a MappingReview row for the audit trail.
+
+    State machine: active ↔ stale → pending_review → active / rejected
+
+    This model stores the before-and-after digest values so the audit trail
+    can show exactly what schema identity changed and what the admin decided.
+
+    Columns:
+        mapping_id (FK)    – The capability mapping being reviewed.
+        previous_digest    – SHA-256 digest before the schema change.
+        new_digest         – SHA-256 digest after the schema change (same as
+                             previous if rejected).
+        decision           – 'approved' | 'rejected'.
+        reason             – Optional free-text justification from the admin.
+        reviewed_by (FK)   – Admin user who made the decision (nullable for
+                             system-initiated reviews).
+        created_at         – When the review was submitted.
+    """
+
+    __tablename__ = "mapping_reviews"
+
+    mapping_id: Mapped[uuid.UUID] = mapped_column(
+        SAUUID(as_uuid=True),
+        ForeignKey("capability_mappings.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    previous_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    new_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    decision: Mapped[str] = mapped_column(String(20), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
+        SAUUID(as_uuid=True), ForeignKey("admin_users.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    mapping = relationship("CapabilityMapping", back_populates="reviews")
+
+    __table_args__ = (
+        Index("idx_mapping_reviews_mapping", "mapping_id"),
+        Index("idx_mapping_reviews_decision", "decision"),
     )
 
 

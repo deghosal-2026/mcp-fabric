@@ -78,7 +78,7 @@ Returns the status of all core dependencies (database, Redis, OPA).
 ```json
 {
   "status": "healthy",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "checks": {
     "database": "connected",
     "redis": "connected",

@@ -92,6 +92,8 @@ class AuditService:
         actor_type: str | None = None,
         actor_id: str | None = None,
         resource_violation: bool | None = None,
+        min_pack_resource_count: int | None = None,
+        max_catch_rate: float | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[AuditEvent]:
@@ -105,7 +107,17 @@ class AuditService:
         contain a resource_check with resource_allowed=false. In PostgreSQL
         this uses JSONB containment; in SQLite it uses application-level
         filtering.
+
+        The min_pack_resource_count and max_catch_rate filters (v0.3.0)
+        filter events whose details contain pack_metrics with the matching
+        dimension metrics. Only events with pack_metrics are considered.
         """
+        needs_post_filter = (
+            resource_violation is not None
+            or min_pack_resource_count is not None
+            or max_catch_rate is not None
+        )
+
         stmt = select(AuditEvent).order_by(AuditEvent.created_at.desc())
         if event_type:
             stmt = stmt.where(AuditEvent.event_type == event_type)
@@ -114,16 +126,31 @@ class AuditService:
         if actor_id:
             stmt = stmt.where(AuditEvent.actor_id == actor_id)
 
-        if resource_violation is not None:
+        if needs_post_filter:
             result = await self.db.execute(stmt)
-            events = list(result.scalars().all())
-            events = [
-                e
-                for e in events
-                if (e.details or {}).get("resource_check", {}).get("resource_allowed")
-                is not resource_violation
-            ]
-            return events[offset:offset + limit] if (offset or limit) else events
+            events: list[AuditEvent] = list(result.scalars().all())
+            if resource_violation is not None:
+                events = [
+                    e
+                    for e in events
+                    if (e.details or {}).get("resource_check", {}).get("resource_allowed")
+                    is not resource_violation
+                ]
+            if min_pack_resource_count is not None:
+                events = [
+                    e
+                    for e in events
+                    if _any_pack_metric_ge(
+                        e.details, "pack_resource_count", min_pack_resource_count
+                    )
+                ]
+            if max_catch_rate is not None:
+                events = [
+                    e
+                    for e in events
+                    if _any_pack_metric_le(e.details, "implied_catch_rate", max_catch_rate)
+                ]
+            return events[offset : offset + limit] if (offset or limit) else events
         else:
             result = await self.db.execute(stmt.offset(offset).limit(limit))
             return list(result.scalars().all())
@@ -148,3 +175,23 @@ class AuditService:
         # SQLAlchemy's CursorResult.rowcount is Optional[int]; the
         # # type: ignore is safe because we know a DELETE always returns rowcount.
         return result.rowcount  # type: ignore[no-any-return, attr-defined]
+
+
+def _any_pack_metric_ge(details: dict[str, Any] | None, key: str, threshold: int) -> bool:
+    pack_metrics = (details or {}).get("pack_metrics")
+    if not isinstance(pack_metrics, dict):
+        return False
+    for dim_metrics in pack_metrics.values():
+        if isinstance(dim_metrics, dict) and dim_metrics.get(key, 0) >= threshold:
+            return True
+    return False
+
+
+def _any_pack_metric_le(details: dict[str, Any] | None, key: str, threshold: float) -> bool:
+    pack_metrics = (details or {}).get("pack_metrics")
+    if not isinstance(pack_metrics, dict):
+        return False
+    for dim_metrics in pack_metrics.values():
+        if isinstance(dim_metrics, dict) and dim_metrics.get(key, 1.0) <= threshold:
+            return True
+    return False

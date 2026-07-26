@@ -194,6 +194,9 @@ test.beforeEach(async ({ page }) => {
     if (path.match(/^\/v1\/packs\/.+\/classes$/)) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({}) })
     }
+    if (path.match(/\/v1\/packs\/.+\/security-metrics$/)) {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 'pkg-1', name: 'Developer Tools', resource_count: 16, total_resources_in_domain: 512, implied_catch_rate: 0.97, warning_tier: 'strong' }) })
+    }
     if (path === '/v1/alerts') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_ALERTS) })
     }
@@ -209,13 +212,31 @@ test.beforeEach(async ({ page }) => {
     if (path.match(/^\/v1\/admin\/users\/.+\/deactivate$/)) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_ADMIN_USERS[0]) })
     }
+    if (path === '/v1/admin/trust-posture/pack-breadth') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
+        { agent_class_id: 'cls-1', agent_class_name: 'Developer Agents', pack_count: 2, resources_covered: 16, total_resources_in_domain: 512, catch_rate: 0.9706 },
+        { agent_class_id: 'cls-2', agent_class_name: 'Ops Agents', pack_count: 1, resources_covered: 500, total_resources_in_domain: 512, catch_rate: 0.02 },
+      ]) })
+    }
+    // Mock: return stale tool schema mappings that need admin review
+    // (capability-to-server bindings where the tool schema digest has changed)
+    if (path === '/v1/admin/mappings/stale') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
+        { id: 'map-stale-1', capability_id: 'cap-1', server_id: 'srv-3', tool_name: 'search_kb', tool_schema_digest: 'a1b2c3d4e5f6', status: 'stale' },
+        { id: 'map-stale-2', capability_id: 'cap-2', server_id: 'srv-4', tool_name: 'deploy_app', tool_schema_digest: 'f6e5d4c3b2a1', status: 'stale' },
+      ]) })
+    }
+    // Mock: submit a review decision (approve/reject) for a stale mapping
+    if (path.match(/^\/v1\/admin\/mappings\/.+\/review$/)) {
+      return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id: 'rev-1', mapping_id: 'map-stale-1', decision: 'approved', reason: null, reviewed_by: null, created_at: '2026-07-25T00:00:00Z', previous_digest: 'old', new_digest: 'new' }) })
+    }
 
     route.continue()
   })
 })
 
 // ───────────────────────────────────────────────────────
-// 1. SIDEBAR — all 11 navigation links
+// 1. SIDEBAR — all 12 navigation links
 // ───────────────────────────────────────────────────────
 test.describe('Sidebar navigation links', () => {
   test.setTimeout(180_000)
@@ -232,6 +253,8 @@ test.describe('Sidebar navigation links', () => {
     { label: 'Alerts', expectedUrl: '/alerts' },
     { label: 'Admin Users', expectedUrl: '/admin/users' },
     { label: 'Trust Posture', expectedUrl: '/trust' },
+    // Schema Reviews: navigate to the stale-mapping-review page (12th sidebar link)
+    { label: 'Reviews', expectedUrl: '/reviews' },
   ]
 
   for (const link of sidebarLinks) {
@@ -789,6 +812,17 @@ test.describe('Packs — all buttons and modals', () => {
     await page.locator('.fixed.inset-0.z-50').last().getByRole('button', { name: /cancel/i }).click()
     await page.waitForTimeout(1000)
   })
+
+  test('Pack Resource Bindings modal shows PackBreadthWarning banner', async ({ page }) => {
+    await page.goto('/packs')
+    await page.waitForTimeout(1000)
+
+    await page.getByRole('button', { name: /bindings/i }).first().click()
+    await page.waitForTimeout(2000)
+
+    await expect(page.locator('text=Strong coverage — catch rate ≥ 97%')).toBeVisible()
+    await expect(page.locator('text=Pack granularity guide')).toBeVisible()
+  })
 })
 
 // ───────────────────────────────────────────────────────
@@ -918,10 +952,47 @@ test.describe('Trust Posture — dropdowns and per-server trust', () => {
     await page.waitForTimeout(1000)
     await page.screenshot({ path: path.join(SHOTS, 'btn-trust-posture-cls2.png'), fullPage: true })
   })
+
+  test('Identity-Binding Coverage card shows pack breadth table', async ({ page }) => {
+    await page.goto('/trust')
+    await page.waitForTimeout(2000)
+
+    await expect(page.getByText('Identity-Binding Coverage')).toBeVisible()
+    await expect(page.getByText('Developer Agents')).toBeVisible()
+    await expect(page.getByText('Ops Agents')).toBeVisible()
+    await expect(page.getByText('97.1%')).toBeVisible()
+    await expect(page.getByText('2.0%')).toBeVisible()
+  })
 })
 
 // ───────────────────────────────────────────────────────
-// 15. ERROR BOUNDARY — Try again and Go to Dashboard
+// 15. SCHEMA REVIEWS — stale list, approve, reject
+// Tests the Reviews page which lists stale capability-to-server mappings
+// whose tool schemas have changed. Admins can approve (accept the new schema)
+// or reject (flag for investigation) each stale mapping.
+// ───────────────────────────────────────────────────────
+test.describe('Reviews — stale mappings and approve/reject', () => {
+  test.setTimeout(120_000)
+
+  test('Reviews page renders stale mappings with Approve and Reject buttons', async ({ page }) => {
+    await page.goto('/reviews')
+    await page.waitForTimeout(1000)
+    await page.screenshot({ path: path.join(SHOTS, 'btn-reviews-list.png'), fullPage: true })
+
+    await expect(page.getByText('knowledge:search').first()).toBeVisible()
+    await expect(page.getByText('search_kb').first()).toBeVisible()
+
+    await page.getByRole('button', { name: /approve/i }).first().click()
+    await page.waitForTimeout(1000)
+
+    await expect(page.getByRole('button', { name: /reject/i }).first()).toBeVisible()
+    await page.getByRole('button', { name: /reject/i }).first().click()
+    await page.waitForTimeout(1000)
+  })
+})
+
+// ───────────────────────────────────────────────────────
+// 16. ERROR BOUNDARY — Try again and Go to Dashboard
 // ───────────────────────────────────────────────────────
 test.describe('ErrorBoundary — Try again and Go to Dashboard', () => {
   test.setTimeout(60_000)
@@ -1029,6 +1100,13 @@ test.describe('Full deep walkthrough — all pages and interactions', () => {
     await page.goto('/trust')
     await page.waitForTimeout(W)
     await page.screenshot({ path: path.join(SHOTS, 'walk-11-trust-posture.png'), fullPage: true })
+
+    // Schema Reviews: navigate to /reviews, click approve then reject on stale mappings
+    await page.goto('/reviews')
+    await page.waitForTimeout(W)
+    await page.getByRole('button', { name: /approve/i }).first().click()
+    await page.waitForTimeout(W)
+    await page.screenshot({ path: path.join(SHOTS, 'walk-12-reviews.png'), fullPage: true })
 
     await page.getByRole('button', { name: /logout/i }).click()
     await page.waitForTimeout(W)

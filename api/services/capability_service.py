@@ -13,8 +13,18 @@ Architectural notes:
   - Deprecation is a soft-delete: status='deprecated' with a grace period
     before the capability can be removed. Callers can check the status
     to warn about deprecated capabilities.
+  - Schema-digest: every CapabilityMapping stores a SHA-256 digest of
+    (tool_name + input_schema + output_schema) at creation time. When a
+    server is re-inspected, affected mappings are marked stale if the
+    digest no longer matches. Routing only uses active, digest-verified
+    mappings.
 """
 
+from __future__ import annotations
+
+import builtins
+import hashlib
+import json
 from uuid import UUID
 
 from sqlalchemy import select
@@ -22,12 +32,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from api.models.capability import Capability, CapabilityAlias
-from api.models.server import CapabilityMapping
+from api.models.server import CapabilityMapping, MappingReview, ServerTool
 from api.schemas.capability import (
     CapabilityCreate,
     CapabilityMappingCreate,
     CapabilityMappingResponse,
     CapabilityResponse,
+    MappingReviewCreate,
+    MappingReviewResponse,
 )
 
 
@@ -83,7 +95,7 @@ class CapabilityService:
         domain: str | None = None,
         status: str | None = None,
         search: str | None = None,
-    ) -> list[CapabilityResponse]:
+    ) -> builtins.list[CapabilityResponse]:
         """List capabilities with optional filters.
 
         WHY: Admin UI — browse available capabilities.
@@ -176,6 +188,31 @@ class CapabilityService:
         await self.db.refresh(cap)
         return await self._to_response(cap)
 
+    @staticmethod
+    def _compute_tool_digest(
+        tool_name: str,
+        input_schema: dict[str, object],
+        output_schema: dict[str, object] | None,
+    ) -> str:
+        """Compute SHA-256 digest from a tool's schema identity.
+
+        WHY: The digest captures the tool's semantic identity — name plus
+        input/output schemas. When the server's tool schema changes, the
+        digest changes, allowing routing to detect drift and skip stale
+        mappings.
+
+        The digest is a hex-encoded SHA-256 hash of deterministic JSON:
+          hash(tool_name + canonical_json(input_schema) + canonical_json(output_schema))
+        """
+        # sort_keys + separators gives deterministic JSON so identical schemas
+        # always produce the same digest regardless of key ordering.
+        raw = (
+            tool_name
+            + json.dumps(input_schema, sort_keys=True, separators=(",", ":"))
+            + json.dumps(output_schema, sort_keys=True, separators=(",", ":"))
+        )
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
     async def create_mapping(
         self, capability_id: UUID, params: CapabilityMappingCreate
     ) -> CapabilityMappingResponse:
@@ -185,9 +222,27 @@ class CapabilityService:
         tool on a registered MCP server. Multiple servers can map to the same
         capability for redundancy and load distribution.
 
-        SIDE EFFECTS: Persists CapabilityMapping row.
-        RETURN: The created mapping with server-generated id.
+        SIDE EFFECTS: Persists CapabilityMapping row with computed schema digest
+        and active status.
+        RETURN: The created mapping with server-generated id, digest, and status.
         """
+        tool_stmt = select(ServerTool).where(
+            ServerTool.server_id == params.server_id,
+            ServerTool.tool_name == params.tool_name,
+        )
+        tool_result = await self.db.execute(tool_stmt)
+        tool = tool_result.scalar_one_or_none()
+        if tool is None:
+            from api.services.exceptions import ToolNotFoundError
+
+            raise ToolNotFoundError(params.tool_name, str(params.server_id))
+
+        # Compute digest from the current tool schema so the mapping
+        # captures the exact tool identity at creation time.
+        digest = self._compute_tool_digest(tool.tool_name, tool.input_schema, tool.output_schema)
+
+        # Store both the digest (for drift detection) and 'active' status
+        # so routing includes this mapping immediately.
         mapping = CapabilityMapping(
             capability_id=capability_id,
             server_id=params.server_id,
@@ -195,6 +250,8 @@ class CapabilityService:
             input_mapping=params.input_mapping,
             output_mapping=params.output_mapping,
             is_primary=params.is_primary,
+            tool_schema_digest=digest,
+            status="active",
         )
         self.db.add(mapping)
         await self.db.commit()
@@ -208,6 +265,115 @@ class CapabilityService:
             output_mapping=mapping.output_mapping,
             is_primary=mapping.is_primary or True,
             routing_weight=mapping.routing_weight or 1.0,
+            tool_schema_digest=mapping.tool_schema_digest,
+            status=mapping.status,
+        )
+
+    async def get_stale_mappings(self) -> builtins.list[CapabilityMappingResponse]:
+        """List all mappings with status='stale' that need admin review.
+
+        WHY: Admin dashboard shows pending reviews. Each stale mapping
+        has a tool whose schema changed since the mapping was created,
+        so the admin must approve or reject the change.
+        """
+        # Query only mappings with status='stale' (excludes active and
+        # rejected mappings) ordered newest-first for the review queue.
+        stmt = (
+            select(CapabilityMapping)
+            .options(selectinload(CapabilityMapping.server))
+            .where(CapabilityMapping.status == "stale")
+            .order_by(CapabilityMapping.created_at.desc())
+        )
+        result = await self.db.execute(stmt)
+        mappings = result.scalars().all()
+        return [
+            CapabilityMappingResponse(
+                id=m.id,
+                capability_id=m.capability_id,
+                server_id=m.server_id,
+                tool_name=m.tool_name,
+                input_mapping=m.input_mapping,
+                output_mapping=m.output_mapping,
+                is_primary=m.is_primary or True,
+                routing_weight=m.routing_weight or 1.0,
+                tool_schema_digest=m.tool_schema_digest,
+                status=m.status,
+            )
+            for m in mappings
+        ]
+
+    async def review_mapping(
+        self,
+        mapping_id: UUID,
+        params: MappingReviewCreate,
+        reviewed_by: UUID | None = None,
+    ) -> MappingReviewResponse:
+        """Approve or reject a stale schema-digest mapping.
+
+        WHY: Admin reviews a mapping whose schema digest has drifted.
+        On approval: mapping is re-activated with an updated digest.
+        On rejection: mapping status becomes 'rejected' and is skipped
+        by routing.
+
+        SIDE EFFECTS:
+          - Creates a MappingReview row for audit trail.
+          - Updates CapabilityMapping.status and (if approved) digest.
+        """
+        result = await self.db.execute(
+            select(CapabilityMapping).where(CapabilityMapping.id == mapping_id)
+        )
+        mapping = result.scalar_one_or_none()
+        if mapping is None:
+            from api.services.exceptions import ServerNotFoundError
+
+            raise ServerNotFoundError(str(mapping_id))
+
+        # Snapshot the old digest before any updates for audit comparison.
+        previous_digest = mapping.tool_schema_digest
+
+        if params.decision == "approved":
+            # Recompute digest from current ServerTool schema to capture
+            # the new tool identity that the admin is accepting.
+            tool_stmt = select(ServerTool).where(
+                ServerTool.server_id == mapping.server_id,
+                ServerTool.tool_name == mapping.tool_name,
+            )
+            tool_result = await self.db.execute(tool_stmt)
+            tool = tool_result.scalar_one_or_none()
+            if tool is not None:
+                mapping.tool_schema_digest = self._compute_tool_digest(
+                    tool.tool_name, tool.input_schema, tool.output_schema
+                )
+            # Reactivate the mapping so routing picks it up again.
+            mapping.status = "active"
+        elif params.decision == "rejected":
+            # Keep the mapping but mark it rejected so routing skips it.
+            mapping.status = "rejected"
+        else:
+            raise ValueError(f"Invalid decision: {params.decision}")
+
+        # Create audit trail record so every decision is traceable.
+        review = MappingReview(
+            mapping_id=mapping.id,
+            previous_digest=previous_digest,
+            new_digest=mapping.tool_schema_digest,
+            decision=params.decision,
+            reason=params.reason,
+            reviewed_by=reviewed_by,
+        )
+        self.db.add(review)
+        await self.db.commit()
+        await self.db.refresh(review)
+
+        return MappingReviewResponse(
+            id=review.id,
+            mapping_id=review.mapping_id,
+            previous_digest=review.previous_digest,
+            new_digest=review.new_digest,
+            decision=review.decision,
+            reason=review.reason,
+            reviewed_by=review.reviewed_by,
+            created_at=review.created_at,
         )
 
     async def _to_response(self, cap: Capability) -> CapabilityResponse:

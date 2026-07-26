@@ -21,7 +21,7 @@ test('capture sidebar with all options visible', async ({ page }) => {
 
   const sidebar = page.getByRole('complementary')
 
-  // Verify all 11 nav links are present
+  // Verify all 12 nav links are present
   await expect(sidebar.getByRole('link', { name: /Dashboard/ })).toBeVisible()
   await expect(sidebar.getByRole('link', { name: /Servers/ })).toBeVisible()
   await expect(sidebar.getByRole('link', { name: /Capabilities/ })).toBeVisible()
@@ -33,6 +33,8 @@ test('capture sidebar with all options visible', async ({ page }) => {
   await expect(sidebar.getByRole('link', { name: /Alerts/ })).toBeVisible()
   await expect(sidebar.getByRole('link', { name: /Admin Users/ })).toBeVisible()
   await expect(sidebar.getByRole('link', { name: /Trust Posture/ })).toBeVisible()
+  // Schema Reviews link — verifying the 12th sidebar nav item is present
+  await expect(sidebar.getByRole('link', { name: /Reviews/ })).toBeVisible()
 
   // Screenshot just the sidebar area
   await sidebar.screenshot({ path: path.join(D, 'docker-sidebar-full.png') })

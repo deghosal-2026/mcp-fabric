@@ -60,3 +60,5 @@ class AuditExportRequest(BaseModel):
     date_from: str | None = None
     date_to: str | None = None
     format: str = "json"
+    min_pack_resource_count: int | None = None
+    max_catch_rate: float | None = None

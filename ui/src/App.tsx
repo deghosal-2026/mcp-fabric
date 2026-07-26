@@ -16,6 +16,7 @@ import { PacksPage } from './pages/Packs'
 import { AlertsPage } from './pages/Alerts'
 import { AdminUsersPage } from './pages/AdminUsers'
 import { TrustPosturePage } from './pages/TrustPosture'
+import { ReviewsPage } from './pages/Reviews'  // Schema-digest review page for approving/rejecting stale mappings
 
 export default function App() {
   return (
@@ -37,6 +38,7 @@ export default function App() {
                 <Route path="/alerts" element={<AlertsPage />} />
                 <Route path="/admin/users" element={<AdminUsersPage />} />
                 <Route path="/trust" element={<TrustPosturePage />} />
+                <Route path="/reviews" element={<ReviewsPage />} /> {/* Schema-digest review workflow */}
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Route>
             </Routes>

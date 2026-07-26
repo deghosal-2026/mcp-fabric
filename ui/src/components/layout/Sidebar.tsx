@@ -12,6 +12,7 @@ const navItems = [
   { to: '/packs', label: 'Capability Packs', icon: '📦', roles: ['admin', 'editor'] },
   { to: '/alerts', label: 'Alerts', icon: '🔔', roles: ['admin', 'editor', 'viewer'] },
   { to: '/admin/users', label: 'Admin Users', icon: '👥', roles: ['admin'] },
+  { to: '/reviews', label: 'Reviews', icon: '🧪', roles: ['admin', 'editor'] },  // Schema-digest review queue for stale mappings
   { to: '/trust', label: 'Trust Posture', icon: '🛡️', roles: ['admin', 'editor', 'viewer'] },
 ]
 

@@ -1007,6 +1007,8 @@ Monitoring Fabric itself — request metrics, traces, dashboards, and alerts for
 
 Constrains capability access to specific resources (environments, tenants, services) defined by the agent identity, not the request body.
 
+**Known residual:** Identity-binding scope is bounded by pack breadth. A pack covering all resources in a domain provides zero protection (intra-pack confused-deputy). See the [Pack Granularity Guide](docs/guides/pack-granularity.md) for mitigation guidance.
+
 | Feature | Description |
 |---|---|
 | Resource dimensions | Per-capability dimension definitions (`env`, `tenant`, `service`, or custom). Declared by platform engineers at capability setup time. |

@@ -208,6 +208,9 @@ test.beforeEach(async ({ page }) => {
     if (path.match(/^\/v1\/packs\/.+\/classes$/)) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({}) })
     }
+    if (path.match(/\/v1\/packs\/.+\/security-metrics$/)) {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 'pck-1', name: 'Developer Tools', resource_count: 16, total_resources_in_domain: 512, implied_catch_rate: 0.97, warning_tier: 'strong' }) })
+    }
     if (path === '/v1/alerts') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_ALERTS) })
     }
@@ -245,6 +248,24 @@ test.beforeEach(async ({ page }) => {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_RESOURCE_BINDINGS) })
       }
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_RESOURCE_BINDINGS) })
+    }
+    if (path === '/v1/admin/trust-posture/pack-breadth') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
+        { agent_class_id: 'cls-1', agent_class_name: 'Developer Agents', pack_count: 2, resources_covered: 16, total_resources_in_domain: 512, catch_rate: 0.9706 },
+        { agent_class_id: 'cls-2', agent_class_name: 'Ops Agents', pack_count: 1, resources_covered: 500, total_resources_in_domain: 512, catch_rate: 0.02 },
+      ]) })
+    }
+
+    // Mock: return a stale tool-schema mapping that needs admin review
+    if (path === '/v1/admin/mappings/stale') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
+        { id: 'map-stale-1', capability_id: 'cap-1', server_id: 'srv-3', tool_name: 'search_kb', tool_schema_digest: 'a1b2c3d4e5f6', status: 'stale' },
+      ]) })
+    }
+
+    // Mock: submit a review decision (approve/reject) for a stale mapping
+    if (path.match(/^\/v1\/admin\/mappings\/.+\/review$/)) {
+      return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id: 'rev-1', mapping_id: 'map-stale-1', decision: 'approved', reason: null, reviewed_by: null, created_at: '2026-07-25T00:00:00Z', previous_digest: 'old', new_digest: 'new' }) })
     }
 
     route.continue()
@@ -386,6 +407,18 @@ test.describe('Admin UI — Page Screenshots', () => {
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, '18-trust-posture-class-selected.png'), fullPage: true })
   })
 
+  test('Trust posture — Identity-Binding Coverage card', async ({ page }) => {
+    await page.goto('/trust')
+    await page.waitForLoadState('networkidle')
+    await page.waitForTimeout(500)
+    await expect(page.getByText('Identity-Binding Coverage')).toBeVisible()
+    await expect(page.getByText('Developer Agents')).toBeVisible()
+    await expect(page.getByText('Ops Agents')).toBeVisible()
+    await expect(page.getByText('97.1%')).toBeVisible()
+    await expect(page.getByText('2.0%')).toBeVisible()
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '22-trust-breadth.png'), fullPage: true })
+  })
+
   test('Capabilities — Dimensions modal', async ({ page }) => {
     await page.goto('/capabilities')
     await page.waitForLoadState('networkidle')
@@ -398,7 +431,9 @@ test.describe('Admin UI — Page Screenshots', () => {
     await page.goto('/packs')
     await page.waitForLoadState('networkidle')
     await page.getByRole('button', { name: /bindings/i }).first().click()
-    await page.waitForTimeout(500)
+    await page.waitForTimeout(2000)
+    await expect(page.getByText('Strong coverage — catch rate ≥ 97%')).toBeVisible()
+    await expect(page.getByText('Pack granularity guide')).toBeVisible()
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, '20-packs-bindings.png'), fullPage: true })
   })
 
@@ -428,6 +463,8 @@ test.describe('Admin UI — Interaction Flows', () => {
       { label: 'Alerts', url: '/alerts' },
       { label: 'Admin Users', url: '/admin/users' },
       { label: 'Trust Posture', url: '/trust' },
+      // Schema Reviews: verify the /reviews page renders without errors (stale mapping review)
+      { label: 'Reviews', url: '/reviews' },
     ]
 
     for (const p of pages) {

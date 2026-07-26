@@ -17,8 +17,14 @@ Architectural notes:
   - Routing decisions are NOT cached — every request goes through the
     full resolution + selection flow. If caching is needed, it should
     be added at the capability resolution level.
+  - Schema-digest safety: routing only selects mappings with status='active'
+    whose stored tool_schema_digest matches the current ServerTool schema.
+    This prevents routing to servers whose tool schemas have drifted since
+    the mapping was created or last reviewed.
 """
 
+import hashlib
+import json
 from uuid import UUID
 
 from sqlalchemy import select
@@ -34,10 +40,11 @@ from api.models.resource import (
     PackResourceBinding,
     ResourceDimension,
 )
-from api.models.server import CapabilityMapping, RoutingRule
+from api.models.server import CapabilityMapping, RoutingRule, ServerTool
 from api.schemas.routing import CapabilityRequest, RouteResult, RoutingRuleCreate
 from api.services.audit_service import AuditService
 from api.services.policy_service import PolicyService
+from api.services.resource_service import ResourceService
 
 
 class CapabilityNotFoundError(Exception):
@@ -97,10 +104,32 @@ class RoutingService:
             raise CapabilityNotFoundError(f"Capability '{name}' not found")
         return cap
 
+    @staticmethod
+    def _compute_expected_digest(tool: ServerTool) -> str:
+        """Compute SHA-256 digest for a ServerTool (same algorithm as CapabilityService).
+
+        WHY: Routing needs to verify that a mapping's stored digest matches the
+        current tool schema. This method mirrors CapabilityService._compute_tool_digest
+        to avoid cross-service coupling.
+        """
+        # Deterministic JSON serialization (sort_keys + compact separators)
+        # ensures the digest is reproducible across runs and services.
+        raw = (
+            tool.tool_name
+            + json.dumps(tool.input_schema, sort_keys=True, separators=(",", ":"))
+            + json.dumps(tool.output_schema, sort_keys=True, separators=(",", ":"))
+        )
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
     async def select_server(self, capability_id: UUID) -> CapabilityMapping:
         """Select the highest-weighted server mapping for a capability.
 
         WHY: Given a resolved capability, find which server should handle it.
+        Only considers mappings with status='active' whose tool_schema_digest
+        matches the current ServerTool schema. This two-step filter prevents
+        routing to servers whose tool schemas have drifted since the mapping
+        was created or last reviewed.
+
         Uses routing_weight (descending) to pick the preferred server.
         Higher weight = preferred (useful for canary deployments where
         the canary server has a higher weight).
@@ -108,19 +137,44 @@ class RoutingService:
         Uses joinedload to eagerly load the server relationship, avoiding
         a separate query when reading mapping.server.endpoint in execute().
 
-        RAISES: NoServerFoundError if no CapabilityMapping exists for this capability.
+        RAISES: NoServerFoundError if no valid CapabilityMapping exists for
+        this capability (no active mappings, or all active mappings have
+        stale digests).
         """
+        # Only consider mappings with status='active' — stale and rejected
+        # mappings are excluded to prevent routing to drifted tool schemas.
         stmt = (
             select(CapabilityMapping)
             .options(joinedload(CapabilityMapping.server))
-            .where(CapabilityMapping.capability_id == capability_id)
+            .where(
+                CapabilityMapping.capability_id == capability_id,
+                CapabilityMapping.status == "active",
+            )
             .order_by(CapabilityMapping.routing_weight.desc())
         )
         result = await self.db.execute(stmt)
-        mapping = result.scalars().first()
-        if mapping is None:
-            raise NoServerFoundError(f"No server mapped for capability {capability_id}")
-        return mapping
+        candidates: list[CapabilityMapping] = list(result.scalars().all())
+        if not candidates:
+            raise NoServerFoundError(f"No active mapping for capability {capability_id}")
+
+        # Verify each candidate's stored digest against the current tool schema.
+        # If the tool schema has changed since the mapping was created/reviewed,
+        # the digests won't match and we skip to the next candidate.
+        for mapping in candidates:
+            tool_stmt = select(ServerTool).where(
+                ServerTool.server_id == mapping.server_id,
+                ServerTool.tool_name == mapping.tool_name,
+            )
+            tool_result = await self.db.execute(tool_stmt)
+            tool = tool_result.scalar_one_or_none()
+            if tool is None:
+                continue
+            expected = self._compute_expected_digest(tool)
+            if mapping.tool_schema_digest == expected:
+                return mapping
+
+        # No candidate passed the digest check — tool schemas drifted for all.
+        raise NoServerFoundError(f"No digest-validated mapping for capability {capability_id}")
 
     async def resolve_resources(
         self, capability_id: UUID, params: dict, explicit_resources: dict[str, str] | None
@@ -134,9 +188,11 @@ class RoutingService:
 
         RAISES: ValueError if a declared dimension has no value.
         """
-        stmt = select(ResourceDimension).options(
-            selectinload(ResourceDimension.value_maps)
-        ).where(ResourceDimension.capability_id == capability_id)
+        stmt = (
+            select(ResourceDimension)
+            .options(selectinload(ResourceDimension.value_maps))
+            .where(ResourceDimension.capability_id == capability_id)
+        )
         result = await self.db.execute(stmt)
         dims: list[ResourceDimension] = list(result.scalars().all())
         if not dims:
@@ -152,7 +208,7 @@ class RoutingService:
                 elif m.source == "param" and m.param_path:
                     resolved_path = m.param_path
                     if resolved_path.startswith("params."):
-                        resolved_path = resolved_path[len("params."):]
+                        resolved_path = resolved_path[len("params.") :]
                     parts = resolved_path.split(".")
                     val: object = params
                     for part in parts:
@@ -164,18 +220,17 @@ class RoutingService:
                     if val is not None:
                         value_map[d.dimension_key] = str(val)
             if (
-                    d.dimension_key not in value_map
-                    and explicit_resources
-                    and d.dimension_key in explicit_resources
-                ):
+                d.dimension_key not in value_map
+                and explicit_resources
+                and d.dimension_key in explicit_resources
+            ):
                 value_map[d.dimension_key] = explicit_resources[d.dimension_key]
 
         # Validate all declared dimensions have values
         for d in dims:
             if d.dimension_key not in value_map:
                 raise ValueError(
-                    f"Missing value for resource dimension '{d.dimension_key}'"
-                    f" on capability"
+                    f"Missing value for resource dimension '{d.dimension_key}' on capability"
                 )
 
         return value_map
@@ -200,9 +255,7 @@ class RoutingService:
             identity_rows = list(result.scalars().all())
 
         if pack_ids:
-            stmt = select(PackResourceBinding).where(
-                PackResourceBinding.pack_id.in_(pack_ids)
-            )
+            stmt = select(PackResourceBinding).where(PackResourceBinding.pack_id.in_(pack_ids))
             result = await self.db.execute(stmt)
             pack_rows = list(result.scalars().all())
 
@@ -227,6 +280,12 @@ class RoutingService:
                 merged[dim] = sorted(pack_vals)
 
         return merged
+
+    @staticmethod
+    def compute_catch_rate(pack_resource_count: int, total_resources_in_domain: int) -> float:
+        if total_resources_in_domain <= 1:
+            return 1.0
+        return max(0.0, min(1.0, 1.0 - (pack_resource_count - 1) / (total_resources_in_domain - 1)))
 
     async def execute(
         self,
@@ -261,9 +320,7 @@ class RoutingService:
         cap = await self.resolve_capability(request.capability)
         mapping = await self.select_server(cap.id)
 
-        resources = await self.resolve_resources(
-            cap.id, request.params, request.resources
-        )
+        resources = await self.resolve_resources(cap.id, request.params, request.resources)
         resource_check: dict[str, object] = {}
         if resources and identity_id:
             identity_bindings = await self.merge_bindings(
@@ -289,12 +346,12 @@ class RoutingService:
                     team_namespace="",
                     identity_resources=identity_bindings,
                     request_resources=resources,
+                    mapping_status=mapping.status,
+                    tool_name=mapping.tool_name,
                 )
                 if not decision.resource_allowed:
                     violations = decision.resource_violations
-                    raise ResourceDeniedError(
-                        f"Resource validation failed: {violations}"
-                    )
+                    raise ResourceDeniedError(f"Resource validation failed: {violations}")
                 resource_check = {
                     "identity_resources": identity_bindings,
                     "request_resources": resources,
@@ -319,6 +376,24 @@ class RoutingService:
             server_id=str(mapping.server_id),
         ).observe(latency_s)
 
+        pack_metrics: dict[str, object] = {}
+        if resource_check and pack_ids:
+            from contextlib import suppress
+
+            rsvc = ResourceService(db=self.db)
+            with suppress(Exception):
+                pack_counts = await rsvc.get_pack_resource_counts(pack_ids)
+                domain_counts = await rsvc.get_domain_resource_counts()
+                for dim in pack_counts:
+                    p = pack_counts[dim]
+                    r = domain_counts.get(dim, 0)
+                    c = self.compute_catch_rate(p, r)
+                    pack_metrics[dim] = {
+                        "pack_resource_count": p,
+                        "total_resources_in_domain": r,
+                        "implied_catch_rate": c,
+                    }
+
         if resource_check:
             from contextlib import suppress
 
@@ -326,18 +401,21 @@ class RoutingService:
 
             audit = AuditService(db=self.db)
             with suppress(Exception):
+                details: dict[str, object] = {
+                    "capability": request.capability,
+                    "server": mapping.server.name,
+                    "latency_ms": latency_ms,
+                    "resource_check": resource_check,
+                }
+                if pack_metrics:
+                    details["pack_metrics"] = pack_metrics
                 await audit.log_event(
                     event_type="capability_request",
                     actor_type="agent",
                     actor_id=request.capability,
                     target_type="server",
                     target_id=str(mapping.server_id),
-                    details={
-                        "capability": request.capability,
-                        "server": mapping.server.name,
-                        "latency_ms": latency_ms,
-                        "resource_check": resource_check,
-                    },
+                    details=details,
                 )
                 logger.info("audit:resource_check_logged", resource_check=resource_check)
 

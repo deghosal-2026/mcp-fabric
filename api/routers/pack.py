@@ -39,6 +39,7 @@ from api.schemas.pack import (
     PackAssignmentRequest,
     PackCreate,
     PackResponse,
+    PackSecurityMetricsResponse,
 )
 from api.services.pack_service import PackNotFoundError, PackService
 
@@ -201,3 +202,19 @@ async def remove_pack_from_class(
     svc: PackService = Depends(get_pack_service),
 ) -> None:
     await svc.remove_from_class(pack_id, class_id)
+
+
+# Get pack security metrics — resource count, domain total, catch rate, and
+# warning tier. Used by the UI to display the PackBreadthWarning component.
+@router.get("/{pack_id}/security-metrics")
+async def get_pack_security_metrics(
+    pack_id: UUID,
+    svc: PackService = Depends(get_pack_service),
+) -> PackSecurityMetricsResponse:
+    try:
+        return await svc.get_security_metrics(pack_id)
+    except PackNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "not_found", "message": str(exc)},
+        ) from exc

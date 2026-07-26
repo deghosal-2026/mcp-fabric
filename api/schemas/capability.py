@@ -111,6 +111,13 @@ class CapabilityMappingResponse(BaseModel):
 
     Matches the CapabilityMapping ORM model. Includes routing_weight for
     load-balancing across multiple mappings.
+
+    Fields:
+        tool_schema_digest: SHA-256 digest of (tool_name + input_schema + output_schema)
+            at the time the mapping was created or last reviewed. Routing verifies this
+            against the current ServerTool schema before selecting this mapping.
+        status: 'active' | 'stale' | 'rejected' - controls whether routing considers
+            this mapping. Only 'active' mappings pass the routing filter.
     """
 
     id: UUID
@@ -121,5 +128,52 @@ class CapabilityMappingResponse(BaseModel):
     output_mapping: dict[str, Any] | None = None
     is_primary: bool = True
     routing_weight: float = 1.0
+    tool_schema_digest: str | None = None
+    status: str = "active"
 
     model_config = {"from_attributes": True}
+
+
+class MappingReviewResponse(BaseModel):
+    """Admin review record for a schema-digest drift.
+
+    Returned after an admin reviews (approves or rejects) a stale mapping.
+    Captures the before and after digest values for the audit trail.
+
+    model_config = {"from_attributes": True} for ORM conversion.
+
+    Fields:
+        previous_digest: The mapping's tool_schema_digest before review.
+        new_digest:      The recomputed digest (on approval) or the same
+                         as previous (on rejection).
+        decision:        'approved' | 'rejected'.
+        reason:          Optional justification from the admin.
+        reviewed_by:     Admin user ID who made the decision.
+    """
+
+    id: UUID
+    mapping_id: UUID
+    previous_digest: str | None = None
+    new_digest: str | None = None
+    decision: str
+    reason: str | None = None
+    reviewed_by: UUID | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class MappingReviewCreate(BaseModel):
+    """Request body for reviewing a stale mapping.
+
+    POST /api/v1/admin/mappings/{id}/review
+
+    Fields:
+        decision: 'approved' | 'rejected'.
+            'approved' reactivates the mapping with an updated schema digest.
+            'rejected' keeps the mapping in 'rejected' status (skipped by routing).
+        reason:   Optional justification for the decision. Stored in the audit trail.
+    """
+
+    decision: str
+    reason: str | None = None

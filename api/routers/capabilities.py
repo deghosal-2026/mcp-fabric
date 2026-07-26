@@ -29,9 +29,8 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.dependencies import get_db_session
+from api.dependencies import get_capability_service
 from api.schemas.capability import (
     CapabilityAliasCreate,
     CapabilityCreate,
@@ -41,14 +40,13 @@ from api.schemas.capability import (
 )
 from api.services.capability_service import CapabilityService
 
+# NOTE: get_capability_service from dependencies.py is the shared FastAPI
+# dependency that injects a CapabilityService into route handlers. Using this
+# shared dependency (rather than creating CapabilityService inline) ensures
+# consistent lifecycle management and makes it easy to swap implementations
+# during testing via dependency overrides.
+
 router = APIRouter(prefix="/v1/capabilities", tags=["capabilities"])
-
-
-async def get_capability_service(
-    db: AsyncSession = Depends(get_db_session),
-) -> CapabilityService:
-    """Dependency that provides a CapabilityService instance."""
-    return CapabilityService(db=db)
 
 
 # Create a new capability definition.

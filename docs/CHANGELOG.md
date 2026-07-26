@@ -11,6 +11,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial project setup: README, LICENSE, PRD, spec, architecture docs
 - Repository scaffolding: CONTRIBUTING, SECURITY, CODEOWNERS, issue templates
 
+## [Unreleased]
+
+### Added
+- Initial project setup: README, LICENSE, PRD, spec, architecture docs
+- Repository scaffolding: CONTRIBUTING, SECURITY, CODEOWNERS, issue templates
+
+## [0.3.0] — 2026-07-25
+
+### Added
+
+#### Schema-Digest Mappings — Detect Tool Schema Drift
+- **Problem:** When a registered MCP server's tool schemas changed, existing capability mappings silently pointed to outdated schemas. Routing continued to use stale mappings.
+- **Solution:** Each CapabilityMapping now stores a SHA-256 digest of (tool_name + input_schema + output_schema). On re-inspection, schema changes mark affected mappings as stale. Routing filters to active + digest-matched only.
+
+#### Architecture
+- New DB columns: `tool_schema_digest` (VARCHAR(64)), `status` (VARCHAR(20)) on `capability_mappings`
+- New DB table: `mapping_reviews` with FK, previous/new digests, decision, reason, reviewer
+- Alembic migration with backfill (SHA-256 via join on server_tools)
+- `_compute_tool_digest()` in CapabilityService for deterministic JSON hashing
+- RegistryService `inspect()` marks mappings stale on schema change/removal
+- RoutingService `select_server()` filters by `status='active'` + digest match; `NoServerFoundError` on no match
+- `ToolNotFoundError` for mapping to non-existent tools
+
+#### OPA Policies
+- `deny_stale_mapping` — denies if mapping_status != "active"
+- `untrusted_write` — denies write tools on unreviewed servers
+- `raw_context` — identity function for debug/audit
+- `PolicyService.evaluate()` passes `mapping_status`, `tool_name`; returns new decision fields
+
+#### API
+- `GET /admin/mappings/stale` — list stale mappings
+- `POST /admin/mappings/{id}/review` — approve or reject
+- `GET /admin/capabilities/{id}/ambiguity` — mapping details
+
+#### Admin UI
+- Reviews page with Approve/Reject workflow, name resolution, toasts
+- Sidebar Reviews link, Trust Posture "Pending Reviews" button
+- 7 E2E spec files updated, 75 mock tests passing
+
+#### Testing
+- 5 new backend tests (schema-digest, mapping review)
+- 10 new OPA Rego tests (31 total)
+- Docker screenshots captured (13 total)
+
+### Security
+- Schema-digest routing prevents stale mapping use
+- OPA deny_stale_mapping and untrusted_write as defense-in-depth
+- MappingReview audit trail for every decision
+- ToolNotFoundError prevents phantom mappings
+
 ## [0.2.0] — 2026-07-25
 
 ### Added
@@ -181,5 +231,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SECURITY.md — vulnerability reporting policy
 
 [Unreleased]: https://github.com/deghosal-2026/mcp-fabric/compare/v0.2.0...HEAD
+[0.3.0]: https://github.com/deghosal-2026/mcp-fabric/releases/tag/v0.3.0
 [0.2.0]: https://github.com/deghosal-2026/mcp-fabric/releases/tag/v0.2.0
 [0.1.0]: https://github.com/deghosal-2026/mcp-fabric/releases/tag/v0.1.0
