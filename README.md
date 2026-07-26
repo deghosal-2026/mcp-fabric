@@ -187,3 +187,10 @@ MIT
 ---
 
 See [ROADMAP](ROADMAP.md), [GOVERNANCE](GOVERNANCE.md), and [CONTRIBUTING](CONTRIBUTING.md) for project direction, governance, and how to contribute.
+
+## Resources
+
+- **Issues:** [github.com/deghosal-2026/mcp-fabric/issues](https://github.com/deghosal-2026/mcp-fabric/issues) — bug reports and feature requests
+- **Security:** [SECURITY.md](SECURITY.md) — report vulnerabilities privately
+- **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md) — coding standards and PR process
+- **Changelog:** [CHANGELOG.md](CHANGELOG.md) — release history
