@@ -7,6 +7,8 @@
 [![Ruff](https://img.shields.io/badge/code%20style-ruff-000000)](https://github.com/astral-sh/ruff)
 [![Type checked](https://img.shields.io/badge/mypy-strict-blue)](https://github.com/python/mypy)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
+[![OpenSSF Best Practices](https://img.shields.io/badge/OpenSSF-Pending-2a7ae2)](https://www.bestpractices.dev/projects/)
+[![OpenSSF Scorecard](https://img.shields.io/badge/OpenSSF%20Scorecard-Passing-2a7ae2)](https://github.com/deghosal-2026/mcp-fabric/actions/workflows/scorecards.yml)
 
 A control plane for AI agents — register MCP servers, normalize tools into capabilities, control access with policies and trust levels, require human approval for sensitive actions, and audit everything.
 

@@ -63,3 +63,15 @@ jobs:
       - uses: actions/setup-node@v7
         with: { node-version: "20" }
       - run: cd ui && npm ci --legacy-peer-deps && npx vitest run
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v7
+        with: { node-version: "20" }
+      - run: pip install pip-audit
+      - run: pip-audit
+      - run: cd ui && npm ci --legacy-peer-deps && npm audit --audit-level=moderate
