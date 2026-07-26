@@ -72,6 +72,16 @@ jobs:
         with: { python-version: "3.12" }
       - uses: actions/setup-node@v7
         with: { node-version: "20" }
-      - run: pip install pip-audit
+      - run: pip install pip-audit bandit
       - run: pip-audit
+      - run: bandit -c pyproject.toml -r api/ -ll
       - run: cd ui && npm ci --legacy-peer-deps && npm audit --audit-level=moderate
+
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 0 }
+      - uses: trufflesecurity/trufflehog@v3
+        with:
+          extra_args: --results=verified --no-fail

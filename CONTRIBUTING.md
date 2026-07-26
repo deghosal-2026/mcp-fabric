@@ -78,6 +78,14 @@ cd ui && npm install && npm run dev
 - React: Prettier formatting, functional components, TypeScript
 - Commit messages: conventional commits (`feat:`, `fix:`, `docs:`, `test:`)
 
+## Testing Policy
+
+- **Every new feature must include tests.** Major functionality added to the codebase must be accompanied by automated tests in the test suite.
+- **Coverage targets:** Aim for ≥80% line coverage on new code. Pull requests that reduce overall coverage below the threshold will be flagged.
+- **Test types:** Prefer unit tests for business logic, integration tests for API routes, and E2E tests for full-stack flows.
+- **Running tests:** `pytest tests/ -v` — ensure all tests pass before opening a PR.
+- **Test data:** Use fixtures and factories rather than production data. Never commit real credentials or tokens.
+
 ## Where to Start
 
 Good first contributions:

@@ -62,6 +62,10 @@ dev = [
     "pytest-xdist (>=3.8.0,<4.0.0)",
 ]
 
+[tool.bandit]
+exclude_dirs = ["tests", "alembic", ".venv"]
+skips = ["B101", "B311"]
+
 [tool.poetry]
 packages = [
     { include = "api", from = "." },

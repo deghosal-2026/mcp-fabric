@@ -37,6 +37,17 @@ MCP Fabric is built with the following security principles:
 - **Secrets are never logged.** Agent tokens, passwords, and sensitive parameters are redacted from audit logs.
 - **Token rotation is supported.** Compromised agent identities can be rotated without downtime.
 
+### Common Security Knowledge
+
+All contributors are expected to understand and avoid these common security pitfalls:
+
+- **Injection attacks:** Never construct SQL, shell commands, or LDAP queries via string concatenation. Use parameterized queries and safe APIs exclusively.
+- **Authentication bypass:** Never trust client-side identity assertions. All identity verification happens server-side with short-lived tokens.
+- **Authorization checks:** Every capability request goes through the OPA policy engine. Route handlers must not short-circuit policy evaluation.
+- **Secrets management:** API keys, tokens, and database credentials are loaded from environment variables or a secrets manager. Never hard-code secrets.
+- **Input validation:** All user-supplied input is validated against Pydantic schemas before reaching business logic. Expect and reject malformed input.
+- **Rate limiting:** Authentication endpoints, capability enumeration, and tool inspection are rate-limited to prevent abuse and reconnaissance.
+
 ## Threat Mitigations
 
 | Threat | Mitigation |
