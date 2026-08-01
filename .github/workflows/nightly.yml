@@ -28,7 +28,7 @@ jobs:
             --output /tmp/fuzz-report.json
 
       - name: Upload report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: fuzz-report
