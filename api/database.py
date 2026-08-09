@@ -30,7 +30,10 @@ from api.config import settings
 # Module-level async engine singleton. pool_pre_ping verifies connections
 # before handing them out, which prevents "stale connection" errors after
 # the database restarts or a network blip.
-engine = create_async_engine(settings.database_url, echo=False, pool_pre_ping=True, pool_size=20)
+if settings.is_sqlite:
+    engine = create_async_engine(settings.database_url, echo=False)
+else:
+    engine = create_async_engine(settings.database_url, echo=False, pool_pre_ping=True, pool_size=20)
 
 # Session factory bound to the engine. expire_on_commit=False allows
 # ORM objects to remain usable for serialization after commit().
@@ -46,19 +49,8 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     exits the context manager.
 
     WHY: This is the canonical way to obtain a database session in
-    FastAPI. The `try/finally` guarantees the session is always closed
-    even if an exception occurs during request processing, preventing
-    connection leaks.
-
-    USAGE:
-        async with async_session() as session:
-            result = await session.execute(select(...))
-
-    IMPORTANT: This does NOT wrap in a transaction rollback on error —
-    the caller is responsible for calling session.commit() or
-    session.rollback() as appropriate. If an exception escapes the
-    context manager without a rollback, the transaction will be rolled
-    back by the session's cleanup logic in __aexit__.
+    FastAPI. The get_db() is used to obtain a session. Remember to
+    call session.commit() or session.rollback() after done.
     """
     async with async_session() as session:
         try:
