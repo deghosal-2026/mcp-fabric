@@ -10,10 +10,34 @@ jobs:
     runs-on: ubuntu-latest
     if: github.actor == 'dependabot[bot]'
     steps:
-      - uses: dependabot/fetch-metadata@v3
-        id: metadata
-      - run: gh pr merge --auto --squash "$PR_URL"
+      - uses: dependabot/fetch-metadata@v2
+        id: fetch
+      - name: Wait for merge-ready state
+        if: steps.fetch.outputs.update-type == 'version-update:semver-patch' || steps.fetch.outputs.update-type == 'version-update:semver-minor'
+        run: |
+          for i in $(seq 1 45); do
+            status=$(gh pr view "$PR_NUMBER" --json mergeStateStatus -q .mergeStateStatus)
+            echo "mergeable_state=$status"
+            case "$status" in
+              CLEAN|UNSTABLE|HAS_HOOKS)
+                break
+                ;;
+              *)
+                sleep 20
+                ;;
+            esac
+          done
         env:
-          PR_URL: ${{github.event.pull_request.html_url}}
+          PR_NUMBER: ${{github.event.pull_request.number}}
           GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
-        if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor'
+      - name: Merge when ready
+        if: steps.fetch.outputs.update-type == 'version-update:semver-patch' || steps.fetch.outputs.update-type == 'version-update:semver-minor'
+        run: |
+          if gh pr merge --squash "$PR_NUMBER"; then
+            echo "Merged PR #$PR_NUMBER"
+          else
+            echo "Skipped PR #$PR_NUMBER (conflicts or failing checks)"
+          fi
+        env:
+          PR_NUMBER: ${{github.event.pull_request.number}}
+          GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
