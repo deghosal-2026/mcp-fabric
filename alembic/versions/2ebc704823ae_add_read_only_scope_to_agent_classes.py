@@ -23,7 +23,7 @@ def upgrade() -> None:
     """Add is_read_only flag to agent_classes (read-scoped agents)."""
     op.add_column(
         "agent_classes",
-        sa.Column("is_read_only", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+        sa.Column("is_read_only", sa.Boolean(), server_default=sa.false(), nullable=False),
     )
     op.alter_column("agent_classes", "is_read_only", server_default=None)
 

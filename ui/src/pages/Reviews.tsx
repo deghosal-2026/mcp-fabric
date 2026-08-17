@@ -68,14 +68,9 @@ export function ReviewsPage() {
     <div className="p-6">
       <h1 className="text-xl font-semibold mb-4">Pending Schema Reviews</h1>
       <PageState query={query}>
-        // PageState handles loading / empty / error states for the mappings query.
-      // Table renders the columns defined below with an actions cell for approve/reject.
-      {() => (
+        {() => (
           <Table
-            // Column definitions: data columns (capability, server, tool, digest, status)
-          // plus a computed "actions" column with Approve / Reject buttons that
-          // fire the mutation and disable themselves while it is in-flight.
-          columns={[
+            columns={[
               { accessorKey: 'capability', header: 'Capability' },
               { accessorKey: 'server', header: 'Server' },
               { accessorKey: 'tool', header: 'Tool' },

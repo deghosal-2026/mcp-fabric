@@ -36,6 +36,9 @@ test('approve and deny workflow', async ({ page }) => {
   await page.waitForTimeout(5000)
 
   // Deny next pending (if exists)
+  // Reload to close any open modal/panel and get fresh data
+  await page.reload()
+  await page.waitForTimeout(3000)
   const remaining = page.getByRole('button', { name: 'Review' })
   if (await remaining.count() > 0) {
     await remaining.first().click()

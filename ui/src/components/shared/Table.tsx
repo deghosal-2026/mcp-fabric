@@ -1,12 +1,13 @@
-import type { ColumnDef, Row } from '@tanstack/react-table'
+import type { LegacyColumnDef as ColumnDef, LegacyRow as Row } from '@tanstack/react-table/legacy'
+import type { RowData } from '@tanstack/table-core'
+import { flexRender } from '@tanstack/react-table'
 import {
-  flexRender,
   getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table'
+  useLegacyTable as useReactTable,
+} from '@tanstack/react-table/legacy'
 import { useMemo } from 'react'
 
-interface TableProps<T> {
+interface TableProps<T extends RowData> {
   data: T[];
   columns: ColumnDef<T>[];
   onRowClick?: (row: Row<T>) => void;
@@ -20,7 +21,7 @@ interface TableProps<T> {
   };
 }
 
-export function Table<T extends object>({
+export function Table<T extends RowData>({
   data,
   columns,
   onRowClick,

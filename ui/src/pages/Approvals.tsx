@@ -6,7 +6,7 @@ import { FilterBar } from '../components/shared/FilterBar'
 import { Badge } from '../components/shared/Badge'
 import { PageState } from '../components/shared/PageState'
 import { useToast } from '../components/shared/Toast'
-import type { ColumnDef } from '@tanstack/react-table'
+import type { LegacyColumnDef as ColumnDef } from '@tanstack/react-table/legacy'
 import type { ApprovalRequest } from '../types'
 
 const PER_PAGE = '50'

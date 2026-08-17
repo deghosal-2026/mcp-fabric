@@ -7,7 +7,7 @@ import { Badge } from '../components/shared/Badge'
 import { PageState } from '../components/shared/PageState'
 import { useAuthStore } from '../stores/authStore'
 import { useToast } from '../components/shared/Toast'
-import type { ColumnDef } from '@tanstack/react-table'
+import type { LegacyColumnDef as ColumnDef } from '@tanstack/react-table/legacy'
 import type { AdminUser } from '../types'
 
 export function AdminUsersPage() {
