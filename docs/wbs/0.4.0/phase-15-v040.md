@@ -163,14 +163,14 @@
 **Description:** Return **structured policy-denial feedback** — a denial is a *result* with an impact statement (`impact: none`), a short reason (policy/rule id), and the next allowed step/capability — not an opaque tool failure. Returned over the MCP tool-result channel with an explicit "denied" type so agents can branch instead of blind-retrying.
 
 **Checklist:**
-- [ ] `DenialResult` schema: `{ impact: none, reason: <rule id>, suggestion: <next allowed step> }`
-- [ ] Denials returned over tool-result channel with explicit "denied" type
-- [ ] Agent can branch on the denial result
-- [ ] Denial recorded in audit trail
+- [x] `DenialResult` schema: `{ impact: none, reason: <rule id>, suggestion: <next allowed step> }`
+- [x] Denials returned over tool-result channel with explicit "denied" type
+- [x] Agent can branch on the denial result
+- [x] Denial recorded in audit trail
 - [ ] Optional: live agent boundary-feedback doc surfaced
-- [ ] Test: deny `deployment:promote`→prod → agent receives reason + next step, doesn't retry same verb
-- [ ] Test: blind-retry count drops vs opaque-error control
-- [ ] `make lint`, `make typecheck`, `poetry run pytest tests/ -v` pass
+- [x] Test: deny `deployment:promote`→prod → agent receives reason + next step, doesn't retry same verb
+- [x] Test: blind-retry count drops vs opaque-error control
+- [x] `make lint`, `make typecheck`, `poetry run pytest tests/ -v` pass
 - [ ] Code review completed
 
 **Success Criteria:**

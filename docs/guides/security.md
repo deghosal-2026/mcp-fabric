@@ -259,3 +259,30 @@ Agents operating autonomously (no human in the loop) should be assigned to a
 read-only-scoped agent class. This guarantees the agent cannot mutate state
 through any tool on any server, even if a trust assignment grants access — a
 docs server never shares authority with a deploy server.
+
+## Structured Policy-Denial Feedback (#443)
+
+When OPA denies a capability invocation, the agent previously received an
+opaque tool error and would blind-retry through alternative tools/paths,
+adding approval-queue noise and hiding the policy decision. v0.4.0 returns a
+**structured denial** instead: a denial is a *result* — not a failure.
+
+Every denial carries:
+
+| Field | Meaning |
+|-------|---------|
+| `impact` | Always `none` (nothing changed — the call had zero side effect) |
+| `reason` | The policy rule id that denied, e.g. `policy:read_only_scope` |
+| `suggestion` | The next allowed step, so the agent can branch or stop |
+
+Denial reasons:
+- `policy:read_only_scope` — read-only-scoped agent tried a mutating tool.
+- `policy:untrusted_write` — write on an unreviewed server.
+- `policy:deny_stale_mapping` — schema digest is stale/pending review.
+- `policy:resource_not_allowed` — resource dimension policy rejected the values.
+
+The router returns `403` with `{"error": "denied", "impact", "reason",
+"suggestion"}` (and an explicit `"denied": true` flag). Batch requests return
+the denial inline per request instead of an opaque error. Agents should
+**branch on `reason`** rather than retry the same verb, which measurably
+reduces approval-queue noise.

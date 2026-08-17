@@ -41,7 +41,13 @@ from api.models.resource import (
     ResourceDimension,
 )
 from api.models.server import CapabilityMapping, RoutingRule, ServerTool
-from api.schemas.routing import CapabilityRequest, RouteResult, RoutingRuleCreate
+from api.schemas.common import PolicyDecision
+from api.schemas.routing import (
+    CapabilityRequest,
+    DenialResult,
+    RouteResult,
+    RoutingRuleCreate,
+)
 from api.services.audit_service import AuditService
 from api.services.policy_service import PolicyService
 from api.services.resource_service import ResourceService
@@ -60,8 +66,16 @@ class ResourceDeniedError(Exception):
     """Raised when resource dimension validation fails."""
 
 
-class PermissionDeniedError(Exception):
-    """Raised when agent-level permission scope denies a tool invocation."""
+class PolicyDeniedError(Exception):
+    """Raised when OPA denies a request, carrying structured denial feedback (#443).
+
+    The agent receives the structured :class:`DenialResult` so it can branch
+    or stop instead of blind-retrying. A denial is a *result*, not a failure.
+    """
+
+    def __init__(self, denial: DenialResult) -> None:
+        super().__init__(denial.reason)
+        self.denial = denial
 
 
 class RoutingService:
@@ -295,6 +309,60 @@ class RoutingService:
             return 1.0
         return max(0.0, min(1.0, 1.0 - (pack_resource_count - 1) / (total_resources_in_domain - 1)))
 
+    @staticmethod
+    def _build_denial(decision: PolicyDecision, capability: str) -> DenialResult | None:
+        """Translate an OPA decision into structured denial feedback (#443).
+
+        Returns a :class:`DenialResult` if the decision denies the request,
+        otherwise None. Each denial carries the impact, the policy reason, and
+        a concrete next-allowed-step so the agent can branch or stop instead
+        of blind-retrying.
+        """
+        if decision.read_only_denied:
+            return DenialResult(
+                denied=True,
+                impact="none",
+                reason="policy:read_only_scope",
+                suggestion=(
+                    f"{capability} requires a mutating tool; your agent class is "
+                    "read-only-scoped. Request escalation to a mutating-capable "
+                    "agent class or use a read-only alternative."
+                ),
+            )
+        if decision.untrusted_write:
+            return DenialResult(
+                denied=True,
+                impact="none",
+                reason="policy:untrusted_write",
+                suggestion=(
+                    f"{capability} is a write operation on an unreviewed server. "
+                    "A human must review and promote the server trust level before "
+                    "this tool can be invoked."
+                ),
+            )
+        if decision.deny_stale_mapping:
+            return DenialResult(
+                denied=True,
+                impact="none",
+                reason="policy:deny_stale_mapping",
+                suggestion=(
+                    f"The schema digest for {capability} is stale (pending review). "
+                    "Wait for an admin to re-approve the mapping before retrying."
+                ),
+            )
+        if not decision.resource_allowed:
+            return DenialResult(
+                denied=True,
+                impact="none",
+                reason="policy:resource_not_allowed",
+                suggestion=(
+                    f"{capability} was denied by resource dimension policy "
+                    f"({decision.resource_violations}). Request access to the "
+                    "specific resource values or use an allowed value."
+                ),
+            )
+        return None
+
     async def execute(
         self,
         request: CapabilityRequest,
@@ -360,15 +428,9 @@ class RoutingService:
                 agent_read_only=agent_read_only,
                 tool_class=tool_class,
             )
-            if decision.read_only_denied:
-                raise PermissionDeniedError(
-                    f"Read-only agent '{agent_class_name}' denied mutating tool "
-                    f"'{mapping.tool_name}' (tool_class={tool_class})"
-                )
-            if not decision.resource_allowed:
-                raise ResourceDeniedError(
-                    f"Resource validation failed: {decision.resource_violations}"
-                )
+            denial = self._build_denial(decision, request.capability)
+            if denial is not None:
+                raise PolicyDeniedError(denial)
 
         resources = await self.resolve_resources(cap.id, request.params, request.resources)
         resource_check: dict[str, object] = {}
@@ -391,8 +453,12 @@ class RoutingService:
                     tool_class=tool_class,
                 )
                 if not decision.resource_allowed:
-                    violations = decision.resource_violations
-                    raise ResourceDeniedError(f"Resource validation failed: {violations}")
+                    denial = self._build_denial(decision, request.capability)
+                    if denial is not None:
+                        raise PolicyDeniedError(denial)
+                    raise ResourceDeniedError(
+                        f"Resource validation failed: {decision.resource_violations}"
+                    )
                 resource_check = {
                     "identity_resources": identity_bindings,
                     "request_resources": resources,

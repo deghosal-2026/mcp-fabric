@@ -50,6 +50,20 @@ class BatchCapabilityRequest(BaseModel):
     requests: list[CapabilityRequest] = Field(min_length=1, max_length=10)
 
 
+class DenialResult(BaseModel):
+    """Structured policy-denial feedback returned to the agent (#443).
+
+    A denial is a *result*, not an opaque failure — the agent receives the
+    reason, impact, and the next allowed step so it can branch or stop
+    correctly rather than blind-retry through alternative tools.
+    """
+
+    denied: bool = True
+    impact: str = "none"
+    reason: str = ""
+    suggestion: str | None = None
+
+
 class RouteResult(BaseModel):
     """Result of routing and executing a single capability request.
 

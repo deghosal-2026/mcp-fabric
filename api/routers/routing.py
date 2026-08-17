@@ -47,6 +47,7 @@ from api.schemas.routing import (
 from api.services.routing_service import (
     CapabilityNotFoundError,
     NoServerFoundError,
+    PolicyDeniedError,
     ResourceDeniedError,
     RoutingService,
 )
@@ -91,6 +92,19 @@ async def capability_request(
             status_code=403,
             detail={"error": "resource_not_allowed", "message": str(exc)},
         ) from exc
+    except PolicyDeniedError as exc:
+        # Structured denial feedback (#443): the agent receives impact, reason,
+        # and the next allowed step so it can branch or stop — not blind-retry.
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "denied",
+                "denied": True,
+                "impact": exc.denial.impact,
+                "reason": exc.denial.reason,
+                "suggestion": exc.denial.suggestion,
+            },
+        ) from exc
 
 
 # Execute multiple capability requests in a batch.
@@ -112,6 +126,16 @@ async def capability_batch(
         try:
             result = await svc.execute(req)
             results.append(result)
+        except PolicyDeniedError as exc:
+            results.append(
+                {
+                    "capability": req.capability,
+                    "denied": True,
+                    "impact": exc.denial.impact,
+                    "reason": exc.denial.reason,
+                    "suggestion": exc.denial.suggestion,
+                }
+            )
         except Exception as exc:
             results.append({"capability": req.capability, "error": str(exc)})
     return BatchResult(results=results)
