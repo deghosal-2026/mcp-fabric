@@ -132,14 +132,14 @@
 **Description:** Add an agent-level permissions model that classifies tools as **read-only vs destructive/mutating** and enforces the distinction at the protocol/permission layer (not just docs). Read-only tools allowed for read-scoped agents; mutating tools gated by trust + approval policy. Enforce before the proxy and surface in the audit trail. Document the boundary contract for autonomous agents.
 
 **Checklist:**
-- [ ] `tool_class` (read_only / mutating) inferred or declared on mappings
-- [ ] Read-only agents can call read-only tools; mutating call denied (403/denial)
-- [ ] Writes never auto-allow without approval for read-scoped agents
-- [ ] Enforcement happens at request level before proxy
-- [ ] Tool-class captured in audit trail
-- [ ] OPA rules + Rego tests added (read-only pass, write blocked, trusted write allowed)
-- [ ] Boundary contract documented for agents (denial = structured feedback, see #443)
-- [ ] Backend unit + integration tests
+- [x] `tool_class` (read_only / mutating) inferred or declared on mappings
+- [x] Read-only agents can call read-only tools; mutating call denied (403/denial)
+- [x] Writes never auto-allow without approval for read-scoped agents
+- [x] Enforcement happens at request level before proxy
+- [x] Tool-class captured in audit trail
+- [x] OPA rules + Rego tests added (read-only pass, write blocked, trusted write allowed)
+- [x] Boundary contract documented for agents (denial = structured feedback, see #443)
+- [x] Backend unit + integration tests
 - [ ] `make lint`, `make typecheck`, `poetry run pytest tests/ -v` pass
 - [ ] Code review completed
 

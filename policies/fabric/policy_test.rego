@@ -390,3 +390,55 @@ test_deny_stale_and_unreviewed if {
         "tool_name": "create_doc",
     }
 }
+# ─── Agent-Level Read-Only Scope (#445) ───
+
+# Verifies that a read-only-scoped agent is denied a mutating tool.
+test_read_only_denied_on_mutating if {
+    allow == false with input as {
+        "agent_class": "agent:developer",
+        "server_trust_level": "trusted",
+        "capability": "deploy:promote",
+        "mapping_status": "active",
+        "tool_name": "deploy_service",
+        "agent_read_only": true,
+        "tool_class": "mutating",
+    }
+}
+
+# Verifies that a read-only-scoped agent IS allowed a read-only tool.
+test_read_only_allowed_on_read_only_tool if {
+    allow with input as {
+        "agent_class": "agent:developer",
+        "server_trust_level": "trusted",
+        "capability": "deploy:list",
+        "mapping_status": "active",
+        "tool_name": "get_deployments",
+        "agent_read_only": true,
+        "tool_class": "read_only",
+    }
+}
+
+# Verifies that a non-read-only agent is NOT denied by the read-only scope rule.
+test_read_only_denied_not_triggered_for_full_agent if {
+    not read_only_denied with input as {
+        "agent_class": "agent:developer",
+        "server_trust_level": "trusted",
+        "capability": "deploy:promote",
+        "mapping_status": "active",
+        "tool_name": "deploy_service",
+        "agent_read_only": false,
+        "tool_class": "mutating",
+    }
+}
+
+# Verifies that the read_only_denied flag is surfaced in the result output.
+test_read_only_denied_flag_in_result if {
+    read_only_denied with input as {
+        "agent_class": "agent:developer",
+        "server_trust_level": "trusted",
+        "mapping_status": "active",
+        "tool_name": "deploy_service",
+        "agent_read_only": true,
+        "tool_class": "mutating",
+    }
+}

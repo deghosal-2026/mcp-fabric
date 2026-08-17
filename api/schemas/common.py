@@ -139,3 +139,4 @@ class PolicyDecision(BaseModel):
     resource_violations: list[dict[str, object]] = []
     deny_stale_mapping: bool = False
     untrusted_write: bool = False
+    read_only_denied: bool = False

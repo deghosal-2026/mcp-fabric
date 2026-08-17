@@ -75,6 +75,8 @@ class PolicyService:
         request_resources: dict[str, str] | None = None,
         mapping_status: str | None = None,
         tool_name: str | None = None,
+        agent_read_only: bool = False,
+        tool_class: str = "",
     ) -> PolicyDecision:
         """Evaluate a policy decision from OPA for the given inputs.
 
@@ -111,6 +113,8 @@ class PolicyService:
                 "declared_dimensions": list((identity_resources or {}).keys()),
                 "mapping_status": mapping_status or "",
                 "tool_name": tool_name or "",
+                "agent_read_only": agent_read_only,
+                "tool_class": tool_class,
             }
         }
         try:
@@ -137,6 +141,7 @@ class PolicyService:
             resource_violations=result.get("resource_violations", []),
             deny_stale_mapping=result.get("deny_stale_mapping", False),
             untrusted_write=result.get("untrusted_write", False),
+            read_only_denied=result.get("read_only_denied", False),
         )
 
     async def evaluate_cached(
@@ -309,6 +314,7 @@ class PolicyService:
             name=params.name,
             description=params.description,
             team_namespace=params.team_namespace,
+            is_read_only=params.is_read_only,
         )
         self.db.add(ac)
         await self.db.commit()
@@ -318,6 +324,7 @@ class PolicyService:
             name=ac.name,
             description=ac.description,
             team_namespace=ac.team_namespace,
+            is_read_only=ac.is_read_only,
             created_at=ac.created_at,
         )
 

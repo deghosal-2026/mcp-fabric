@@ -51,6 +51,9 @@ class AgentClass(UUIDMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     team_namespace: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # When True, this agent class is read-scoped: it may only invoke read-only
+    # tools. Mutating tools are denied at the request level regardless of trust.
+    is_read_only: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     trust_assignments = relationship(
         "TrustAssignment", back_populates="agent_class", cascade="all, delete-orphan"

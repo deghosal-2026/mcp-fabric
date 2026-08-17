@@ -45,6 +45,7 @@ from api.schemas.routing import CapabilityRequest, RouteResult, RoutingRuleCreat
 from api.services.audit_service import AuditService
 from api.services.policy_service import PolicyService
 from api.services.resource_service import ResourceService
+from api.services.tool_class import classify_tool
 
 
 class CapabilityNotFoundError(Exception):
@@ -57,6 +58,10 @@ class NoServerFoundError(Exception):
 
 class ResourceDeniedError(Exception):
     """Raised when resource dimension validation fails."""
+
+
+class PermissionDeniedError(Exception):
+    """Raised when agent-level permission scope denies a tool invocation."""
 
 
 class RoutingService:
@@ -323,6 +328,48 @@ class RoutingService:
         cap = await self.resolve_capability(request.capability)
         mapping = await self.select_server(cap.id)
 
+        # ── Agent-level permissions (#445): read-only vs destructive ──
+        # Enforce at the request level, before the proxy call. A read-only-scoped
+        # agent class may only invoke read-only tools; mutating tools are denied
+        # regardless of server trust level.
+        tool_class = classify_tool(mapping.tool_name)
+        agent_read_only = False
+        agent_class_name = ""
+        if identity_id:
+            from api.models.agent import AgentClass
+
+            ac_stmt = (
+                select(AgentClass)
+                .join(AgentIdentity, AgentIdentity.agent_class_id == AgentClass.id)
+                .where(AgentIdentity.id == identity_id)
+            )
+            ac_result = await self.db.execute(ac_stmt)
+            agent_class_obj = ac_result.scalar_one_or_none()
+            if agent_class_obj is not None:
+                agent_read_only = agent_class_obj.is_read_only
+                agent_class_name = agent_class_obj.name
+
+            psvc = PolicyService(db=self.db, opa_url=settings.opa_url)
+            decision = await psvc.evaluate(
+                agent_class=agent_class_name,
+                server_id=str(mapping.server_id),
+                capability=request.capability,
+                team_namespace="",
+                mapping_status=mapping.status,
+                tool_name=mapping.tool_name,
+                agent_read_only=agent_read_only,
+                tool_class=tool_class,
+            )
+            if decision.read_only_denied:
+                raise PermissionDeniedError(
+                    f"Read-only agent '{agent_class_name}' denied mutating tool "
+                    f"'{mapping.tool_name}' (tool_class={tool_class})"
+                )
+            if not decision.resource_allowed:
+                raise ResourceDeniedError(
+                    f"Resource validation failed: {decision.resource_violations}"
+                )
+
         resources = await self.resolve_resources(cap.id, request.params, request.resources)
         resource_check: dict[str, object] = {}
         if resources and identity_id:
@@ -330,20 +377,9 @@ class RoutingService:
                 identity_id=identity_id, pack_ids=pack_ids
             )
             if identity_bindings:
-                from api.models.agent import AgentClass
-
-                ac_stmt = (
-                    select(AgentClass)
-                    .join(AgentIdentity, AgentIdentity.agent_class_id == AgentClass.id)
-                    .where(AgentIdentity.id == identity_id)
-                )
-                ac_result = await self.db.execute(ac_stmt)
-                agent_class_obj = ac_result.scalar_one_or_none()
-                agent_class = agent_class_obj.name if agent_class_obj else ""
-
                 psvc = PolicyService(db=self.db, opa_url=settings.opa_url)
                 decision = await psvc.evaluate(
-                    agent_class=agent_class,
+                    agent_class=agent_class_name,
                     server_id=str(mapping.server_id),
                     capability=request.capability,
                     team_namespace="",
@@ -351,6 +387,8 @@ class RoutingService:
                     request_resources=resources,
                     mapping_status=mapping.status,
                     tool_name=mapping.tool_name,
+                    agent_read_only=agent_read_only,
+                    tool_class=tool_class,
                 )
                 if not decision.resource_allowed:
                     violations = decision.resource_violations
@@ -360,6 +398,8 @@ class RoutingService:
                     "request_resources": resources,
                     "resource_allowed": decision.resource_allowed,
                     "resource_violations": decision.resource_violations,
+                    "tool_class": tool_class,
+                    "agent_read_only": agent_read_only,
                 }
 
         endpoint = mapping.server.endpoint
