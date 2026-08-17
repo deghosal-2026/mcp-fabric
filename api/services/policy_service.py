@@ -167,7 +167,7 @@ class PolicyService:
 
             import redis.asyncio as aioredis
 
-            r = aioredis.from_url(settings.redis_url, decode_responses=True)  # type: ignore[no-untyped-call]
+            r = aioredis.from_url(settings.redis_url, decode_responses=True)
             cache_key = f"policy:eval:{agent_class}:{server_id}:{capability}"
             if identity_resources:
                 import json
@@ -220,7 +220,7 @@ class PolicyService:
         try:
             import redis.asyncio as aioredis
 
-            r = aioredis.from_url(settings.redis_url, decode_responses=True)  # type: ignore[no-untyped-call]
+            r = aioredis.from_url(settings.redis_url, decode_responses=True)
             cursor = 0
             while True:
                 cursor, keys = await r.scan(cursor=cursor, match="policy:*")

@@ -705,7 +705,7 @@ class RegistryService:
         if self.redis is not None:
             cached = await self.redis.get(f"health:{server_id}")
             if cached is not None:
-                return cached.decode()  # type: ignore[no-any-return]
+                return cached.decode() if isinstance(cached, bytes) else str(cached)
         result = await self.db.execute(
             select(MCPServer.health_status).where(MCPServer.id == server_id)
         )
@@ -736,8 +736,10 @@ class RegistryService:
                     values = await self.redis.mget(*keys)
                     for key, val in zip(keys, values, strict=False):
                         if val is not None:
-                            sid = key.decode().split(":", 1)[1]
-                            results[sid] = val.decode()
+                            k = key.decode() if isinstance(key, bytes) else str(key)
+                            v = val.decode() if isinstance(val, bytes) else str(val)
+                            sid = k.split(":", 1)[1]
+                            results[sid] = v
                 if cursor == 0:
                     break
             return results

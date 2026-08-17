@@ -42,7 +42,13 @@ from api.dependencies import (
     get_registry_service,
     get_resource_service,
 )
-from api.schemas.admin import AdminUserInvite, AdminUserResponse, AdminUserUpdate, PackBreadthRow
+from api.schemas.admin import (
+    AdminUserInvite,
+    AdminUserResponse,
+    AdminUserUpdate,
+    PackBreadthRow,
+    PackCohesionRow,
+)
 
 # Import capability schemas for schema-digest review endpoints
 # (CapabilityMappingResponse, MappingReviewCreate, MappingReviewResponse)
@@ -207,6 +213,14 @@ async def pack_breadth(
 ) -> list[PackBreadthRow]:
     rows = await svc.get_pack_breadth()
     return [PackBreadthRow(**r) for r in rows]  # type: ignore[arg-type]
+
+
+@router.get("/trust-posture/cohesion")
+async def pack_cohesion(
+    svc: ResourceService = Depends(get_resource_service),
+) -> list[PackCohesionRow]:
+    rows = await svc.get_pack_cohesion()
+    return [PackCohesionRow(**r) for r in rows]  # type: ignore[arg-type]
 
 
 # ============================================================================

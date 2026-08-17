@@ -714,7 +714,7 @@ class AuthService:
         try:
             import redis.asyncio as aioredis
 
-            r = aioredis.from_url(settings.redis_url)  # type: ignore[no-untyped-call]
+            r = aioredis.from_url(settings.redis_url)
             await r.setex(
                 f"admin:session:{session_token}",
                 settings.admin_session_ttl_hours * 3600,
@@ -744,10 +744,10 @@ class AuthService:
             import redis.asyncio as aioredis
 
             # decode_responses=True ensures Redis returns strings, not bytes.
-            r = aioredis.from_url(settings.redis_url, decode_responses=True)  # type: ignore[no-untyped-call]
+            r = aioredis.from_url(settings.redis_url, decode_responses=True)
             admin_id = await r.get(f"admin:session:{session_token}")
             await r.aclose()
-            return admin_id  # type: ignore[no-any-return]
+            return admin_id.decode() if isinstance(admin_id, bytes) else admin_id
         except Exception:
             from api.telemetry.logging import logger
 
@@ -766,7 +766,7 @@ class AuthService:
         try:
             import redis.asyncio as aioredis
 
-            r = aioredis.from_url(settings.redis_url)  # type: ignore[no-untyped-call]
+            r = aioredis.from_url(settings.redis_url)
             await r.delete(f"admin:session:{session_token}")
             await r.aclose()
         except Exception:
@@ -835,7 +835,7 @@ class AuthService:
         try:
             import redis.asyncio as aioredis
 
-            r = aioredis.from_url(settings.redis_url)  # type: ignore[no-untyped-call]
+            r = aioredis.from_url(settings.redis_url)
             await r.setex(f"admin:reset:{token}", 1800, str(admin_id))
             await r.aclose()
         except Exception:
@@ -856,11 +856,13 @@ class AuthService:
         try:
             import redis.asyncio as aioredis
 
-            r = aioredis.from_url(settings.redis_url, decode_responses=True)  # type: ignore[no-untyped-call]
+            r = aioredis.from_url(settings.redis_url, decode_responses=True)
             admin_id = await r.get(f"admin:reset:{token}")
             if admin_id:
                 await r.delete(f"admin:reset:{token}")
             await r.aclose()
+            if isinstance(admin_id, bytes):
+                admin_id = admin_id.decode()
             return UUID(admin_id) if admin_id else None
         except Exception:
             from api.telemetry.logging import logger

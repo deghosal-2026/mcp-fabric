@@ -177,7 +177,10 @@ class RoutingService:
         raise NoServerFoundError(f"No digest-validated mapping for capability {capability_id}")
 
     async def resolve_resources(
-        self, capability_id: UUID, params: dict, explicit_resources: dict[str, str] | None
+        self,
+        capability_id: UUID,
+        params: dict[str, object],
+        explicit_resources: dict[str, str] | None,
     ) -> dict[str, str]:
         """Extract resource dimension values for a capability request.
 
@@ -248,24 +251,24 @@ class RoutingService:
         pack_rows: list[PackResourceBinding] = []
 
         if identity_id:
-            stmt = select(IdentityResourceBinding).where(
+            identity_stmt = select(IdentityResourceBinding).where(
                 IdentityResourceBinding.agent_identity_id == identity_id
             )
-            result = await self.db.execute(stmt)
-            identity_rows = list(result.scalars().all())
+            identity_result = await self.db.execute(identity_stmt)
+            identity_rows = list(identity_result.scalars().all())
 
         if pack_ids:
-            stmt = select(PackResourceBinding).where(PackResourceBinding.pack_id.in_(pack_ids))
-            result = await self.db.execute(stmt)
-            pack_rows = list(result.scalars().all())
+            pack_stmt = select(PackResourceBinding).where(PackResourceBinding.pack_id.in_(pack_ids))
+            pack_result = await self.db.execute(pack_stmt)
+            pack_rows = list(pack_result.scalars().all())
 
         identity_by_dim: dict[str, set[str]] = {}
-        for b in identity_rows:
-            identity_by_dim.setdefault(b.dimension_key, set()).add(b.allowed_value)
+        for b_ident in identity_rows:
+            identity_by_dim.setdefault(b_ident.dimension_key, set()).add(b_ident.allowed_value)
 
         pack_by_dim: dict[str, set[str]] = {}
-        for b in pack_rows:
-            pack_by_dim.setdefault(b.dimension_key, set()).add(b.allowed_value)
+        for b_pack in pack_rows:
+            pack_by_dim.setdefault(b_pack.dimension_key, set()).add(b_pack.allowed_value)
 
         all_dims = set(identity_by_dim.keys()) | set(pack_by_dim.keys())
         merged: dict[str, list[str]] = {}

@@ -33,7 +33,9 @@ from api.config import settings
 if settings.is_sqlite:
     engine = create_async_engine(settings.database_url, echo=False)
 else:
-    engine = create_async_engine(settings.database_url, echo=False, pool_pre_ping=True, pool_size=20)
+    engine = create_async_engine(
+        settings.database_url, echo=False, pool_pre_ping=True, pool_size=20
+    )
 
 # Session factory bound to the engine. expire_on_commit=False allows
 # ORM objects to remain usable for serialization after commit().
