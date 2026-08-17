@@ -27,15 +27,23 @@ jobs:
             --iterations 40000 \
             --output /tmp/fuzz-report.json
 
+      - name: Run lambda-clustered adversarial fuzz test
+        run: |
+          poetry run python tests/security/test_adversarial_confusion_fuzz.py \
+            --iterations 40000 \
+            --output /tmp/adversarial-fuzz-report.json
+
       - name: Upload report
         uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: fuzz-report
-          path: /tmp/fuzz-report.json
+          name: fuzz-reports
+          path: |
+            /tmp/fuzz-report.json
+            /tmp/adversarial-fuzz-report.json
 
       - name: Notify on failure
         if: failure()
         run: |
-          echo "Fuzz test failed — max error exceeded threshold."
-          echo "See fuzz-report artifact for details."
+          echo "Fuzz test failed — catch rate outside thresholds (uniform baseline or band collapse)."
+          echo "See fuzz-reports artifact for details."

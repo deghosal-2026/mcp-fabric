@@ -90,11 +90,40 @@ The `--output` flag writes a structured JSON report:
 }
 ```
 
-## Nightly CI
+ ## Nightly CI
 
 A GitHub Actions workflow (`.github/workflows/nightly.yml`) runs the fuzz harness every day at 6 AM UTC. On failure, it uploads the report as a build artifact and prints a notification message.
 
 To trigger manually: go to the Actions tab → Nightly Security Fuzz → Run workflow.
+
+## Lambda-Clustered Adversarial Fuzz (v0.4.0, #440)
+
+The uniform-random confused-deputy harness above validates the *baseline* catch
+rate, but a real attacker does not pick targets uniformly — a similarity-targeting
+attacker clusters on semantically similar resources, collapsing catch on a tight
+semantic pack. The lambda-clustered harness
+(`tests/security/test_adversarial_confusion_fuzz.py`) models this: resources sit on
+a 1-D semantic line, and the attacker picks a target with probability proportional
+to `exp(lambda * max_sim(allowed, j))`.
+
+- `lambda = 0` → uniform selection → must match the closed-form formula (regression guard).
+- `lambda -> large` → attacks concentrate near the pack's semantic band → a **tight
+  semantic band** collapses catch toward ~0.07, while a **scattered pack** of the
+  same size keeps catch ~0.82. This is the breadth-only coverage gap: same pack
+  size, opposite exposure, purely from construction.
+
+Run it directly:
+
+```bash
+poetry run python tests/security/test_adversarial_confusion_fuzz.py --iterations 40000 \
+  --output /tmp/adversarial-fuzz-report.json
+```
+
+Unit tests (`tests/security/test_adversarial_confusion_fuzz_unit.py`) pin the
+invariants: uniform baseline matches closed form, band collapses below 0.10,
+scattered resists above 0.60, and band is always worse than scattered for the same
+size. The nightly workflow runs both harnesses.
+
 
 ## When to Update
 

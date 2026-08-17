@@ -82,15 +82,15 @@
 **Description:** Add a **nightly adversarial resource-confusion fuzz harness** modeling λ-clustered (semantically targeted) redirects against real pack layouts. λ=∞ (uniform) baseline matches the existing closed-form catch rate; λ=1 (tight cluster) models a similarity-targeting attacker collapsing catch to ~0.02 on a semantic band. Emit expected-vs-actual catch and alert when pack cohesion makes catch < threshold. Reference `#439` cohesion for worst-case pack identification.
 
 **Checklist:**
-- [ ] Harness runs redirected-resource simulations over the λ spectrum (∞→1) against actual identity packs
-- [ ] λ=∞ uniform baseline matches the closed-form `catch = 1 − (P−1)/(R−1)`
-- [ ] λ=1 tight-cluster reproduces near-zero catch on semantic bands
-- [ ] Emits expected-vs-actual catch rate with structured JSON report (consistent with #411 format)
-- [ ] Alert when pack cohesion causes catch < configured threshold
-- [ ] Nightly CI job (independent of PR-gate), deterministic seeds (consistent with #411)
-- [ ] Unit test: harness output matches known adversary results
-- [ ] Nightly run on seeded packs: uniform baseline matches formula; intentionally semantic-band pack triggers warning
-- [ ] `docs/guides/security-testing.md` updated (λ semantics, how to run/read)
+- [x] Harness runs redirected-resource simulations over the λ spectrum (∞→1) against actual identity packs
+- [x] λ=∞ uniform baseline matches the closed-form `catch = 1 − (P−1)/(R−1)`
+- [x] λ=1 tight-cluster reproduces near-zero catch on semantic bands
+- [x] Emits expected-vs-actual catch rate with structured JSON report (consistent with #411 format)
+- [x] Alert when pack cohesion causes catch < configured threshold
+- [x] Nightly CI job (independent of PR-gate), deterministic seeds (consistent with #411)
+- [x] Unit test: harness output matches known adversary results
+- [x] Nightly run on seeded packs: uniform baseline matches formula; intentionally semantic-band pack triggers warning
+- [x] `docs/guides/security-testing.md` updated (λ semantics, how to run/read)
 - [ ] Code review completed
 
 **Success Criteria:**
