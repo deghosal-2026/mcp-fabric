@@ -10,10 +10,10 @@
 > **Issue tracker:** all 9 issues are GitHub issues #439–#447 under the `[0.4.0]` prefix.
 >
 > **GitHub milestones:**
-> - [M1 — Cohesion & Adversarial Fuzz](https://github.com/deghosal-2026/mcp-fabric/issues?q=is%3Aissue+state%3Aopen+label%3A%22%5B0.4.0%5D%22+cohesion) — 🚧
-> - [M2 — Permissions & Policy Feedback](https://github.com/deghosal-2026/mcp-fabric/issues?q=is%3Aissue+state%3Aopen+label%3A%22%5B0.4.0%5D%22) — 🚧
-> - [M3 — Review Queue Resilience](https://github.com/deghosal-2026/mcp-fabric/issues?q=is%3Aissue+state%3Aopen+label%3A%22%5B0.4.0%5D%22) — 🚧
-> - [M4 — Approval Fatigue Mitigation](https://github.com/deghosal-2026/mcp-fabric/issues?q=is%3Aissue+state%3Aopen+label%3A%22%5B0.4.0%5D%22) — 🚧
+> - [M1 — Cohesion & Adversarial Fuzz](https://github.com/deghosal-2026/mcp-fabric/issues?q=is%3Aissue+state%3Aopen+label%3A%22%5B0.4.0%5D%22+cohesion) — ✅ done (#439, #440)
+> - [M2 — Permissions & Policy Feedback](https://github.com/deghosal-2026/mcp-fabric/issues?q=is%3Aissue+state%3Aopen+label%3A%22%5B0.4.0%5D%22) — ✅ done (#445, #443, #441)
+> - [M3 — Review Queue Resilience](https://github.com/deghosal-2026/mcp-fabric/issues?q=is%3Aissue+state%3Aopen+label%3A%22%5B0.4.0%5D%22) — 🚧 in progress (#444 done; #446, #447 remaining)
+> - [M4 — Approval Fatigue Mitigation](https://github.com/deghosal-2026/mcp-fabric/issues?q=is%3Aissue+state%3Aopen+label%3A%22%5B0.4.0%5D%22) — 🚧 pending (#442)
 
 ---
 
@@ -21,12 +21,12 @@
 
 | ID | Issue | Milestone | Status |
 |----|-------|-----------|--------|
-| 439 | [Trust Posture: pack cohesion score + semantic-band pack detection](https://github.com/deghosal-2026/mcp-fabric/issues/439) | M1 | [ ] |
-| 440 | [Nightly adversarial resource-confusion fuzz harness (lambda-clustered)](https://github.com/deghosal-2026/mcp-fabric/issues/440) | M1 | [ ] |
-| 445 | [Agent-level permissions: read-only vs destructive tool classification and enforcement](https://github.com/deghosal-2026/mcp-fabric/issues/445) | M2 | [ ] |
-| 443 | [Structured policy-denial feedback to agents (denial = result, not failure)](https://github.com/deghosal-2026/mcp-fabric/issues/443) | M2 | [ ] |
-| 441 | [Detect many-to-one capability-mapping collisions + require review](https://github.com/deghosal-2026/mcp-fabric/issues/441) | M2 | [ ] |
-| 444 | [Fail-closed on missing schema re-inspection + stale-review age alerts](https://github.com/deghosal-2026/mcp-fabric/issues/444) | M3 | [ ] |
+| 439 | [Trust Posture: pack cohesion score + semantic-band pack detection](https://github.com/deghosal-2026/mcp-fabric/issues/439) | M1 | [x] |
+| 440 | [Nightly adversarial resource-confusion fuzz harness (lambda-clustered)](https://github.com/deghosal-2026/mcp-fabric/issues/440) | M1 | [x] |
+| 445 | [Agent-level permissions: read-only vs destructive tool classification and enforcement](https://github.com/deghosal-2026/mcp-fabric/issues/445) | M2 | [x] |
+| 443 | [Structured policy-denial feedback to agents (denial = result, not failure)](https://github.com/deghosal-2026/mcp-fabric/issues/443) | M2 | [x] |
+| 441 | [Detect many-to-one capability-mapping collisions + require review](https://github.com/deghosal-2026/mcp-fabric/issues/441) | M2 | [x] |
+| 444 | [Fail-closed on missing schema re-inspection + stale-review age alerts](https://github.com/deghosal-2026/mcp-fabric/issues/444) | M3 | [x] |
 | 446 | [Staleness watchdog must be external to the review queue system](https://github.com/deghosal-2026/mcp-fabric/issues/446) | M3 | [ ] |
 | 447 | [Queue prioritization: separate unreachable from genuinely changed review items](https://github.com/deghosal-2026/mcp-fabric/issues/447) | M3 | [ ] |
 | 442 | [HITL approval fatigue: reversibility split + bulk approve + expiring envelopes](https://github.com/deghosal-2026/mcp-fabric/issues/442) | M4 | [ ] |
