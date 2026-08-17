@@ -224,6 +224,23 @@ class RegistryService:
         try:
             current_defs = await self.mcp.list_tools(server.endpoint)
         except MCPError as exc:
+            # Fail-closed (#444): when re-inspection can't reach the server,
+            # mark all active mappings as stale-unverified so routing excludes
+            # them. Treating "couldn't re-inspect" as "unchanged" would keep
+            # stale mappings live — the servers most likely to have drifted
+            # (down, flaky, mid-deploy) would keep stale mappings active.
+            now = datetime.now(UTC)
+            active_result = await self.db.execute(
+                select(CapabilityMapping).where(
+                    CapabilityMapping.server_id == server.id,
+                    CapabilityMapping.status == "active",
+                )
+            )
+            for mapping in active_result.scalars().all():
+                mapping.status = "stale-unverified"
+                mapping.pending_since = now
+            server.health_status = "unreachable"
+            await self.db.commit()
             raise ServerUnreachableError(server.endpoint) from exc
 
         # Index tools by name for efficient comparison.
@@ -336,6 +353,7 @@ class RegistryService:
             stale_mappings: list[CapabilityMapping] = list(mapping_result.scalars().all())
             for mapping in stale_mappings:
                 mapping.status = "stale"
+                mapping.pending_since = now
 
         server.updated_at = now
         server.health_status = "reachable"

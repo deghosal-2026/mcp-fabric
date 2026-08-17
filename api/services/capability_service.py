@@ -25,6 +25,7 @@ from __future__ import annotations
 import builtins
 import hashlib
 import json
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import select
@@ -249,6 +250,8 @@ class CapabilityService:
         collides = await self._has_collision(capability_id, params.tool_name, digest)
         status = "pending_review" if collides else "active"
 
+        pending_since = datetime.now(UTC) if collides else None
+
         # Store both the digest (for drift detection) and the lifecycle status.
         mapping = CapabilityMapping(
             capability_id=capability_id,
@@ -259,6 +262,7 @@ class CapabilityService:
             is_primary=params.is_primary,
             tool_schema_digest=digest,
             status=status,
+            pending_since=pending_since,
         )
         self.db.add(mapping)
         await self.db.commit()
@@ -274,6 +278,7 @@ class CapabilityService:
             routing_weight=mapping.routing_weight or 1.0,
             tool_schema_digest=mapping.tool_schema_digest,
             status=mapping.status,
+            pending_since=mapping.pending_since,
         )
 
     async def _has_collision(self, capability_id: UUID, tool_name: str, digest: str) -> bool:
@@ -286,10 +291,7 @@ class CapabilityService:
         """
         stmt = select(CapabilityMapping).where(CapabilityMapping.capability_id == capability_id)
         result = await self.db.execute(stmt)
-        for existing in result.scalars().all():
-            if existing.tool_name != tool_name:
-                return True
-        return False
+        return any(existing.tool_name != tool_name for existing in result.scalars().all())
 
     async def get_collisions(self, capability_id: UUID) -> builtins.list[CapabilityMappingResponse]:
         """List many-to-one collisions for a capability (#441).
@@ -317,19 +319,18 @@ class CapabilityService:
         return [CapabilityMappingResponse.model_validate(m) for m in collisions]
 
     async def get_stale_mappings(self) -> builtins.list[CapabilityMappingResponse]:
-        """List all mappings with status='stale' that need admin review.
+        """List all mappings in limbo that need admin review (#444).
 
-        WHY: Admin dashboard shows pending reviews. Each stale mapping
-        has a tool whose schema changed since the mapping was created,
-        so the admin must approve or reject the change.
+        WHY: Admin dashboard shows pending reviews. Includes all non-active,
+        non-rejected statuses: 'stale' (schema changed), 'pending_review'
+        (collision), 'stale-unverified' (re-inspection failed, fail-closed).
+        Ordered oldest-first so the most overdue items surface at the top.
         """
-        # Query only mappings with status='stale' (excludes active and
-        # rejected mappings) ordered newest-first for the review queue.
         stmt = (
             select(CapabilityMapping)
             .options(selectinload(CapabilityMapping.server))
-            .where(CapabilityMapping.status == "stale")
-            .order_by(CapabilityMapping.created_at.desc())
+            .where(CapabilityMapping.status.in_(("stale", "pending_review", "stale-unverified")))
+            .order_by(CapabilityMapping.pending_since.asc())
         )
         result = await self.db.execute(stmt)
         mappings = result.scalars().all()
@@ -345,6 +346,46 @@ class CapabilityService:
                 routing_weight=m.routing_weight or 1.0,
                 tool_schema_digest=m.tool_schema_digest,
                 status=m.status,
+                pending_since=m.pending_since,
+            )
+            for m in mappings
+        ]
+
+    async def get_overdue_reviews(
+        self, threshold_hours: int = 24
+    ) -> builtins.list[CapabilityMappingResponse]:
+        """List limbo mappings that have outlived the review deadline (#444).
+
+        WHY: A pending review with no clock is just a slower version of the
+        original staleness problem — limbo grows silently. This method surfaces
+        items whose pending_since is older than the threshold so the system can
+        alert loudly (email/dashboard/webhook).
+        """
+        cutoff = datetime.now(UTC) - timedelta(hours=threshold_hours)
+        stmt = (
+            select(CapabilityMapping)
+            .where(
+                CapabilityMapping.status.in_(("stale", "pending_review", "stale-unverified")),
+                CapabilityMapping.pending_since.is_not(None),
+                CapabilityMapping.pending_since <= cutoff,
+            )
+            .order_by(CapabilityMapping.pending_since.asc())
+        )
+        result = await self.db.execute(stmt)
+        mappings = result.scalars().all()
+        return [
+            CapabilityMappingResponse(
+                id=m.id,
+                capability_id=m.capability_id,
+                server_id=m.server_id,
+                tool_name=m.tool_name,
+                input_mapping=m.input_mapping,
+                output_mapping=m.output_mapping,
+                is_primary=m.is_primary or True,
+                routing_weight=m.routing_weight or 1.0,
+                tool_schema_digest=m.tool_schema_digest,
+                status=m.status,
+                pending_since=m.pending_since,
             )
             for m in mappings
         ]
@@ -393,8 +434,11 @@ class CapabilityService:
                 )
             # Reactivate the mapping so routing picks it up again.
             mapping.status = "active"
+            mapping.pending_since = None
         elif params.decision == "rejected":
             # Keep the mapping but mark it rejected so routing skips it.
+            mapping.status = "rejected"
+            mapping.pending_since = None
             mapping.status = "rejected"
         else:
             raise ValueError(f"Invalid decision: {params.decision}")

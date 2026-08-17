@@ -130,6 +130,7 @@ class CapabilityMappingResponse(BaseModel):
     routing_weight: float = 1.0
     tool_schema_digest: str | None = None
     status: str = "active"
+    pending_since: datetime | None = None
 
     model_config = {"from_attributes": True}
 

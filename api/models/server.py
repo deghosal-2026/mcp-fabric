@@ -218,8 +218,14 @@ class CapabilityMapping(UUIDMixin, Base):
     # Used by routing to detect schema drift: if the current ServerTool's digest
     # doesn't match this stored value, the mapping is stale and should not be used.
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
-    # Routing lifecycle status: 'active' (routable), 'stale' (schema changed, needs review),
-    # 'rejected' (admin denied the schema change, not routable).
+    # Routing lifecycle status: 'active' (live), 'stale' (schema changed, needs review),
+    # 'pending_review' (collision, not routable), 'stale-unverified' (re-inspection
+    # failed, fail-closed, #444), 'rejected' (admin denied, retired, not routable).
+    # States: active = live, stale/pending_review/stale-unverified = limbo,
+    # rejected = retired. Limbo is visible and time-boxed via pending_since.
+    pending_since: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

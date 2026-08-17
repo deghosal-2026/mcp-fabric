@@ -239,6 +239,17 @@ async def list_stale_mappings(
     return await svc.get_stale_mappings()
 
 
+# List overdue limbo mappings — items whose pending_since exceeds the threshold (#444).
+# Used by the staleness watchdog and dashboard to surface items that have been
+# in limbo too long. Default threshold is 24 hours.
+@router.get("/mappings/overdue")
+async def list_overdue_mappings(
+    threshold_hours: int = 24,
+    svc: CapabilityService = Depends(get_capability_service),
+) -> list[CapabilityMappingResponse]:
+    return await svc.get_overdue_reviews(threshold_hours=threshold_hours)
+
+
 # Review (approve or reject) a stale mapping.
 # Creates a MappingReview audit record. On approval, the mapping's digest
 # is recomputed from the current tool schema and status goes back to 'active'.

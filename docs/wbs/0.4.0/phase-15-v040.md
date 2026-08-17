@@ -244,15 +244,15 @@
 **Description:** Guarantee **fail-closed on failed schema re-inspection** — a timeout/unreachable server marks mappings `stale-unverified` (excluded from routing) with retry/backoff, never `unchanged`. Add **age/deadline to every pending review** and alert loudly (email/dashboard) when an item outlives the threshold. Track a third state explicitly: live / retired / **limbo** (visible and time-boxed).
 
 **Checklist:**
-- [ ] Re-inspection failure/timeout → mapping becomes `stale-unverified`, excluded from routing
-- [ ] Retry/backoff, NOT treated as `unchanged`
-- [ ] `pending_since`/deadline on every pending review
-- [ ] Un-cleared pending item triggers deadline alert (email/dashboard)
-- [ ] Third state tracked explicitly: live / retired / limbo (visible + time-boxed)
-- [ ] Renewed inspection restores mapping or creates review
-- [ ] Test: kill server / network timeout → mappings become `stale-unverified`, excluded
-- [ ] Test: un-cleared pending item triggers deadline alert
-- [ ] `make lint`, `make typecheck`, `poetry run pytest tests/ -v` pass
+- [x] Re-inspection failure/timeout → mapping becomes `stale-unverified`, excluded from routing
+- [x] Retry/backoff, NOT treated as `unchanged`
+- [x] `pending_since`/deadline on every pending review
+- [x] Un-cleared pending item triggers deadline alert (email/dashboard)
+- [x] Third state tracked explicitly: live / retired / limbo (visible + time-boxed)
+- [x] Renewed inspection restores mapping or creates review
+- [x] Test: kill server / network timeout → mappings become `stale-unverified`, excluded
+- [x] Test: un-cleared pending item triggers deadline alert
+- [x] `make lint`, `make typecheck`, `poetry run pytest tests/ -v` pass
 - [ ] Code review completed
 
 **Success Criteria:**
