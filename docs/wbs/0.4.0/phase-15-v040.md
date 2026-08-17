@@ -101,6 +101,19 @@
 
 ---
 
+### Milestone M1 Closeout (required to ship M1)
+
+- [ ] **Code review** — `/review` run on full M1 diff; all high-confidence findings resolved
+- [ ] **Lint clean** — `make lint` passes
+- [ ] **Tests** — `poetry run pytest tests/ -v` passes, coverage **≥90%** on new code
+- [ ] **Integration tests** — integration suite passes (test DB)
+- [ ] **Docker tests** — `docker-compose.test.yml` integration/E2E pass
+- [ ] **UI tests** — `cd ui && npm run lint && npm run typecheck && npx vitest run` + Playwright mock pass
+- [ ] **Update WBS** — `docs/wbs/0.4.0/phase-15-v040.md` M1 tasks marked done
+- [ ] **Close GitHub issues** — #439, #440 marked closed (with linked PRs)
+
+---
+
 ## Milestone M2 — Permissions & Policy Feedback (due TBD)
 
 **Dependencies:** v0.3.0 OPA `untrusted_write`/`raw_context` rules (#414), M3-02 collision review flow.
@@ -201,6 +214,19 @@
 
 ---
 
+### Milestone M2 Closeout (required to ship M2)
+
+- [ ] **Code review** — `/review` run on full M2 diff; all high-confidence findings resolved
+- [ ] **Lint clean** — `make lint` passes
+- [ ] **Tests** — `poetry run pytest tests/ -v` passes, coverage **≥90%** on new code
+- [ ] **Integration tests** — integration suite passes (test DB)
+- [ ] **Docker tests** — `docker-compose.test.yml` integration/E2E pass
+- [ ] **UI tests** — `cd ui && npm run lint && npm run typecheck && npx vitest run` + Playwright mock pass
+- [ ] **Update WBS** — `docs/wbs/0.4.0/phase-15-v040.md` M2 tasks marked done
+- [ ] **Close GitHub issues** — #445, #443, #441 marked closed (with linked PRs)
+
+---
+
 ## Milestone M3 — Review Queue Resilience (due TBD)
 
 **Dependencies:** M2-03 (review flow), v0.3.0 schema-digest (#414). Tasks M3-01/02/03 evolve the same schema-digest review lifecycle and should be delivered together.
@@ -295,6 +321,19 @@
 
 ---
 
+### Milestone M3 Closeout (required to ship M3)
+
+- [ ] **Code review** — `/review` run on full M3 diff; all high-confidence findings resolved
+- [ ] **Lint clean** — `make lint` passes
+- [ ] **Tests** — `poetry run pytest tests/ -v` passes, coverage **≥90%** on new code
+- [ ] **Integration tests** — integration suite passes (test DB)
+- [ ] **Docker tests** — `docker-compose.test.yml` integration/E2E pass
+- [ ] **UI tests** — `cd ui && npm run lint && npm run typecheck && npx vitest run` + Playwright mock pass
+- [ ] **Update WBS** — `docs/wbs/0.4.0/phase-15-v040.md` M3 tasks marked done
+- [ ] **Close GitHub issues** — #444, #446, #447 marked closed (with linked PRs)
+
+---
+
 ## Milestone M4 — HITL Approval Fatigue Mitigation (due TBD)
 
 **Dependencies:** #443 structured feedback (denials keep prompts rare), M3 status model.
@@ -329,6 +368,19 @@
 - ✅ Reads/undo-able auto-approved; destructive/escape actions prompted
 - ✅ Envelopes expiring + scoped; out-of-envelope always escalates
 - ✅ Bulk-approve with anomaly markers; tests + quality gates pass
+
+---
+
+### Milestone M4 Closeout (required to ship M4)
+
+- [ ] **Code review** — `/review` run on full M4 diff; all high-confidence findings resolved
+- [ ] **Lint clean** — `make lint` passes
+- [ ] **Tests** — `poetry run pytest tests/ -v` passes, coverage **≥90%** on new code
+- [ ] **Integration tests** — integration suite passes (test DB)
+- [ ] **Docker tests** — `docker-compose.test.yml` integration/E2E pass
+- [ ] **UI tests** — `cd ui && npm run lint && npm run typecheck && npx vitest run` + Playwright mock pass
+- [ ] **Update WBS** — `docs/wbs/0.4.0/phase-15-v040.md` M4 tasks marked done
+- [ ] **Close GitHub issues** — #442 marked closed (with linked PR)
 
 ---
 
