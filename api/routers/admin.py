@@ -293,3 +293,16 @@ async def get_ambiguity(
         )
         for m in mappings
     ]
+
+
+# List many-to-one capability-mapping collisions (#441).
+# When multiple distinct tools map to the same normalized capability, this
+# is a collision — the raw schemas may not intend semantic equivalence.
+# Colliding mappings are marked pending_review and must be approved before
+# they become routable.
+@router.get("/capabilities/{capability_id}/collisions")
+async def get_collisions(
+    capability_id: UUID,
+    svc: CapabilityService = Depends(get_capability_service),
+) -> list[CapabilityMappingResponse]:
+    return await svc.get_collisions(capability_id)

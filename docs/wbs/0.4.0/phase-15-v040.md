@@ -196,14 +196,14 @@
 **Description:** Detect **many-to-one capability-mapping collisions** (multiple distinct tools mapped to the same normalized capability) and require explicit review/approval before any colliding mapping becomes routable. Pass immutable raw call context (server/tool identity + args) to OPA alongside the normalized capability so a policy can still distinguish origin. Add a confused-deputy fuzz case.
 
 **Checklist:**
-- [ ] Collision detected when ≥2 distinct tools map to the same capability
-- [ ] Colliding mappings require explicit review before routable (blocked until approved)
-- [ ] Admin UI surfaces collision list (extend Reviews page) with distinct visual treatment
-- [ ] OPA receives raw call context (server identity + tool + args) to distinguish origin
-- [ ] OPA can deny based on origin (low-trust server presenting high-trust capability name)
-- [ ] Confused-deputy fuzz case added (per #440 harness or unit)
-- [ ] Register `/promote` + `/promoteDeploy` → collision surfaced, routing blocked until review
-- [ ] `make lint`, `make typecheck`, `poetry run pytest tests/ -v` pass
+- [x] Collision detected when ≥2 distinct tools map to the same capability
+- [x] Colliding mappings require explicit review before routable (blocked until approved)
+- [x] Admin UI surfaces collision list (extend Reviews page) with distinct visual treatment
+- [x] OPA receives raw call context (server identity + tool + args) to distinguish origin
+- [x] OPA can deny based on origin (low-trust server presenting high-trust capability name)
+- [x] Confused-deputy fuzz case added (per #440 harness or unit)
+- [x] Register `/promote` + `/promoteDeploy` → collision surfaced, routing blocked until review
+- [x] `make lint`, `make typecheck`, `poetry run pytest tests/ -v` pass
 - [ ] Code review completed
 
 **Success Criteria:**

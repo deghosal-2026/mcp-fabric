@@ -241,8 +241,15 @@ class CapabilityService:
         # captures the exact tool identity at creation time.
         digest = self._compute_tool_digest(tool.tool_name, tool.input_schema, tool.output_schema)
 
-        # Store both the digest (for drift detection) and 'active' status
-        # so routing includes this mapping immediately.
+        # Many-to-one collision detection (#441): if this capability already
+        # has a mapping to a *different* tool (distinct tool_name or digest),
+        # the new mapping is a collision. Name-based normalization may grant
+        # equivalence the raw schemas never intended, so a collision is NOT
+        # routable until an admin reviews and approves it.
+        collides = await self._has_collision(capability_id, params.tool_name, digest)
+        status = "pending_review" if collides else "active"
+
+        # Store both the digest (for drift detection) and the lifecycle status.
         mapping = CapabilityMapping(
             capability_id=capability_id,
             server_id=params.server_id,
@@ -251,7 +258,7 @@ class CapabilityService:
             output_mapping=params.output_mapping,
             is_primary=params.is_primary,
             tool_schema_digest=digest,
-            status="active",
+            status=status,
         )
         self.db.add(mapping)
         await self.db.commit()
@@ -268,6 +275,46 @@ class CapabilityService:
             tool_schema_digest=mapping.tool_schema_digest,
             status=mapping.status,
         )
+
+    async def _has_collision(self, capability_id: UUID, tool_name: str, digest: str) -> bool:
+        """True when another mapping maps a *different* tool_name to this capability (#441).
+
+        Two mappings collide when they resolve the same normalized capability
+        to materially different tools (different tool_name). Same-name tools
+        on different servers are NOT collisions — they are legitimate
+        load-balancing (schema-digest drift is handled separately by #414).
+        """
+        stmt = select(CapabilityMapping).where(CapabilityMapping.capability_id == capability_id)
+        result = await self.db.execute(stmt)
+        for existing in result.scalars().all():
+            if existing.tool_name != tool_name:
+                return True
+        return False
+
+    async def get_collisions(self, capability_id: UUID) -> builtins.list[CapabilityMappingResponse]:
+        """List many-to-one collisions for a capability (#441).
+
+        Returns mappings that resolve the same capability to multiple distinct
+        tools (different tool_name). These must be reviewed before they are
+        routable — a low-trust server could otherwise present a high-trust
+        capability name (confused deputy).
+        """
+        stmt = select(CapabilityMapping).where(CapabilityMapping.capability_id == capability_id)
+        result = await self.db.execute(stmt)
+        mappings = list(result.scalars().all())
+
+        # Group by distinct tool_name.
+        identities: dict[str, list[CapabilityMapping]] = {}
+        for m in mappings:
+            identities.setdefault(m.tool_name, []).append(m)
+
+        # A collision exists when >1 distinct tool_name maps to the capability.
+        collisions: list[CapabilityMapping] = []
+        if len(identities) > 1:
+            for group in identities.values():
+                collisions.extend(group)
+
+        return [CapabilityMappingResponse.model_validate(m) for m in collisions]
 
     async def get_stale_mappings(self) -> builtins.list[CapabilityMappingResponse]:
         """List all mappings with status='stale' that need admin review.

@@ -442,3 +442,27 @@ test_read_only_denied_flag_in_result if {
         "tool_class": "mutating",
     }
 }
+
+# ─── Origin Context (many-to-one collisions, #441) ───
+
+# Verifies that OPA receives the immutable raw call context (server + tool
+# identity) so a policy can still distinguish origin despite normalization.
+test_raw_context_includes_server_and_tool_identity if {
+    ctx := raw_context with input as {
+        "agent_class": "agent:developer",
+        "server_id": "server-low-trust",
+        "tool_name": "promote",
+        "capability": "deployment:promote",
+    }
+    ctx.server_id == "server-low-trust"
+    ctx.tool_name == "promote"
+}
+
+# Verifies raw_context is distinct for two different origins, so a policy can
+# key on the origin (e.g. deny a low-trust server presenting a high-trust
+# capability name).
+test_raw_context_distinguishes_origin if {
+    a := raw_context with input as {"server_id": "server-a", "tool_name": "promote"}
+    b := raw_context with input as {"server_id": "server-b", "tool_name": "promote"}
+    a != b
+}
