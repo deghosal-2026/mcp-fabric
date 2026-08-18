@@ -149,6 +149,34 @@ export interface ApprovalRequest {
   server_name?: string;
 }
 
+export interface ApprovalEnvelope {
+  id: string;
+  scope: string;
+  budget: number;
+  remaining: number;
+  expires_at: string;
+}
+
+export interface ApprovalEnvelopeCreate {
+  scope: string;
+  budget: number;
+  expires_at: string;
+}
+
+export interface BulkApproveRequest {
+  envelope_id: string | null;
+  action_ids: string[];
+  anomaly_ids?: string[];
+  approver_id?: string | null;
+  note?: string | null;
+}
+
+export interface BulkApproveResponse {
+  approved: number;
+  anomalies: string[];
+  envelope_remaining: number | null;
+}
+
 export interface AuditEvent {
   id: string;
   event_type: string;

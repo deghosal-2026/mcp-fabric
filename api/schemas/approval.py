@@ -93,3 +93,51 @@ class ApprovalStatusResponse(BaseModel):
     result: dict[str, Any] | None = None
     approver_note: str | None = None
     resolved_at: datetime | None = None
+
+
+class ApprovalEnvelopeCreate(BaseModel):
+    """Grant a scoped, expiring approval budget (#442).
+
+    A human grants e.g. "10 promotes to staging within the hour". The
+    deterministic validator burns this budget down; out-of-envelope actions
+    escalate.
+    """
+
+    scope: str = Field(min_length=1, max_length=100)
+    budget: int = Field(gt=0, le=1000)
+    expires_at: datetime
+
+
+class ApprovalEnvelopeResponse(BaseModel):
+    """Envelope state exposed to the UI / audit trail."""
+
+    id: UUID
+    scope: str
+    budget: int
+    remaining: int
+    expires_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class BulkApproveRequest(BaseModel):
+    """Approve a batch of pending requests in one action (#442).
+
+    Groups pending requests and lets the reviewer clear them together, with
+    explicit anomaly markers separating genuine changes from noise. If an
+    envelope is given, its budget is burned down for the batch.
+    """
+
+    envelope_id: UUID | None = None
+    action_ids: list[UUID]
+    anomaly_ids: list[UUID] = Field(default_factory=list)
+    approver_id: UUID | None = None
+    note: str | None = None
+
+
+class BulkApproveResponse(BaseModel):
+    """Result of a bulk approve with grouped counts and anomaly markers."""
+
+    approved: int
+    anomalies: list[UUID]
+    envelope_remaining: int | None = None

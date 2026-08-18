@@ -27,14 +27,22 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.dependencies import get_approval_service
+from api.dependencies import get_approval_fatigue_service, get_approval_service
 from api.schemas.approval import (
     ApprovalAction,
+    ApprovalEnvelopeCreate,
+    ApprovalEnvelopeResponse,
     ApprovalRequestCreate,
     ApprovalRequestResponse,
     ApprovalStatusResponse,
+    BulkApproveRequest,
+    BulkApproveResponse,
 )
 from api.schemas.common import PaginatedApprovals, PaginationMeta
+from api.services.approval_fatigue_service import (
+    ApprovalFatigueService,
+    InsufficientEnvelopeError,
+)
 from api.services.approval_service import (
     ApprovalAlreadyResolvedError,
     ApprovalExpiredError,
@@ -81,6 +89,51 @@ async def create_approval_request(
     svc: ApprovalService = Depends(get_approval_service),
 ) -> ApprovalRequestResponse:
     return await svc.create_request(body)
+
+
+# Grant a scoped, expiring approval envelope (#442). A human pre-authorizes
+# a budget for a scope; the deterministic validator burns it down per
+# in-envelope action. Registered before /{request_id} so the literal
+# "envelopes" path segment is not swallowed by the UUID route.
+@router.post("/envelopes", status_code=201)
+async def grant_envelope(
+    body: ApprovalEnvelopeCreate,
+    svc: ApprovalFatigueService = Depends(get_approval_fatigue_service),
+) -> ApprovalEnvelopeResponse:
+    envelope = await svc.grant_envelope(
+        scope=body.scope,
+        budget=body.budget,
+        expires_at=body.expires_at,
+    )
+    return ApprovalEnvelopeResponse(
+        id=envelope.id,
+        scope=envelope.scope,
+        budget=envelope.budget,
+        remaining=envelope.remaining,
+        expires_at=envelope.expires_at,
+    )
+
+
+# Bulk-approve a batch of pending requests in one action (#442), with
+# explicit anomaly markers separating genuine changes from noise. Envelope
+# budget (if any) is burned down and the remaining budget returned so the UI
+# can surface fatigue-reduction state.
+@router.post("/bulk-approve")
+async def bulk_approve(
+    body: BulkApproveRequest,
+    svc: ApprovalFatigueService = Depends(get_approval_fatigue_service),
+) -> BulkApproveResponse:
+    try:
+        return await svc.bulk_approve(
+            envelope_id=str(body.envelope_id) if body.envelope_id else "",
+            action_ids=[str(a) for a in body.action_ids],
+            anomaly_ids=[str(a) for a in body.anomaly_ids],
+        )
+    except InsufficientEnvelopeError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "insufficient_envelope", "message": str(exc)},
+        ) from exc
 
 
 # Poll the current status of an approval request. Used by automated

@@ -23,7 +23,7 @@ from api.models.agent import (
 from api.models.audit import AlertEvent, AlertRule, ApprovalRequest, AuditEvent
 from api.models.base import Base
 from api.models.capability import Capability, CapabilityAlias
-from api.models.policy import OPAPolicyVersion
+from api.models.policy import ApprovalEnvelope, OPAPolicyVersion
 from api.models.resource import (
     DimensionValueMap,
     IdentityResourceBinding,
@@ -54,6 +54,7 @@ __all__ = [
     "AdminUser",
     "BackgroundTask",
     "OPAPolicyVersion",
+    "ApprovalEnvelope",
     "ResourceDimension",
     "DimensionValueMap",
     "IdentityResourceBinding",

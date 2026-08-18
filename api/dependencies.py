@@ -32,6 +32,7 @@ from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.mcp import MCPClient
+from api.services.approval_fatigue_service import ApprovalFatigueService
 from api.services.approval_service import ApprovalService
 from api.services.auth_service import AuthService
 from api.services.capability_service import CapabilityService
@@ -107,6 +108,19 @@ async def get_approval_service(
     database table only.
     """
     return ApprovalService(db=db)
+
+
+async def get_approval_fatigue_service(
+    db: AsyncSession = Depends(get_db_session),
+) -> ApprovalFatigueService:
+    """Dependency: creates an ApprovalFatigueService.
+
+    WHAT: Instantiates ApprovalFatigueService with the database session.
+
+    WHY: ApprovalFatigueService manages the reversibility classification,
+    scoped/expiring approval envelopes, and bulk-approve grouping (#442).
+    """
+    return ApprovalFatigueService(db=db)
 
 
 async def get_pack_service(

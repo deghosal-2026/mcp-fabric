@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { fetchApprovals, resolveApproval } from '../api/client'
+import { fetchApprovals, resolveApproval, bulkApprove } from '../api/client'
 import { Table } from '../components/shared/Table'
 import { FilterBar } from '../components/shared/FilterBar'
 import { Badge } from '../components/shared/Badge'
@@ -17,6 +17,8 @@ export function ApprovalsPage() {
   const handleFilter = useCallback((f: Record<string, string>) => { setFilters(f); setOffset(0) }, [])
   const [reviewTarget, setReviewTarget] = useState<ApprovalRequest | null>(null)
   const [reviewNote, setReviewNote] = useState('')
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [anomalyIds, setAnomalyIds] = useState<string[]>([])
   const queryClient = useQueryClient()
   const { addToast } = useToast()
 
@@ -48,9 +50,64 @@ export function ApprovalsPage() {
     onError: (err: Error) => addToast('error', err.message),
   })
 
+  const bulk = useMutation({
+    mutationFn: () => bulkApprove({
+      envelope_id: '', // bulk without an envelope does not burn budget
+      action_ids: selectedIds,
+      anomaly_ids: anomalyIds,
+      approver_id: null,
+      note: reviewNote,
+    }),
+    onSuccess: (res) => {
+      setSelectedIds([])
+      setAnomalyIds([])
+      setReviewNote('')
+      addToast('success', `Bulk approved ${res.approved} request(s)`)
+    },
+    onError: (err: Error) => addToast('error', err.message),
+  })
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+    setAnomalyIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : prev)
+  }
+
+  const toggleAnomaly = (id: string) => {
+    setAnomalyIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
   const columns: ColumnDef<ApprovalRequest>[] = [
+    {
+      header: '',
+      accessorKey: 'id',
+      cell: ({ row }) => (
+        row.original.status === 'pending' ? (
+          <input
+            type="checkbox"
+            checked={selectedIds.includes(row.original.id)}
+            onChange={() => toggleSelect(row.original.id)}
+            aria-label={`select ${row.original.id}`}
+          />
+        ) : null
+      ),
+    },
     { header: 'Agent', accessorKey: 'agent_name' },
     { header: 'Capability', accessorKey: 'capability_name' },
+    { header: 'Anomaly', accessorKey: 'id',
+      cell: ({ row }) => (
+        row.original.status === 'pending' ? (
+          <label className="flex items-center gap-1 text-sm">
+            <input
+              type="checkbox"
+              checked={anomalyIds.includes(row.original.id)}
+              onChange={() => toggleAnomaly(row.original.id)}
+              aria-label={`mark ${row.original.id} as anomaly`}
+            />
+            <span className="text-yellow-700">Change</span>
+          </label>
+        ) : null
+      ),
+    },
     {
       header: 'Status',
       accessorKey: 'status',
@@ -88,6 +145,28 @@ export function ApprovalsPage() {
             ]}
             onFilter={handleFilter}
           />
+        </div>
+
+        <div className="px-4 pb-2 flex items-center gap-3">
+          <div className="text-sm text-gray-600">
+            {selectedIds.length > 0
+              ? <span><strong>{selectedIds.length}</strong> selected, <strong>{anomalyIds.length}</strong> marked as changes</span>
+              : 'Select pending requests to bulk-approve; mark real changes as anomalies first.'}
+          </div>
+          {selectedIds.length > 0 && (
+            <>
+              <input
+                value={reviewNote}
+                onChange={e => setReviewNote(e.target.value)}
+                placeholder="Bulk note (optional)"
+                className="px-3 py-1.5 text-sm border rounded-lg flex-1 max-w-xs"
+              />
+              <button onClick={() => bulk.mutate()} disabled={bulk.isPending}
+                className="px-3 py-1.5 text-sm text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50">
+                Bulk Approve
+              </button>
+            </>
+          )}
         </div>
 
         <PageState query={approvals}>

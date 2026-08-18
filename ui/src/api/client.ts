@@ -183,6 +183,20 @@ export function resolveApproval(id: string, status: 'approved' | 'denied', reaso
   })
 }
 
+export function grantEnvelope(body: import('../types').ApprovalEnvelopeCreate) {
+  return fetcher<import('../types').ApprovalEnvelope>(
+    '/approvals/envelopes',
+    { method: 'POST', body: JSON.stringify(body) },
+  )
+}
+
+export function bulkApprove(body: import('../types').BulkApproveRequest) {
+  return fetcher<import('../types').BulkApproveResponse>(
+    '/approvals/bulk-approve',
+    { method: 'POST', body: JSON.stringify(body) },
+  )
+}
+
 // Audit
 export function fetchAuditEvents(params?: Record<string, string>) {
   return fetcher<PaginatedResponse<AuditEvent>>(buildQuery('/audit', params))

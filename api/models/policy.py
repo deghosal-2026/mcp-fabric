@@ -13,10 +13,10 @@ the full version history is preserved in this table.
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, String, Text, func
+from sqlalchemy import DateTime, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from api.models.base import Base, UUIDMixin
+from api.models.base import Base, TimestampMixin, UUIDMixin
 
 
 class OPAPolicyVersion(UUIDMixin, Base):
@@ -53,3 +53,32 @@ class OPAPolicyVersion(UUIDMixin, Base):
     rego_content: Mapped[str] = mapped_column(Text, nullable=False)
 
     __table_args__ = (Index("idx_opapolicy_version", "version"),)
+
+
+class ApprovalEnvelope(UUIDMixin, TimestampMixin, Base):
+    """A human-granted, scoped, expiring budget of approvals (#442).
+
+    Table: approval_envelopes
+
+    An envelope lets a human grant a limited number of approvals for a
+    specific scope (e.g. "10 promotes to staging within the hour"). A
+    deterministic validator burns the budget down with each in-envelope
+    action, and only out-of-envelope actions (new env, schema change,
+    over-budget) escalate back to a human.
+
+    Columns:
+        scope      – What this envelope covers (e.g. "staging", "ci:pipeline").
+        budget     – Total budget granted when created.
+        remaining  – Budget still available; decremented on every burn.
+        expires_at – Hard TTL; past this the envelope refuses to burn.
+        created_at – When granted (TimestampMixin).
+    """
+
+    __tablename__ = "approval_envelopes"
+
+    scope: Mapped[str] = mapped_column(String(100), nullable=False)
+    budget: Mapped[int] = mapped_column(Integer, nullable=False)
+    remaining: Mapped[int] = mapped_column(Integer, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (Index("idx_envelope_scope", "scope"),)
