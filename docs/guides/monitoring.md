@@ -97,6 +97,74 @@ rule_files:
   - /etc/alertmanager/rules/alerts.yml
 ```
 
+## External Staleness Watchdog (#446)
+
+The staleness watchdog is **architecturally external** to the review-queue system.
+Its liveness does not depend on the API, worker, or beat services — if the queue
+dies, stale items still trigger alerts.
+
+### Architecture
+
+```
+                ┌─────────────────────────────────────┐
+                │  Review Queue (api/worker/beat)     │
+                │  — writes mappings to limbo         │
+                │  — runs re-inspection               │
+                └──────────────┬──────────────────────┘
+                               │ (shared DB, read-only)
+                               ▼
+                ┌─────────────────────────────────────┐
+                │  Staleness Watchdog (standalone)    │
+                │  — polls pending_since timestamps   │
+                │  — NEVER writes to the queue        │
+                │  — beats own heartbeat              │
+                │  — exposes Prometheus metrics :9100 │
+                └──────────────┬──────────────────────┘
+                               │ (alerts)
+                               ▼
+                      Alertmanager / Dashboard
+```
+
+### Key properties
+
+| Property | How |
+|----------|-----|
+| Independent process | Separate container (`watchdog` in `docker-compose.yml`), depends only on `postgres` + `redis` |
+| Read-only | Probes `capability_mappings.pending_since`; never mutates queue status |
+| Own heartbeat | `fabric_watchdog_last_success_timestamp` gauge, updated each cycle |
+| Dead-man switch | `WatchdogDeadManSwitch` alert fires if no check-in for >5 min |
+| Grouped alerts | `GroupedStalenessAlert` per `failure_class` — unreachable ≠ drift |
+
+### Running
+
+```bash
+# Standalone
+python scripts/watchdog.py --interval 60 --threshold-hours 24 --dead-man-minutes 10
+
+# Docker
+docker compose up -d watchdog
+```
+
+### Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `fabric_watchdog_cycles_total` | Counter | Total cycles completed |
+| `fabric_watchdog_alerts_total` | Counter | Alerts by `failure_class` |
+| `fabric_watchdog_last_success_timestamp` | Gauge | Last successful cycle (dead-man switch source) |
+| `fabric_watchdog_overdue_items` | Gauge | Overdue items by `failure_class` |
+
+### Alert Rules
+
+| Alert | Expression | Severity | Condition |
+|-------|-----------|----------|-----------|
+| `WatchdogDeadManSwitch` | `time() - fabric_watchdog_last_success_timestamp > 300` | critical | Watchdog dead/stuck for >5 min |
+| `StaleReviewAgeAlert` | `sum(fabric_watchdog_overdue_items) > 0` | high | Items past review deadline |
+
+### Kill-Queue Test
+
+The watchdog's independence is verified by `tests/services/test_watchdog.py::test_watchdog_alert_survives_queue_service_death`: the watchdog is constructed with only a DB session and notifier (no `RegistryService`/`CapabilityService`), proving the queue process can be completely gone and stale items still alert.
+
 ## OpenTelemetry Tracing
 
 ### Configuration

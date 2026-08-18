@@ -12,7 +12,7 @@
 > **GitHub milestones:**
 > - [M1 — Cohesion & Adversarial Fuzz](https://github.com/deghosal-2026/mcp-fabric/issues?q=is%3Aissue+state%3Aopen+label%3A%22%5B0.4.0%5D%22+cohesion) — ✅ done (#439, #440)
 > - [M2 — Permissions & Policy Feedback](https://github.com/deghosal-2026/mcp-fabric/issues?q=is%3Aissue+state%3Aopen+label%3A%22%5B0.4.0%5D%22) — ✅ done (#445, #443, #441)
-> - [M3 — Review Queue Resilience](https://github.com/deghosal-2026/mcp-fabric/issues?q=is%3Aissue+state%3Aopen+label%3A%22%5B0.4.0%5D%22) — 🚧 in progress (#444 done; #446, #447 remaining)
+> - [M3 — Review Queue Resilience](https://github.com/deghosal-2026/mcp-fabric/issues?q=is%3Aissue+state%3Aopen+label%3A%22%5B0.4.0%5D%22) — 🚧 in progress (#444 done; #446 done; #447 backend done, UI pending)
 > - [M4 — Approval Fatigue Mitigation](https://github.com/deghosal-2026/mcp-fabric/issues?q=is%3Aissue+state%3Aopen+label%3A%22%5B0.4.0%5D%22) — 🚧 pending (#442)
 
 ---
@@ -27,7 +27,7 @@
 | 443 | [Structured policy-denial feedback to agents (denial = result, not failure)](https://github.com/deghosal-2026/mcp-fabric/issues/443) | M2 | [x] |
 | 441 | [Detect many-to-one capability-mapping collisions + require review](https://github.com/deghosal-2026/mcp-fabric/issues/441) | M2 | [x] |
 | 444 | [Fail-closed on missing schema re-inspection + stale-review age alerts](https://github.com/deghosal-2026/mcp-fabric/issues/444) | M3 | [x] |
-| 446 | [Staleness watchdog must be external to the review queue system](https://github.com/deghosal-2026/mcp-fabric/issues/446) | M3 | [ ] |
+| 446 | [Staleness watchdog must be external to the review queue system](https://github.com/deghosal-2026/mcp-fabric/issues/446) | M3 | [x] |
 | 447 | [Queue prioritization: separate unreachable from genuinely changed review items](https://github.com/deghosal-2026/mcp-fabric/issues/447) | M3 | [ ] |
 | 442 | [HITL approval fatigue: reversibility split + bulk approve + expiring envelopes](https://github.com/deghosal-2026/mcp-fabric/issues/442) | M4 | [ ] |
 
@@ -274,14 +274,14 @@
 **Description:** Ensure the staleness monitoring/alerting mechanism is **architecturally external** to the review-queue system — an independent process/service whose liveness does not depend on the queue it watches. The watchdog only needs read access to item timestamps (or a dedicated staleness table) and a notification channel; it never writes to the queue. It exposes its own **heartbeat**, and a **dead-man switch** raises a human-visible alert if the watchdog itself stops checking in.
 
 **Checklist:**
-- [ ] Watchdog runs as independent process/service (sidecar, separate cron context, or external checker)
-- [ ] Never shares the queue's process/container/service liveness
-- [ ] Read-only interface to item timestamps / dedicated staleness table; never writes to queue
-- [ ] Notifies via alert/dashboard/webhook
-- [ ] Watchdog exposes own heartbeat
-- [ ] Dead-man switch: missing N check-ins → human-visible alert immediately
-- [ ] Test: kill the review-queue service entirely → stale items still trigger alerts (watchdog alive & independent)
-- [ ] Architecture documented in monitoring guide
+- [x] Watchdog runs as independent process/service (sidecar, separate cron context, or external checker)
+- [x] Never shares the queue's process/container/service liveness
+- [x] Read-only interface to item timestamps / dedicated staleness table; never writes to queue
+- [x] Notifies via alert/dashboard/webhook
+- [x] Watchdog exposes own heartbeat
+- [x] Dead-man switch: missing N check-ins → human-visible alert immediately
+- [x] Test: kill the review-queue service entirely → stale items still trigger alerts (watchdog alive & independent)
+- [x] Architecture documented in monitoring guide
 - [ ] Code review completed
 
 **Success Criteria:**
@@ -304,14 +304,15 @@
 **Description:** Distinguish **"server unreachable"** from **"schema genuinely changed"** as distinct failure classes in the review queue so items can be prioritised and routed to different responses. Unreachable = decide retire-or-wait (hands-off); drifted = review and re-approve (hands-on). Unreachable items must not bury real schema changes, and should batch into grouped notifications without counting toward the reviewer's pending-critical tally.
 
 **Checklist:**
-- [ ] Every review item carries a `failure_class` (`unreachable` / `drifted` / `schema_mismatch` / `timeout`)
-- [ ] Re-inspection handler writes `failure_class` at item creation
+- [x] Every review item carries a `failure_class` (`unreachable` / `drifted` / `schema_mismatch` / `timeout`)
+- [x] Re-inspection handler writes `failure_class` at item creation
 - [ ] UI separates unreachable items (distinct section/visual) with filter
 - [ ] Bulk action: "retire all unreachable" without per-item review
 - [ ] Grouped notifications (unreachable ≠ drift); unreachable excluded from critical tally
 - [ ] Optional auto-retire after N consecutive unreachable inspections
-- [ ] Queue of 50 unreachable + 2 changes → real changes rise to top
-- [ ] `make lint`, `make typecheck`, `poetry run pytest tests/ -v` pass
+- [x] Queue of 50 unreachable + 2 changes → real changes rise to top
+- [x] Backend: queue filter (`GET /mappings/stale?failure_class=`), summary (`GET /mappings/summary`), bulk retire (`POST /mappings/retire`)
+- [x] `make lint`, `make typecheck`, `poetry run pytest tests/ -v` pass
 - [ ] Code review completed
 
 **Success Criteria:**

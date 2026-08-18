@@ -83,6 +83,25 @@ services:
     ports:
       - "8181:8181"
 
+  # External staleness watchdog (#446). Independent process/container that
+  # depends ONLY on postgres + redis — never on the api/worker/beat services.
+  # If the queue service dies, this still probes timestamps and alerts.
+  watchdog:
+    build: .
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://fabric:fabric@postgres:5432/mcp_fabric
+      - REDIS_URL=redis://redis:6379/0
+      - WATCHDOG_METRICS_PORT=9100
+      - LOG_LEVEL=INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    command: python scripts/watchdog.py --interval 60 --threshold-hours 24 --dead-man-minutes 10
+    ports:
+      - "9100:9100"
+
 volumes:
   pgdata:
   redisdata:
