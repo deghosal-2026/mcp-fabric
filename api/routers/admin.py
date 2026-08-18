@@ -267,9 +267,7 @@ async def bulk_retire_mappings(
             status_code=422,
             detail={"error": "no_target", "message": "Specify failure_class or mapping_ids"},
         )
-    retired = await svc.bulk_retire(
-        failure_class=body.failure_class, mapping_ids=body.mapping_ids
-    )
+    retired = await svc.bulk_retire(failure_class=body.failure_class, mapping_ids=body.mapping_ids)
     return BulkRetireResponse(retired=retired, failure_class=body.failure_class)
 
 

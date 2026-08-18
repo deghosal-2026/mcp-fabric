@@ -172,9 +172,7 @@ async def test_watchdog_beats_own_heartbeat(db_session: AsyncSession) -> None:
     """A successful cycle records a heartbeat check-in."""
     heartbeat = _InMemoryHeartbeat()
     notifier = _RecordingNotifier()
-    watchdog = StalenessWatchdog(
-        db=db_session, notifier=notifier, heartbeat=heartbeat
-    )
+    watchdog = StalenessWatchdog(db=db_session, notifier=notifier, heartbeat=heartbeat)
 
     await watchdog.run_cycle(threshold_hours=24)
 
@@ -185,9 +183,7 @@ async def test_watchdog_beats_own_heartbeat(db_session: AsyncSession) -> None:
 async def test_watchdog_logs_heartbeat_without_queue_review(db_session: AsyncSession) -> None:
     """Even with zero overdue items the heartbeat still beats (liveness)."""
     heartbeat = _InMemoryHeartbeat()
-    watchdog = StalenessWatchdog(
-        db=db_session, notifier=_RecordingNotifier(), heartbeat=heartbeat
-    )
+    watchdog = StalenessWatchdog(db=db_session, notifier=_RecordingNotifier(), heartbeat=heartbeat)
 
     report = await watchdog.run_cycle(threshold_hours=24)
 
@@ -200,7 +196,9 @@ async def test_dead_man_switch_fires_when_check_ins_stale(db_session: AsyncSessi
     heartbeat = _InMemoryHeartbeat()
     notifier = _RecordingNotifier()
     watchdog = StalenessWatchdog(
-        db=db_session, notifier=notifier, heartbeat=heartbeat,
+        db=db_session,
+        notifier=notifier,
+        heartbeat=heartbeat,
         dead_man_interval=timedelta(minutes=5),
     )
 

@@ -6,7 +6,7 @@
 > **Milestones:**
 > - [v0.1.0 — Core Platform](https://github.com/deghosal-2026/mcp-fabric/milestone/1) (shipped)
 > - [v0.3.0 — Security Hardening & Compliance](https://github.com/deghosal-2026/mcp-fabric/milestone/2) (shipped)
-> - [v0.4.0 — Trust Posture, Admissions, & Review Resilience](https://github.com/deghosal-2026/mcp-fabric/milestone) (in progress)
+> - [v0.4.0 — Trust Posture, Admissions, & Review Resilience](https://github.com/deghosal-2026/mcp-fabric/milestone) (shipped)
 > **Based on:** `docs/PRD.md`, `docs/spec.md`, `docs/DESIGN.md`, `docs/ARCHITECTURE.md`
 
 > **Issues:** v0.1.0 tasks were created under milestone [v0.1.0 — Core Platform](https://github.com/deghosal-2026/mcp-fabric/milestone/1) (368 issues, shipped). v0.3.0 tasks tracked via milestone issues on GitHub under [v0.3.0 milestones](https://github.com/deghosal-2026/mcp-fabric/milestones?state=open). v0.4.0 tracked via issues #439–#447. Each task in phase files below links to its issue.
@@ -31,7 +31,7 @@
 | [OSS](0.1.0/phase-oss-prep.md) | Open Source Preparation | 10 | 12h | Community profile, README badges, governance, release automation, docs site, security scanning, health files |
 | [13](0.2.0/phase-13-resource-policy.md) | Resource-Aware Policy | 12 | 184h | DB schema (4 tables), OPA Rego rules, API endpoints (dimensions + bindings), routing service resource validation, Admin UI (3 tabs + approval mismatch), audit logging, integration/E2E tests, developer guide, doc updates, release |
 | [14](0.3.0/phase-14-v030.md) | v0.3.0 — Security Hardening & Compliance | 12 | 200h | 4 milestones: Docs & Tests, Audit & Observability, UI Safety Signals, Schema-Digest Mappings. See milestone issues for tracking. |
-| [15](0.4.0/phase-15-v040.md) | v0.4.0 — Trust Posture, Admissions, & Review Resilience | 9 | In progress | 4 milestones: Cohesion & Fuzz, Permissions & Policy Feedback, Review Queue Resilience, Approval Fatigue. Issues #439–#447. |
+| [15](0.4.0/phase-15-v040.md) | v0.4.0 — Trust Posture, Admissions, & Review Resilience | 9 | Shipped | 4 milestones: Cohesion & Fuzz, Permissions & Policy Feedback, Review Queue Resilience, Approval Fatigue. Issues #439–#447. |
 
 ## Task Format
 
@@ -75,12 +75,7 @@ P14 phases:
   M1 (Docs & Tests) ──► M2 (Audit) ──► M3 (UI Safety)
   M4 (Schema-Digest) ── runs in parallel with M1-M3 ──► v0.3.0 Release
 
-v0.3.0 ──► P15 (v0.4.0 Trust Posture, Admissions, & Review Resilience)
-
-P15 milestones:
-  M1 (Cohesion & Adversarial Fuzz) ── runs in parallel
-  M2 (Permissions & Policy Feedback) ──► M4 (Approval Fatigue)
-  M3 (Review Queue Resilience) ── ordered chain ──► v0.4.0 Release
+v0.3.0 ──► P15 (v0.4.0 Trust Posture, Admissions, & Review Resilience) ──► v0.4.0 Release (shipped)
 ```
 
 ## Tracking

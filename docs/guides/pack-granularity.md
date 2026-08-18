@@ -112,9 +112,28 @@ Without pack granularity guidance, platform engineers will create broad packs th
 
 This is a **pack authoring discipline** problem, not a runtime enforcement problem. The audit trail records `pack_resource_count` and `implied_catch_rate` at request time so compliance teams can retroactively verify protection levels.
 
+## The Cohesion Axis (v0.4.0, #439)
+
+The catch-rate formula assumes **uniform** intra-pack confusion — that a confused redirect lands anywhere in the pack with equal probability. That assumption breaks for **semantic bands**: packs whose members form a tight semantic cluster. A similarity-targeting attacker (the λ-clustered adversary in #440) preferentially redirects toward the pack's most similar members, collapsing the effective catch rate to ~0.02 on a tight band of 64 — versus ~0.88 for a *scattered* pack of the same size.
+
+**Pack cohesion** measures similarity dispersion of resources *within* a pack via the stored resource embedding (variance/std-dev of pairwise embedding similarity). Cohesion is **independent of breadth**: two packs of equal size separate cleanly on the cohesion axis.
+
+The Trust Posture dashboard surfaces this as `GET /admin/trust-posture/cohesion` with a per-pack `cohesion_score` and an `is_semantic_band` flag. A flagged semantic band is a signal to split on **semantics**, not just size:
+
+- A semantically homogeneous pack of 64 is far more exposed than a scattered 64 under adversarial resource confusion.
+- **Recommendation:** for the most sensitive semantic bands, author **per-resource identity** (pack = 1 resource) so a similarity-targeted redirect has no nearby member to land on.
+
+Use the two axes together:
+
+| Axis | Question | Action when exposed |
+|---|---|---|
+| Breadth | How many resources can the agent reach? | Narrow the pack by capability sensitivity |
+| Cohesion | How similar are the resources it can reach? | Split tight semantic bands; prefer per-resource identity for high-value clusters |
+
 ## Further Reading
 
 - [Resource-Aware Policy Design](../resource-aware-policy-design.md) — Design doc for the identity-binding mechanism
+- [Adversarial Fuzz Harness](security-testing.md) — λ-clustered adversary that exploits tight semantic bands (#440)
 - [PRD Journey 30](../PRD.md#journey-30-resource-constrained-policy--binding-identity-to-allowed-targets) — Resource-constrained policy user journey
 - [SECURITY.md](../../SECURITY.md) — Threat model and known limitations
 - Alexey Spinov's validation: https://dev.to/alex_spinov/comment/3bpa9

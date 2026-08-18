@@ -73,7 +73,8 @@ async def test_reinspection_failure_sets_unreachable_failure_class(
 ) -> None:
     server = await _server_with_mapping(db_session)
     reg = RegistryService(
-        db=db_session, mcp_client=_FakeMCP(MCPError("boom"))  # type: ignore[arg-type]
+        db=db_session,
+        mcp_client=_FakeMCP(MCPError("boom")),  # type: ignore[arg-type]
     )
 
     with pytest.raises(ServiceError):

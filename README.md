@@ -26,22 +26,33 @@ Once a team adds multiple MCP servers, several hard questions emerge:
 - Which agents get access to which tools — and who needs to approve?
 - How should a platform team audit and govern usage across the whole tool ecosystem?
 
-## What's New in v0.3.0 — Schema-Digest Security
+## What's New in v0.4.0 — Trust Posture, Admissions & Review Resilience
 
 > **Full changelog:** [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 
-v0.3.0 brings **Schema-Digest Mappings** — a security layer that detects when server tool schemas drift from their capability mappings. When a re-inspected server shows a changed tool schema, affected mappings are automatically marked stale and excluded from routing until an admin reviews and approves the change.
+v0.4.0 delivers a trust posture + resilience release across four milestones:
 
-**Key features:**
-- **Schema-digest computation** — SHA-256 hash of (tool_name + input_schema + output_schema) stored on each mapping at creation time
-- **Drift detection on re-inspect** — schema changes automatically mark affected mappings as stale
-- **Digest-bound routing** — only active mappings with matching digests are considered for routing
-- **OPA policy gates** — `deny_stale_mapping` and `untrusted_write` rules in Rego policies
-- **Admin review UI** — Pending Reviews page with approve/reject workflow and audit trail
-- **Trust Posture integration** — "Pending Reviews" button linking to the review page
+**M1 — Pack Cohesion & Adversarial Fuzz**
+- **Pack cohesion score** — similarity-dispersion cohesion axis on the Trust Posture dashboard; tight "semantic bands" are flagged with a per-resource identity recommendation
+- **λ-clustered nighttime fuzz harness** — models the similarity-targeting attacker (catch collapse) against real pack layouts, independent of PR-gate CI
+
+**M2 — Permissions & Policy Feedback**
+- **Read-only vs destructive tool classification** enforced at the request boundary
+- **Structured denial feedback** — `DenialResult` returned to agents (branch, don't blind-retry)
+- **Many-to-one collision detection** with a mandatory review gate and origin-aware OPA denials
+
+**M3 — Review Queue Resilience**
+- **Fail-closed re-inspection** — timeout/unreachable never recorded as `unchanged`
+- **External staleness watchdog** with heartbeat + dead-man switch
+- **Queue prioritization** — unreachable items separated from genuine schema changes, with bulk retire
+
+**M4 — HITL Approval Fatigue**
+- **Reversibility split** — reads/undo‑able actions auto-approved; writes prompted
+- **Bulk approve** with explicit anomaly markers
+- **Scoped, expiring approval envelopes** burned down by a deterministic validator
 
 **Key resources:**
-- [Work Breakdown — Phase 14](docs/wbs/phase-14-v030.md)
+- [Work Breakdown — Phase 15](docs/wbs/0.4.0/phase-15-v040.md)
 
 ## Quick Start
 
@@ -140,16 +151,26 @@ Everything runs locally. No enterprise dependencies required.
 
 ## Roadmap
 
-**v0.3.0 — Current:**
-- Schema-digest mappings: detect tool drift, mark stale, block routing until re-approved
-- OPA deny rules: `deny_stale_mapping`, `untrusted_write`, `raw_context` for audit
-- Admin review UI: approve/reject stale mappings with audit trail
-- 326 automated tests (backend, UI, OPA, E2E) + 31 OPA policy tests
+**v0.4.0 — Current (shipped):**
+- Trust Posture: pack cohesion score + semantic-band detection (#439)
+- Nightly λ-clustered adversarial resource-confusion fuzz harness (#440)
+- Agent-level permissions — read-only vs destructive tool classification (#445)
+- Structured policy-denial feedback to agents (#443)
+- Many-to-one capability-mapping collision detection + review gate (#441)
+- Fail-closed re-inspection + stale-review age alerts (#444)
+- External staleness watchdog with heartbeat + dead-man switch (#446)
+- Review queue prioritization — unreachable vs genuinely changed (#447)
+- Approval fatigue mitigation — reversibility split + bulk approve + expiring envelopes (#442)
 
-**v0.4.0 — Planned:**
+**v0.5.0 — Planned:**
+- Advanced routing engine (health/latency/fallback-aware)
+- Conflict detection across similar tools
+- Capability-to-tool mapping UI
+- Persistent webhook storage
+
+**Gap — Planned:**
 - Multi-tenant scopes and namespace isolation
 - Analytics and usage heatmaps
-- Webhook integrations for external tooling
 - Performance benchmarks and caching improvements
 
 **GA (v1.0.0) — Planned:**
@@ -158,13 +179,13 @@ Everything runs locally. No enterprise dependencies required.
 ## Test Status
 
 | Suite | Tests | Status |
-|---|---|---|---|---|
-| Backend unit (services, middleware, errors, models) | 326 | ✅ Passing |
-| OPA policy (Rego) | 31 | ✅ Passing |
-| UI unit/integration (Vitest) | 128 | ✅ Passing |
-| UI E2E + screenshots (Playwright) | 75 | ✅ Passing |
+|---|---|---|---|
+| Backend unit (services, middleware, errors, models) | 387 | ✅ Passing |
+| OPA policy (Rego) | 37 | ✅ Passing |
+| UI unit/integration (Vitest) | 140 | ✅ Passing |
+| UI E2E + screenshots (Playwright) | 130 | ✅ Passing |
 | Docker Compose E2E (curl) | 6 | ✅ Scripts ready |
-| **Total** | **566** | |
+| **Total** | **700** | |
 
 ```bash
 make test        # Backend unit tests

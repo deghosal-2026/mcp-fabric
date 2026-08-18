@@ -20,14 +20,27 @@ from api.services.tool_class import (
 
 
 def test_classify_read_only_prefixes() -> None:
-    for name in ("get_status", "list_deployments", "search_logs", "read_config",
-                 "find_user", "query_metrics", "check_health"):
+    for name in (
+        "get_status",
+        "list_deployments",
+        "search_logs",
+        "read_config",
+        "find_user",
+        "query_metrics",
+        "check_health",
+    ):
         assert classify_tool(name) == TOOL_CLASS_READ_ONLY, f"{name} should be read_only"
 
 
 def test_classify_mutating() -> None:
-    for name in ("deploy_service", "create_user", "delete_record", "update_config",
-                 "promote_release", "submit_form"):
+    for name in (
+        "deploy_service",
+        "create_user",
+        "delete_record",
+        "update_config",
+        "promote_release",
+        "submit_form",
+    ):
         assert classify_tool(name) == TOOL_CLASS_MUTATING, f"{name} should be mutating"
 
 

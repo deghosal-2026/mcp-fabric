@@ -393,8 +393,9 @@ class CapabilityService:
         so they never exert review pressure.
         """
         result = await self.db.execute(
-            select(CapabilityMapping.status, CapabilityMapping.failure_class)
-            .where(CapabilityMapping.status.in_(_LIMBO_STATUSES))
+            select(CapabilityMapping.status, CapabilityMapping.failure_class).where(
+                CapabilityMapping.status.in_(_LIMBO_STATUSES)
+            )
         )
         rows = result.all()
 
@@ -430,9 +431,7 @@ class CapabilityService:
         if not failure_class and not mapping_ids:
             raise ValueError("Specify either failure_class or mapping_ids")
 
-        stmt = select(CapabilityMapping).where(
-            CapabilityMapping.status.in_(_LIMBO_STATUSES)
-        )
+        stmt = select(CapabilityMapping).where(CapabilityMapping.status.in_(_LIMBO_STATUSES))
         if failure_class:
             stmt = stmt.where(CapabilityMapping.failure_class == failure_class)
         if mapping_ids:

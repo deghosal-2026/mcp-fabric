@@ -60,6 +60,7 @@ All contributors are expected to understand and avoid these common security pitf
 | Audit tampering | Append-only `audit_events` table. No UPDATE or DELETE on audit rows |
 | OPA bypass | Fabric API enforces OPA evaluation — agents cannot skip it |
 | Intra-pack confused-deputy | Identity-binding scope bounded by pack breadth. See below. |
+| Semantic-band similarity redirect | Similarity-targeting adversary lands on the most similar member of a tight pack. See below. |
 
 ### Intra-Pack Confused-Deputy Residual
 
@@ -85,6 +86,14 @@ catch = 1 - (pack_size - 1) / (total_resources_in_domain - 1)
 **Recommendation:** This is a granularity problem, not a runtime enforcement problem. Narrower packs provide stronger protection. See [Pack Granularity Guide](docs/guides/pack-granularity.md) for guidance on sizing packs by capability sensitivity.
 
 **Audit visibility:** Each audit event records the `pack_resource_count` and `total_resources_in_domain` at request time. Compliance teams can compute residual risk for historical requests.
+
+### Semantic-Band Similarity Redirect (v0.4.0, #439/#440)
+
+**Threat:** The catch-rate formula above assumes uniform intra-pack confusion. A similarity-targeting adversary instead redirects toward the pack member semantically closest to its allowed target. The empirical λ-clustered fuzz harness shows that on a **tight semantic band** (64 pack members clustered on one semantic axis), catch collapses to ~0.07 — far below the ~0.88 uniform formula for a scattered pack of the same size.
+
+**Mitigation:** Fabric measures **pack cohesion** — the embedding similarity dispersion of resources within each pack (variance/std-dev of pairwise similarity, surfaced via `GET /admin/trust-posture/cohesion`). Tight-band packs are flagged `is_semantic_band`. High-value semantic bands should be authored as **per-resource identity** so a similarity-targeted redirect has no nearby member to land on. Split along the semantic axis, not just by count.
+
+**Residual:** Cohesion guidance remains operator discipline. A per-resource split is available but is not enforced automatically.
 
 ## What to Expect
 

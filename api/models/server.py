@@ -223,9 +223,7 @@ class CapabilityMapping(UUIDMixin, Base):
     # failed, fail-closed, #444), 'rejected' (admin denied, retired, not routable).
     # States: active = live, stale/pending_review/stale-unverified = limbo,
     # rejected = retired. Limbo is visible and time-boxed via pending_since.
-    pending_since: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    pending_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Classification of why a mapping sits in limbo (#447). Distinguishes
     # "server unreachable" (decide retire-or-wait, hands-off) from "schema
     # genuinely changed" (review and re-approve, hands-on) so unreachable

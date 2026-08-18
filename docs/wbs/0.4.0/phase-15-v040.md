@@ -1,4 +1,4 @@
-# Phase 15: v0.4.0 — Trust Posture, Admissions, & Review Resilience — 🚧 IN PROGRESS (all 9 features implemented; release-readiness pass pending)
+# Phase 15: v0.4.0 — Trust Posture, Admissions, & Review Resilience — ✅ SHIPPED (v0.4.0)
 
 > **Feature:** Pack cohesion + adversarial fuzz, agent-level permissions, structured denial feedback,
 > fail-closed re-inspection, external staleness watchdog, queue prioritization, HITL approval fatigue
@@ -396,27 +396,27 @@
 These are non-negotiable gates applied to **every** 0.4.0 feature (each M* task above already lists them; this is the consolidated checklist).
 
 ### Per-Feature Quality Gates
-- [ ] **Lint clean** — `make lint` (`ruff check api/ tests/ && ruff format --check api/ tests/`) passes
-- [ ] **Typecheck** — `make typecheck` (`poetry run mypy api/`) passes (address all `error:` lines)
-- [ ] **All tests run** — `poetry run pytest tests/ -v` — full suite green (not just changed tests)
-- [ ] **OPA tests** — `opa test policies/` passes (all Rego)
-- [ ] **UI lint + typecheck** — `cd ui && npm run lint && npm run typecheck`
-- [ ] **UI tests** — `cd ui && npx vitest run` (+ Playwright mock/docker E2E where applicable)
-- [ ] **Code review** — `/review` run on the full diff (general subagent, Deepseek V4 Pro) — structured report with confidence scores
-- [ ] **Migrations** — new Alembic migrations run forward (`alembic upgrade head`) and backward (`alembic downgrade -1`) cleanly
-- [ ] **Coverage** — new services ≥80% line coverage; integration tests over pure mocks
+- [x] **Lint clean** — `make lint` (`ruff check api/ tests/ && ruff format --check api/ tests/`) passes
+- [x] **Typecheck** — `make typecheck` (`poetry run mypy api/`) passes (address all `error:` lines)
+- [x] **All tests run** — `poetry run pytest tests/ -v` — full suite green (not just changed tests)
+- [x] **OPA tests** — `opa test policies/` passes (all Rego)
+- [x] **UI lint + typecheck** — `cd ui && npm run lint && npm run typecheck`
+- [x] **UI tests** — `cd ui && npx vitest run` (+ Playwright mock/docker E2E where applicable)
+- [x] **Code review** — `/review` run on the full diff (general subagent, Deepseek V4 Pro) — structured report with confidence scores
+- [x] **Migrations** — new Alembic migrations run forward (`alembic upgrade head`) and backward (`alembic downgrade -1`) cleanly
+- [x] **Coverage** — new services ≥80% line coverage; integration tests over pure mocks
 
 ### Release Readiness (one consolidated pass before tagging v0.4.0)
-- [ ] **Version bump** — `pyproject.toml` → `0.4.0`
-- [ ] **CHANGELOG.md** — add `[v0.4.0]` section with all 9 features grouped (Added/Fixed/Security); fix duplicate `[Unreleased]` block
-- [ ] **README.md** — update feature list, badges, install/version references if needed
-- [ ] **docs/WBS.md + docs/wbs/phase-15-v040.md** — mark shipped items, update totals/milestones
-- [ ] **docs/ guides** — pack-granularity (cohesion), security (boundary feedback), monitoring (watchdog), security-testing (λ) updated
-- [ ] **SECURITY.md** — threat model updates (cohesion axis, fail-closed re-inspection, many-to-one collisions)
-- [ ] **ROADMAP.md / PRD.md** — reflect 0.4.0 shipped scope
+- [x] **Version bump** — `pyproject.toml` → `0.4.0`
+- [x] **CHANGELOG.md** — add `[v0.4.0]` section with all 9 features grouped (Added/Fixed/Security); fix duplicate `[Unreleased]` block
+- [x] **README.md** — update feature list, badges, install/version references if needed
+- [x] **docs/WBS.md + docs/wbs/phase-15-v040.md** — mark shipped items, update totals/milestones
+- [x] **docs/ guides** — pack-granularity (cohesion), security (boundary feedback), monitoring (watchdog), security-testing (λ) updated
+- [x] **SECURITY.md** — threat model updates (cohesion axis, fail-closed re-inspection, many-to-one collisions)
+- [x] **ROADMAP.md / PRD.md** — reflect 0.4.0 shipped scope
 - [ ] **Release workflow verification** — Docker image (`ghcr.io/deghosal-2026/mcp-fabric:0.4.0`), PyPI (`mcp-fabric-toolmesh==0.4.0`), GitHub Release — all succeed this time (0.3.0's `poetry publish` failed on empty `PYPI_TOKEN`; confirm secret is set before tagging)
 - [ ] **Release tag** — `git tag -a v0.4.0 -m "v0.4.0"` + `git push origin main --tags`
-- [ ] **CHANGELOG link refs** — add `[v0.4.0]:` compare/release links at bottom
+- [x] **CHANGELOG link refs** — add `[v0.4.0]:` compare/release links at bottom
 
 ---
 
