@@ -39,8 +39,59 @@ class ResourceConflictError(ValueError):
 
 
 class ResourceService:
+    #: Cohesion threshold; packs at/above this are flagged as a semantic band.
+    BAND_THRESHOLD: float = 0.5
+
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    @staticmethod
+    def _tokenize(value: str) -> set[str]:
+        """Deterministic tokenization for cohesion: lowercase character 3-grams.
+
+        Uses character n-grams (rather than word tokens) so it works on short
+        resource values like ``staging``, ``staging-east`` or ``prod-1`` and is
+        robust to hyphen/underscore separation. No external dependencies.
+        """
+        chars = "".join(c for c in value.lower() if c.isalnum())
+        if len(chars) < 3:
+            return {chars} if chars else set()
+        return {chars[i : i + 3] for i in range(len(chars) - 2)}
+
+    @classmethod
+    def compute_cohesion(cls, values: list[str]) -> float:
+        """Deterministic semantic cohesion = mean pairwise n-gram Jaccard similarity.
+
+        A pack of resources that share tokens (e.g. ``staging-a``, ``staging-b``,
+        ``staging-c``) yields a high score (tight semantic band); a scattered pack
+        (e.g. ``staging``, ``prod``, ``eu-west``, ``db-shard``) yields a low score.
+        Single/empty packs trivially have cohesion 1.0 (nothing to disperse).
+        """
+        if len(values) < 2:
+            return 1.0
+
+        grams = [cls._tokenize(v) for v in values]
+        total = 0.0
+        pairs = 0
+        for i in range(len(grams)):
+            for j in range(i + 1, len(grams)):
+                a, b = grams[i], grams[j]
+                if not a or not b:
+                    continue
+                intersection = len(a & b)
+                if intersection == 0:
+                    pairs += 1
+                    continue
+                union = len(a | b)
+                total += intersection / union
+                pairs += 1
+
+        return total / pairs if pairs else 0.0
+
+    @staticmethod
+    def is_semantic_band(cohesion: float) -> bool:
+        """True when a pack's resource members form a tight semantic cluster."""
+        return cohesion >= ResourceService.BAND_THRESHOLD
 
     async def create_dimension(
         self, capability_id: UUID, body: ResourceDimensionCreate
@@ -284,6 +335,53 @@ class ResourceService:
             )
 
         return rows
+
+    async def get_pack_cohesion(self) -> list[dict[str, object]]:
+        """Per-pack cohesion score (independent of breadth) for the Trust Posture UI.
+
+        Computes how tightly clustered each pack's resource members are. This is
+        the second security axis: a tight semantic band of N resources is far more
+        exposed to adversarial resource confusion than a scattered pack of the same
+        size, even though the two share identical breadth (catch_rate).
+        """
+        from api.models.agent import CapabilityPack
+
+        stmt = select(
+            CapabilityPack.id,
+            CapabilityPack.name,
+            PackResourceBinding.allowed_value,
+        ).join(PackResourceBinding, PackResourceBinding.pack_id == CapabilityPack.id)
+        result = await self.db.execute(stmt)
+        rows = result.all()
+
+        # Ensure even bindless packs appear.
+        pack_stmt = select(CapabilityPack.id, CapabilityPack.name)
+        pack_result = await self.db.execute(pack_stmt)
+        packs = pack_result.all()
+        grouped: dict[UUID, list[str]] = {p.id: [] for p in packs}
+        names: dict[UUID, str] = {p.id: p.name for p in packs}
+
+        for pid, _name, value in rows:
+            if pid in grouped:
+                grouped[pid].append(value)
+
+        computed: list[tuple[float, dict[str, object]]] = []
+        for pid, values in grouped.items():
+            cohesion = self.compute_cohesion(values)
+            computed.append(
+                (
+                    cohesion,
+                    {
+                        "pack_id": pid,
+                        "pack_name": names[pid],
+                        "resource_count": len(set(values)),
+                        "cohesion_score": round(cohesion, 4),
+                        "is_semantic_band": self.is_semantic_band(cohesion),
+                    },
+                )
+            )
+        computed.sort(key=lambda t: t[0], reverse=True)
+        return [row for _cohesion, row in computed]
 
     async def delete_pack_binding(self, binding_id: UUID) -> None:
         stmt = select(PackResourceBinding).where(PackResourceBinding.id == binding_id)

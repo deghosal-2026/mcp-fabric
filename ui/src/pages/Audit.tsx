@@ -5,7 +5,7 @@ import { Table } from '../components/shared/Table'
 import { FilterBar } from '../components/shared/FilterBar'
 import { PageState } from '../components/shared/PageState'
 import { useToast } from '../components/shared/Toast'
-import type { ColumnDef } from '@tanstack/react-table'
+import type { LegacyColumnDef as ColumnDef } from '@tanstack/react-table/legacy'
 import type { AuditEvent } from '../types'
 
 const PER_PAGE = '50'

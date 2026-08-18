@@ -32,7 +32,13 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from api.mcp import MCPClient, MCPError, ToolDefinition, compare_tool_definitions
+from api.mcp import (
+    MCPClient,
+    MCPError,
+    MCPTimeoutError,
+    ToolDefinition,
+    compare_tool_definitions,
+)
 from api.models import CapabilityMapping, MCPServer, ServerTool, ToolVersion
 from api.schemas.agent import TrustAssignmentResponse
 from api.schemas.capability import CapabilityMappingResponse
@@ -224,6 +230,27 @@ class RegistryService:
         try:
             current_defs = await self.mcp.list_tools(server.endpoint)
         except MCPError as exc:
+            # Fail-closed (#444): when re-inspection can't reach the server,
+            # mark all active mappings as stale-unverified so routing excludes
+            # them. Treating "couldn't re-inspect" as "unchanged" would keep
+            # stale mappings live — the servers most likely to have drifted
+            # (down, flaky, mid-deploy) would keep stale mappings active.
+            # #447: record why the server failed so the review queue can split
+            # unreachable (hands-off, batch-retire) from actionable change.
+            failure_class = "timeout" if isinstance(exc, MCPTimeoutError) else "unreachable"
+            now = datetime.now(UTC)
+            active_result = await self.db.execute(
+                select(CapabilityMapping).where(
+                    CapabilityMapping.server_id == server.id,
+                    CapabilityMapping.status == "active",
+                )
+            )
+            for mapping in active_result.scalars().all():
+                mapping.status = "stale-unverified"
+                mapping.failure_class = failure_class
+                mapping.pending_since = now
+            server.health_status = "unreachable"
+            await self.db.commit()
             raise ServerUnreachableError(server.endpoint) from exc
 
         # Index tools by name for efficient comparison.
@@ -336,6 +363,8 @@ class RegistryService:
             stale_mappings: list[CapabilityMapping] = list(mapping_result.scalars().all())
             for mapping in stale_mappings:
                 mapping.status = "stale"
+                mapping.failure_class = "drifted"
+                mapping.pending_since = now
 
         server.updated_at = now
         server.health_status = "reachable"
@@ -705,7 +734,7 @@ class RegistryService:
         if self.redis is not None:
             cached = await self.redis.get(f"health:{server_id}")
             if cached is not None:
-                return cached.decode()  # type: ignore[no-any-return]
+                return cached.decode() if isinstance(cached, bytes) else str(cached)
         result = await self.db.execute(
             select(MCPServer.health_status).where(MCPServer.id == server_id)
         )
@@ -736,8 +765,10 @@ class RegistryService:
                     values = await self.redis.mget(*keys)
                     for key, val in zip(keys, values, strict=False):
                         if val is not None:
-                            sid = key.decode().split(":", 1)[1]
-                            results[sid] = val.decode()
+                            k = key.decode() if isinstance(key, bytes) else str(key)
+                            v = val.decode() if isinstance(val, bytes) else str(val)
+                            sid = k.split(":", 1)[1]
+                            results[sid] = v
                 if cursor == 0:
                     break
             return results

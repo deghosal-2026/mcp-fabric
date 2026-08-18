@@ -72,7 +72,7 @@ async def check_redis(redis_url: str) -> str:
     try:
         import redis.asyncio as aioredis
 
-        client = aioredis.from_url(redis_url, socket_connect_timeout=2)  # type: ignore[no-untyped-call]
+        client = aioredis.from_url(redis_url, socket_connect_timeout=2)
         await client.ping()
         await client.aclose()
         return "connected"

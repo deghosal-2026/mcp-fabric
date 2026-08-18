@@ -71,3 +71,17 @@ class PackBreadthRow(BaseModel):
     resources_covered: int
     total_resources_in_domain: int
     catch_rate: float
+
+
+class PackCohesionRow(BaseModel):
+    """Per-pack cohesion score for the Trust Posture dashboard.
+
+    Independent of breadth: two packs of the same size can have opposite
+    adversarial exposure depending on how tightly their members cluster.
+    """
+
+    pack_id: UUID
+    pack_name: str
+    resource_count: int
+    cohesion_score: float
+    is_semantic_band: bool

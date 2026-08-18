@@ -242,7 +242,7 @@ test.describe('Capabilities', () => {
     await page.goto('/capabilities')
     await page.waitForLoadState('networkidle')
 
-    const deprecateBtn = page.getByRole('button', { name: /deprecate/i })
+    const deprecateBtn = page.locator('button:enabled', { hasText: /deprecate/i })
     if (await deprecateBtn.count() > 0) {
       await deprecateBtn.first().click()
       await page.waitForTimeout(500)

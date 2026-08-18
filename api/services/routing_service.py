@@ -41,10 +41,17 @@ from api.models.resource import (
     ResourceDimension,
 )
 from api.models.server import CapabilityMapping, RoutingRule, ServerTool
-from api.schemas.routing import CapabilityRequest, RouteResult, RoutingRuleCreate
+from api.schemas.common import PolicyDecision
+from api.schemas.routing import (
+    CapabilityRequest,
+    DenialResult,
+    RouteResult,
+    RoutingRuleCreate,
+)
 from api.services.audit_service import AuditService
 from api.services.policy_service import PolicyService
 from api.services.resource_service import ResourceService
+from api.services.tool_class import classify_tool
 
 
 class CapabilityNotFoundError(Exception):
@@ -57,6 +64,18 @@ class NoServerFoundError(Exception):
 
 class ResourceDeniedError(Exception):
     """Raised when resource dimension validation fails."""
+
+
+class PolicyDeniedError(Exception):
+    """Raised when OPA denies a request, carrying structured denial feedback (#443).
+
+    The agent receives the structured :class:`DenialResult` so it can branch
+    or stop instead of blind-retrying. A denial is a *result*, not a failure.
+    """
+
+    def __init__(self, denial: DenialResult) -> None:
+        super().__init__(denial.reason)
+        self.denial = denial
 
 
 class RoutingService:
@@ -177,7 +196,10 @@ class RoutingService:
         raise NoServerFoundError(f"No digest-validated mapping for capability {capability_id}")
 
     async def resolve_resources(
-        self, capability_id: UUID, params: dict, explicit_resources: dict[str, str] | None
+        self,
+        capability_id: UUID,
+        params: dict[str, object],
+        explicit_resources: dict[str, str] | None,
     ) -> dict[str, str]:
         """Extract resource dimension values for a capability request.
 
@@ -248,24 +270,24 @@ class RoutingService:
         pack_rows: list[PackResourceBinding] = []
 
         if identity_id:
-            stmt = select(IdentityResourceBinding).where(
+            identity_stmt = select(IdentityResourceBinding).where(
                 IdentityResourceBinding.agent_identity_id == identity_id
             )
-            result = await self.db.execute(stmt)
-            identity_rows = list(result.scalars().all())
+            identity_result = await self.db.execute(identity_stmt)
+            identity_rows = list(identity_result.scalars().all())
 
         if pack_ids:
-            stmt = select(PackResourceBinding).where(PackResourceBinding.pack_id.in_(pack_ids))
-            result = await self.db.execute(stmt)
-            pack_rows = list(result.scalars().all())
+            pack_stmt = select(PackResourceBinding).where(PackResourceBinding.pack_id.in_(pack_ids))
+            pack_result = await self.db.execute(pack_stmt)
+            pack_rows = list(pack_result.scalars().all())
 
         identity_by_dim: dict[str, set[str]] = {}
-        for b in identity_rows:
-            identity_by_dim.setdefault(b.dimension_key, set()).add(b.allowed_value)
+        for b_ident in identity_rows:
+            identity_by_dim.setdefault(b_ident.dimension_key, set()).add(b_ident.allowed_value)
 
         pack_by_dim: dict[str, set[str]] = {}
-        for b in pack_rows:
-            pack_by_dim.setdefault(b.dimension_key, set()).add(b.allowed_value)
+        for b_pack in pack_rows:
+            pack_by_dim.setdefault(b_pack.dimension_key, set()).add(b_pack.allowed_value)
 
         all_dims = set(identity_by_dim.keys()) | set(pack_by_dim.keys())
         merged: dict[str, list[str]] = {}
@@ -286,6 +308,60 @@ class RoutingService:
         if total_resources_in_domain <= 1:
             return 1.0
         return max(0.0, min(1.0, 1.0 - (pack_resource_count - 1) / (total_resources_in_domain - 1)))
+
+    @staticmethod
+    def _build_denial(decision: PolicyDecision, capability: str) -> DenialResult | None:
+        """Translate an OPA decision into structured denial feedback (#443).
+
+        Returns a :class:`DenialResult` if the decision denies the request,
+        otherwise None. Each denial carries the impact, the policy reason, and
+        a concrete next-allowed-step so the agent can branch or stop instead
+        of blind-retrying.
+        """
+        if decision.read_only_denied:
+            return DenialResult(
+                denied=True,
+                impact="none",
+                reason="policy:read_only_scope",
+                suggestion=(
+                    f"{capability} requires a mutating tool; your agent class is "
+                    "read-only-scoped. Request escalation to a mutating-capable "
+                    "agent class or use a read-only alternative."
+                ),
+            )
+        if decision.untrusted_write:
+            return DenialResult(
+                denied=True,
+                impact="none",
+                reason="policy:untrusted_write",
+                suggestion=(
+                    f"{capability} is a write operation on an unreviewed server. "
+                    "A human must review and promote the server trust level before "
+                    "this tool can be invoked."
+                ),
+            )
+        if decision.deny_stale_mapping:
+            return DenialResult(
+                denied=True,
+                impact="none",
+                reason="policy:deny_stale_mapping",
+                suggestion=(
+                    f"The schema digest for {capability} is stale (pending review). "
+                    "Wait for an admin to re-approve the mapping before retrying."
+                ),
+            )
+        if not decision.resource_allowed:
+            return DenialResult(
+                denied=True,
+                impact="none",
+                reason="policy:resource_not_allowed",
+                suggestion=(
+                    f"{capability} was denied by resource dimension policy "
+                    f"({decision.resource_violations}). Request access to the "
+                    "specific resource values or use an allowed value."
+                ),
+            )
+        return None
 
     async def execute(
         self,
@@ -320,6 +396,42 @@ class RoutingService:
         cap = await self.resolve_capability(request.capability)
         mapping = await self.select_server(cap.id)
 
+        # ── Agent-level permissions (#445): read-only vs destructive ──
+        # Enforce at the request level, before the proxy call. A read-only-scoped
+        # agent class may only invoke read-only tools; mutating tools are denied
+        # regardless of server trust level.
+        tool_class = classify_tool(mapping.tool_name)
+        agent_read_only = False
+        agent_class_name = ""
+        if identity_id:
+            from api.models.agent import AgentClass
+
+            ac_stmt = (
+                select(AgentClass)
+                .join(AgentIdentity, AgentIdentity.agent_class_id == AgentClass.id)
+                .where(AgentIdentity.id == identity_id)
+            )
+            ac_result = await self.db.execute(ac_stmt)
+            agent_class_obj = ac_result.scalar_one_or_none()
+            if agent_class_obj is not None:
+                agent_read_only = agent_class_obj.is_read_only
+                agent_class_name = agent_class_obj.name
+
+            psvc = PolicyService(db=self.db, opa_url=settings.opa_url)
+            decision = await psvc.evaluate(
+                agent_class=agent_class_name,
+                server_id=str(mapping.server_id),
+                capability=request.capability,
+                team_namespace="",
+                mapping_status=mapping.status,
+                tool_name=mapping.tool_name,
+                agent_read_only=agent_read_only,
+                tool_class=tool_class,
+            )
+            denial = self._build_denial(decision, request.capability)
+            if denial is not None:
+                raise PolicyDeniedError(denial)
+
         resources = await self.resolve_resources(cap.id, request.params, request.resources)
         resource_check: dict[str, object] = {}
         if resources and identity_id:
@@ -327,20 +439,9 @@ class RoutingService:
                 identity_id=identity_id, pack_ids=pack_ids
             )
             if identity_bindings:
-                from api.models.agent import AgentClass
-
-                ac_stmt = (
-                    select(AgentClass)
-                    .join(AgentIdentity, AgentIdentity.agent_class_id == AgentClass.id)
-                    .where(AgentIdentity.id == identity_id)
-                )
-                ac_result = await self.db.execute(ac_stmt)
-                agent_class_obj = ac_result.scalar_one_or_none()
-                agent_class = agent_class_obj.name if agent_class_obj else ""
-
                 psvc = PolicyService(db=self.db, opa_url=settings.opa_url)
                 decision = await psvc.evaluate(
-                    agent_class=agent_class,
+                    agent_class=agent_class_name,
                     server_id=str(mapping.server_id),
                     capability=request.capability,
                     team_namespace="",
@@ -348,15 +449,23 @@ class RoutingService:
                     request_resources=resources,
                     mapping_status=mapping.status,
                     tool_name=mapping.tool_name,
+                    agent_read_only=agent_read_only,
+                    tool_class=tool_class,
                 )
                 if not decision.resource_allowed:
-                    violations = decision.resource_violations
-                    raise ResourceDeniedError(f"Resource validation failed: {violations}")
+                    denial = self._build_denial(decision, request.capability)
+                    if denial is not None:
+                        raise PolicyDeniedError(denial)
+                    raise ResourceDeniedError(
+                        f"Resource validation failed: {decision.resource_violations}"
+                    )
                 resource_check = {
                     "identity_resources": identity_bindings,
                     "request_resources": resources,
                     "resource_allowed": decision.resource_allowed,
                     "resource_violations": decision.resource_violations,
+                    "tool_class": tool_class,
+                    "agent_read_only": agent_read_only,
                 }
 
         endpoint = mapping.server.endpoint

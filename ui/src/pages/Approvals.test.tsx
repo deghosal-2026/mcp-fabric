@@ -5,16 +5,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
 import { ToastProvider } from '../components/shared/Toast'
 import { ApprovalsPage } from './Approvals'
-import { fetchApprovals, resolveApproval } from '../api/client'
+import { fetchApprovals, resolveApproval, bulkApprove } from '../api/client'
 import type { ApprovalRequest } from '../types'
 
 vi.mock('../api/client', () => ({
   fetchApprovals: vi.fn(),
   resolveApproval: vi.fn(),
+  bulkApprove: vi.fn(),
 }))
 
 const mockFetchApprovals = vi.mocked(fetchApprovals)
 const mockResolveApproval = vi.mocked(resolveApproval)
+const mockBulkApprove = vi.mocked(bulkApprove)
 
 function renderWithProviders(ui: React.ReactElement) {
   const testQueryClient = new QueryClient({
@@ -110,6 +112,23 @@ describe('ApprovalsPage', () => {
     await userEvent.click(screen.getByText('Deny'))
     await waitFor(() => {
       expect(mockResolveApproval).toHaveBeenCalledWith('ap-1', 'denied', '')
+    })
+  })
+
+  it('bulk approve only sends selected pending requests', async () => {
+    mockBulkApprove.mockResolvedValue({ approved: 1, anomalies: [], envelope_remaining: null })
+    renderWithProviders(<ApprovalsPage />)
+    const checkboxes = await screen.findAllByRole('checkbox')
+    await userEvent.click(checkboxes[0])
+    await userEvent.click(screen.getByText('Bulk Approve'))
+    await waitFor(() => {
+      expect(mockBulkApprove).toHaveBeenCalledWith({
+        envelope_id: '',
+        action_ids: ['ap-1'],
+        anomaly_ids: [],
+        approver_id: null,
+        note: '',
+      })
     })
   })
 })

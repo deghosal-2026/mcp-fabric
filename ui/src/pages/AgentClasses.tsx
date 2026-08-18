@@ -8,7 +8,7 @@ import { Table } from '../components/shared/Table'
 import { Modal } from '../components/shared/Modal'
 import { PageState } from '../components/shared/PageState'
 import { useToast } from '../components/shared/Toast'
-import type { ColumnDef } from '@tanstack/react-table'
+import type { LegacyColumnDef as ColumnDef } from '@tanstack/react-table/legacy'
 import type { AgentClass, ResourceBinding } from '../types'
 
 export function AgentClassesPage() {

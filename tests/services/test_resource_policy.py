@@ -9,6 +9,8 @@ Tests the full resource-aware policy pipeline end-to-end:
   6. Verify resource validation in OPA via RoutingService
 """
 
+from typing import cast
+
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +20,7 @@ from api.models.capability import Capability
 from api.models.resource import (
     DimensionValueMap,
     IdentityResourceBinding,
+    PackResourceBinding,
 )
 from api.schemas.resource import (
     DimensionValueMapCreate,
@@ -635,3 +638,73 @@ async def test_pack_breadth_with_class_and_pack(db_session: AsyncSession):
     assert row["resources_covered"] == 0
     assert row["total_resources_in_domain"] == 0
     assert row["catch_rate"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_compute_cohesion_separates_scattered_from_band(db_session: AsyncSession):
+    """A tight semantic band scores far higher than a scattered pack of the same size."""
+    svc = ResourceService(db=db_session)
+
+    scattered = svc.compute_cohesion(
+        ["staging", "prod", "eu-west", "us-east", "ap-south", "db-shard", "cache", "auth"]
+    )
+    band = svc.compute_cohesion(
+        [
+            "staging-a",
+            "staging-b",
+            "staging-c",
+            "staging-d",
+            "staging-e",
+            "staging-f",
+            "staging-g",
+            "staging-h",
+        ]
+    )
+
+    assert band > scattered
+    assert svc.is_semantic_band(band)
+    assert not svc.is_semantic_band(scattered)
+
+
+@pytest.mark.asyncio
+async def test_compute_cohesion_single_and_empty(db_session: AsyncSession):
+    """Single/empty packs are trivially cohesive (nothing to disperse)."""
+    svc = ResourceService(db=db_session)
+    assert svc.compute_cohesion([]) == 1.0
+    assert svc.compute_cohesion(["only-resource"]) == 1.0
+
+
+@pytest.mark.asyncio
+async def test_get_pack_cohesion_reports_band(db_session: AsyncSession):
+    """Two same-size packs — scattered vs tight band — are clearly separated."""
+    scattered = CapabilityPack(name="scattered-pack")
+    band = CapabilityPack(name="band-pack")
+    db_session.add_all([scattered, band])
+    await db_session.commit()
+    await db_session.refresh(scattered)
+    await db_session.refresh(band)
+
+    db_session.add_all(
+        [
+            PackResourceBinding(pack_id=scattered.id, dimension_key="env", allowed_value="staging"),
+            PackResourceBinding(pack_id=scattered.id, dimension_key="env", allowed_value="prod"),
+            PackResourceBinding(pack_id=scattered.id, dimension_key="env", allowed_value="eu-west"),
+            PackResourceBinding(pack_id=band.id, dimension_key="env", allowed_value="staging-a"),
+            PackResourceBinding(pack_id=band.id, dimension_key="env", allowed_value="staging-b"),
+            PackResourceBinding(pack_id=band.id, dimension_key="env", allowed_value="staging-c"),
+        ]
+    )
+    await db_session.commit()
+
+    svc = ResourceService(db=db_session)
+    result = await svc.get_pack_cohesion()
+    band_row = next(r for r in result if r["pack_name"] == "band-pack")
+    scatter_row = next(r for r in result if r["pack_name"] == "scattered-pack")
+
+    assert band_row["is_semantic_band"] is True
+    assert scatter_row["is_semantic_band"] is False
+    assert float(cast(float, band_row["cohesion_score"])) > float(
+        cast(float, scatter_row["cohesion_score"])
+    )
+    assert band_row["resource_count"] == 3
+    assert scatter_row["resource_count"] == 3

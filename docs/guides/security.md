@@ -214,3 +214,75 @@ The API returns these security-related headers on every response:
 ## Reporting Vulnerabilities
 
 See `SECURITY.md` in the project root. Report privately to `security@ghosal.dev`.
+
+## Agent-Level Permission Boundary Contract (#445)
+
+MCP standardizes the handshake but not the trust model — a tool that reads a
+page and a tool that submits a form with real consequences are
+indistinguishable at the permissions layer. v0.4.0 adds an agent-level
+permission model that classifies tools as **read-only** vs. **destructive
+(mutating)** and enforces the distinction at the request level, before the
+proxy call.
+
+### Tool Classification
+
+Every tool is classified by name prefix using a shared, deterministic classifier
+(`api/services/tool_class.py`):
+
+| Class | Prefixes | Default |
+|-------|----------|---------|
+| `read_only` | `get`, `list`, `search`, `read`, `find`, `query`, `check` | — |
+| `mutating`  | Everything else | Unknown tools are never assumed safe |
+
+### Agent Read-Only Scope
+
+An `AgentClass` can be marked `is_read_only=True` (read-scoped). When True:
+- Read-only tools are **allowed** (subject to trust + resource checks).
+- Mutating tools are **denied** at the request level via the OPA
+  `read_only_denied` rule, regardless of server trust level.
+
+### Enforcement Point
+
+Enforcement happens in `RoutingService.execute()` **before** the proxy call to
+the MCP server. The tool class and agent read-only flag are passed to OPA; if
+`read_only_denied` is True, a `PermissionDeniedError` is raised and the tool is
+never invoked.
+
+### Audit Trail
+
+The audit event `resource_check` now includes `tool_class` and
+`agent_read_only` for every evaluated request.
+
+### Boundary Contract for Autonomous Agents
+
+Agents operating autonomously (no human in the loop) should be assigned to a
+read-only-scoped agent class. This guarantees the agent cannot mutate state
+through any tool on any server, even if a trust assignment grants access — a
+docs server never shares authority with a deploy server.
+
+## Structured Policy-Denial Feedback (#443)
+
+When OPA denies a capability invocation, the agent previously received an
+opaque tool error and would blind-retry through alternative tools/paths,
+adding approval-queue noise and hiding the policy decision. v0.4.0 returns a
+**structured denial** instead: a denial is a *result* — not a failure.
+
+Every denial carries:
+
+| Field | Meaning |
+|-------|---------|
+| `impact` | Always `none` (nothing changed — the call had zero side effect) |
+| `reason` | The policy rule id that denied, e.g. `policy:read_only_scope` |
+| `suggestion` | The next allowed step, so the agent can branch or stop |
+
+Denial reasons:
+- `policy:read_only_scope` — read-only-scoped agent tried a mutating tool.
+- `policy:untrusted_write` — write on an unreviewed server.
+- `policy:deny_stale_mapping` — schema digest is stale/pending review.
+- `policy:resource_not_allowed` — resource dimension policy rejected the values.
+
+The router returns `403` with `{"error": "denied", "impact", "reason",
+"suggestion"}` (and an explicit `"denied": true` flag). Batch requests return
+the denial inline per request instead of an opaque error. Agents should
+**branch on `reason`** rather than retry the same verb, which measurably
+reduces approval-queue noise.

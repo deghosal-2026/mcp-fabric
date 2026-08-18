@@ -97,7 +97,7 @@ services:
       - test-results:/app/test-results
 
   test-e2e:
-    image: mcr.microsoft.com/playwright:v1.52.0-jammy
+    image: mcr.microsoft.com/playwright:v1.62.1-jammy
     working_dir: /app
     environment:
       - PLAYWRIGHT_BASE_URL=http://ui:3000
@@ -112,7 +112,8 @@ services:
           sleep 2;
         done &&
         cd /app/ui &&
-        npx playwright test live-*.spec.ts docker-*.spec.ts --reporter=list --reporter=junit --output=../../test-results/playwright-junit.xml 2>&1 | tee /app/test-results/playwright-report.txt &&
+        PLAYWRIGHT_JUNIT_OUTPUT_FILE=/app/test-results/playwright-junit.xml \
+        npx playwright test e2e/live-*.spec.ts e2e/docker-*.spec.ts --reporter=list,junit 2>&1 | tee /app/test-results/playwright-report.txt &&
         mkdir -p /app/test-results/screenshots &&
         cp -r test-results/screenshots/* /app/test-results/screenshots/ 2>/dev/null || true
       "

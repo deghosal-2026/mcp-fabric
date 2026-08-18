@@ -36,3 +36,23 @@ groups:
         for: 5m
         labels: { severity: high }
         annotations: { summary: "API error rate > 1% for 5 minutes" }
+      # ── Staleness watchdog (#446) ─────────────────────────────────
+      # Dead-man switch: the watchdog must check in every cycle. If its
+      # success timestamp goes stale, the watchdog itself is dead and stale
+      # items are no longer being detected.
+      - alert: WatchdogDeadManSwitch
+        expr: time() - fabric_watchdog_last_success_timestamp > 300
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Staleness watchdog has not checked in for >5 minutes"
+          description: "The external watchdog is dead or stuck — stale review items are no longer being detected. Investigate the watchdog container immediately."
+      # Stale review age: an item has been in the review queue past its deadline.
+      # The watchdog probes this independently of the queue service.
+      - alert: StaleReviewAgeAlert
+        expr: sum(fabric_watchdog_overdue_items) > 0
+        for: 5m
+        labels: { severity: high }
+        annotations:
+          summary: "Review items have exceeded their staleness deadline"
+          description: "One or more capability mappings have been in limbo past the review threshold. Grouped alerts were emitted by the watchdog."

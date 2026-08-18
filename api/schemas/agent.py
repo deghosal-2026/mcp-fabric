@@ -26,6 +26,7 @@ class AgentClassCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str | None = None
     team_namespace: str | None = None
+    is_read_only: bool = False
 
 
 class AgentClassResponse(BaseModel):
@@ -39,6 +40,7 @@ class AgentClassResponse(BaseModel):
     name: str
     description: str | None = None
     team_namespace: str | None = None
+    is_read_only: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -54,8 +54,8 @@ test('exercise all UI controls on every page', async ({ page }) => {
   await page.getByRole('button', { name: /create capability/i }).click()
   await page.waitForTimeout(200)
   await page.getByRole('button', { name: 'Cancel' }).click()
-  // Deprecate button
-  const deprecateBtns = page.getByRole('button', { name: 'Deprecate' })
+  // Deprecate button (first enabled one — deprecated rows have it disabled)
+  const deprecateBtns = page.locator('button:enabled', { hasText: 'Deprecate' })
   if (await deprecateBtns.count() > 0) {
     await deprecateBtns.first().click()
     await page.waitForTimeout(200)

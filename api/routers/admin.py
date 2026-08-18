@@ -42,15 +42,24 @@ from api.dependencies import (
     get_registry_service,
     get_resource_service,
 )
-from api.schemas.admin import AdminUserInvite, AdminUserResponse, AdminUserUpdate, PackBreadthRow
+from api.schemas.admin import (
+    AdminUserInvite,
+    AdminUserResponse,
+    AdminUserUpdate,
+    PackBreadthRow,
+    PackCohesionRow,
+)
 
 # Import capability schemas for schema-digest review endpoints
 # (CapabilityMappingResponse, MappingReviewCreate, MappingReviewResponse)
 # and CapabilityService for the review business logic.
 from api.schemas.capability import (
+    BulkRetireRequest,
+    BulkRetireResponse,
     CapabilityMappingResponse,
     MappingReviewCreate,
     MappingReviewResponse,
+    ReviewQueueSummary,
 )
 from api.schemas.dashboard import DashboardStats
 from api.services.approval_service import ApprovalService
@@ -209,6 +218,14 @@ async def pack_breadth(
     return [PackBreadthRow(**r) for r in rows]  # type: ignore[arg-type]
 
 
+@router.get("/trust-posture/cohesion")
+async def pack_cohesion(
+    svc: ResourceService = Depends(get_resource_service),
+) -> list[PackCohesionRow]:
+    rows = await svc.get_pack_cohesion()
+    return [PackCohesionRow(**r) for r in rows]  # type: ignore[arg-type]
+
+
 # ============================================================================
 # Schema-Digest Mapping Review Endpoints
 # ============================================================================
@@ -218,11 +235,51 @@ async def pack_breadth(
 # The frontend Pending Reviews page polls this to show the review queue.
 # Returns CapabilityMappingResponse[] — each stale mapping includes the
 # stored tool_schema_digest so the frontend can show what changed.
+# Optional ?failure_class= filters to a single reason (#447).
 @router.get("/mappings/stale")
 async def list_stale_mappings(
+    failure_class: str | None = None,
     svc: CapabilityService = Depends(get_capability_service),
 ) -> list[CapabilityMappingResponse]:
-    return await svc.get_stale_mappings()
+    return await svc.get_stale_mappings(failure_class=failure_class)
+
+
+# Live priority summary of the review queue (#447). Separates unreachable
+# (hands-off) items from genuine schema changes so the blank flag hides
+# real actionable work. Used by the admin UI and the external watchdog.
+@router.get("/mappings/summary")
+async def get_mappings_summary(
+    svc: CapabilityService = Depends(get_capability_service),
+) -> ReviewQueueSummary:
+    return await svc.get_queue_summary()
+
+
+# Bulk-retire review items without per-item review (#447). Target a whole
+# failure_class ("unreachable") or an explicit list of mapping IDs. Retired
+# items become 'rejected' and are removed from the queue.
+@router.post("/mappings/retire")
+async def bulk_retire_mappings(
+    body: BulkRetireRequest,
+    svc: CapabilityService = Depends(get_capability_service),
+) -> BulkRetireResponse:
+    if not body.failure_class and not body.mapping_ids:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "no_target", "message": "Specify failure_class or mapping_ids"},
+        )
+    retired = await svc.bulk_retire(failure_class=body.failure_class, mapping_ids=body.mapping_ids)
+    return BulkRetireResponse(retired=retired, failure_class=body.failure_class)
+
+
+# List overdue limbo mappings — items whose pending_since exceeds the threshold (#444).
+# Used by the staleness watchdog and dashboard to surface items that have been
+# in limbo too long. Default threshold is 24 hours.
+@router.get("/mappings/overdue")
+async def list_overdue_mappings(
+    threshold_hours: int = 24,
+    svc: CapabilityService = Depends(get_capability_service),
+) -> list[CapabilityMappingResponse]:
+    return await svc.get_overdue_reviews(threshold_hours=threshold_hours)
 
 
 # Review (approve or reject) a stale mapping.
@@ -279,3 +336,16 @@ async def get_ambiguity(
         )
         for m in mappings
     ]
+
+
+# List many-to-one capability-mapping collisions (#441).
+# When multiple distinct tools map to the same normalized capability, this
+# is a collision — the raw schemas may not intend semantic equivalence.
+# Colliding mappings are marked pending_review and must be approved before
+# they become routable.
+@router.get("/capabilities/{capability_id}/collisions")
+async def get_collisions(
+    capability_id: UUID,
+    svc: CapabilityService = Depends(get_capability_service),
+) -> list[CapabilityMappingResponse]:
+    return await svc.get_collisions(capability_id)

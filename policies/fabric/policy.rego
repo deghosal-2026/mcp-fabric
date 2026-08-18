@@ -33,6 +33,7 @@ allow if {
     server_trust >= agent_trust
     resource_allowed
     not deny_stale_mapping
+    not read_only_denied
 }
 
 approval_required if {
@@ -121,6 +122,18 @@ _is_read_only_tool(name) if {
     startswith(name, prefix)
 }
 
+# ─── Agent-Level Read-Only Scope (#445) ───
+
+# Deny mutating tools for read-only-scoped agents.
+# A read-only agent class (is_read_only=true) may only invoke read-only tools;
+# any mutating/destructive tool is denied regardless of server trust level.
+default read_only_denied := false
+
+read_only_denied if {
+    input.agent_read_only == true
+    input.tool_class == "mutating"
+}
+
 # ─── Raw Context (debugging / audit trail) ───
 
 # Exposes the entire input document as a raw_context output field.
@@ -142,4 +155,6 @@ result := {
     # True when a non-read-only tool targets an unreviewed or trust-less server.
     # Mirrors the untrusted_write rule output for easy debugging.
     "untrusted_write": untrusted_write,
+    # True when a read-only-scoped agent attempted a mutating tool.
+    "read_only_denied": read_only_denied,
 }

@@ -12,12 +12,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multi-tenant scopes and namespace isolation
 - Performance benchmarks and caching improvements
 
-## [Unreleased]
+## [v0.4.0] — 2026
 
-### Planned
-- Advanced routing engine (health/latency/fallback-aware)
-- Multi-tenant scopes and namespace isolation
-- Performance benchmarks and caching improvements
+### Added
+
+#### Trust Posture — Pack Cohesion & Semantic-Band Detection (#439)
+- **Problem:** A tightly-clustered pack (a "semantic band") is far more exposed to adversarial resource confusion than a scattered pack of the same size — catch falls to ~0.02 vs ~0.88.
+- **Solution:** An independent **cohesion axis** on the Trust Posture dashboard computes similarity dispersion of resources within each pack via the stored resource embedding. Packs that form a tight semantic cluster are flagged, with guidance recommending per-resource identity (pack=1) for the most sensitive bands.
+- `compute_pack_cohesion()` — similarity dispersion (variance/std-dev of pairwise embedding similarity) within a pack, independent of breadth
+- `GET /admin/trust-posture/cohesion` returns `{ pack_id, pack_name, resource_count, cohesion_score, is_semantic_band }`
+- `PackCohesionCard` UI component with risk coloring + tooltip linking to the pack-granularity guide
+- Fixture test: two packs of size 64 (scattered vs tight semantic band) → cohesion clearly separates, band flagged
+
+#### Nightly Adversarial Resource-Confusion Fuzz Harness (λ-clustered) (#440)
+- **Problem:** Uniform-random redirect fuzzing (λ=∞) missed the semantically targeted attacker who collapses catch on a semantic band.
+- **Solution:** A nightly λ-clustered fuzz harness models similarity-targeted redirects across the λ spectrum (∞→1). λ=∞ matches the closed-form `catch = 1 − (P−1)/(R−1)` baseline; λ=1 reproduces near-zero catch on semantic bands.
+- Emits expected-vs-actual catch rate as structured JSON, independent of PR-gate CI, deterministic seeds
+- Alerts when pack cohesion drives catch below the configured threshold
+- `docs/guides/security-testing.md` documents λ semantics and how to run/read results
+
+#### Agent-Level Permissions — Read-Only vs Destructive Tool Classification (#445)
+- **Problem:** Tool trust was described in docs only; mutating tools were not distinguished at the permission layer.
+- **Solution:** A per‑tool `tool_class` (read_only/mutating) model enforced at the request boundary and surfaced in the audit trail. Read-scoped agents can call read-only tools; mutating calls are denied (403/denial) unless trusted under approval policy.
+- OPA Rego rules + tests (read-only pass, write blocked, trusted write allowed)
+- `docs/guides/security.md` boundary contract for autonomous agents
+
+#### Structured Policy-Denial Feedback to Agents (#443)
+- **Problem:** Policy denials surfaced as opaque failures, so agents blind-retried the same verb.
+- **Solution:** Denials are now returned over the MCP tool-result channel as a structured **`DenialResult`** with an explicit `"denied"` type — `{ impact: "none", reason: <rule id>, suggestion: <next allowed step> }` — so agents can branch instead of retrying.
+- Denial recorded in the audit trail; blind-retry count measurably reduced vs opaque-error control
+
+#### Many-to-One Capability-Mapping Collision Detection + Review Gate (#441)
+- **Problem:** Multiple distinct tools normalized to the same capability could route ambiguously, enabling confused-deputy confusion.
+- **Solution:** Detect ≥2 distinct tools mapping to the same capability at mapping time and require explicit review/approval before the colliding mapping becomes routable.
+- Immutable raw call context (server identity + tool + args) passed to OPA alongside the normalized capability, enabling origin-aware denial
+- Admin UI surfaces collision list on the Reviews page with distinct visual treatment; confused-deputy fuzz case added
+
+#### Fail-Closed Re-Inspection + Stale-Review Age Alerts (#444)
+- **Problem:** A failed/timeout re-inspection could be recorded as `unchanged`, failing open.
+- **Solution:** Re-inspection failure/timeout now marks mappings `stale-unverified` (excluded from routing) with retry/backoff — never `unchanged`. Every pending review carries `pending_since`/deadline; un-cleared items trigger deadline alerts (email/dashboard). A third state — **limbo** — is tracked explicitly (visible and time-boxed).
+
+#### External Staleness Watchdog — Independent of the Review Queue (#446)
+- **Problem:** The staleness monitor shared liveness with the queue it watches; a queue failure silenced the alarm.
+- **Solution:** A standalone watchdog process/service architected as a sidecar or separate cron context with read-only access to item timestamps — it never writes to the queue, exposes its own **heartbeat**, and a **dead-man switch** raises a human-visible alert if the watchdog stops checking in.
+- Test: killing the review-queue service entirely does NOT silence staleness alerts
+
+#### Review Queue Prioritization — Unreachable vs Genuinely Changed (#447)
+- **Problem:** Unreachable servers buried real schema changes in the review queue.
+- **Solution:** Every review item carries a `failure_class` (`unreachable` / `drifted` / `schema_mismatch` / `timeout`), written at re-inspection. UI separates unreachable items with a distinct section/filter; bulk "retire all unreachable" without per-item review; grouped notifications (`unreachable ≠ drift`) and unreachable items excluded from the reviewer critical tally.
+- Backend: `GET /mappings/stale?failure_class=`, `GET /mappings/summary`, `POST /mappings/retire`
+- Queue of 50 unreachable + 2 changes → real changes rise to top
+
+#### HITL Approval Fatigue Mitigation — Reversibility + Bulk Approve + Expiring Envelopes (#442)
+- **Problem:** Reviewers were prompted on safe, reversible actions, causing approval fatigue and real anomalies getting buried.
+- **Solution:** Reversibility-based auto-approval (reads/undo-able actions auto-approved; writes/leaving-the-system prompted), **bulk-approve** grouping with explicit anomaly markers, and **scoped expiring approval envelopes** (human grants a budget, e.g., 10 promotes to staging within the hour; deterministic validator burns it down; only out-of-envelope actions escalate).
+- Tests: 50-action workload → prompt count is a small subset; over-budget/new-env/schema-change always escalates
+
+### Fixed
+- `ApprovalEnvelope` model/migration drift — missing `TimestampMixin` mapped `created_at` in the migration but not the ORM (production `AttributeError`); tests masked via `metadata.create_all`
+- Unreachable 409 path in `bulk_approve` — `contextlib.suppress` swallowed `InsufficientEnvelopeError`, so exhausted envelopes returned 200 instead of escalating
+- Playwright docker E2E harness — image bumped to `v1.62.1-jammy` to match `@playwright/test ^1.62.1`; `test-e2e` command paths/reporter fixed
+- IP rate limiter now bypassed when `ENVIRONMENT=testing` (test-stack 429s during E2E)
+- `TrustPosture.test.tsx` mock missing `fetchPackBreadth` export
+
+### Security
+- Pack cohesion flag — tight semantic bands surfaced for per-resource identity recommendation
+- Tool-class enforcement at request/protocol level, not docs-only
+- Fail-closed re-inspection (never fails open), deadline alerting, limbo state time-boxed
+- Origin-aware OPA denial closes confused-deputy/many-to-one collision vector
+- Externally-architected staleness watchdog with heartbeat + dead-man switch
 
 ## [v0.3.0] — 2026-07-25
 
@@ -150,7 +213,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Webhook routes enforce agent_id match via request.state.agent_id
 - Self-deactivation prohibited for admin accounts
 
-[Unreleased]: https://github.com/deghosal-2026/mcp-fabric/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/deghosal-2026/mcp-fabric/compare/v0.4.0...HEAD
+[v0.4.0]: https://github.com/deghosal-2026/mcp-fabric/releases/tag/v0.4.0
 [v0.3.0]: https://github.com/deghosal-2026/mcp-fabric/releases/tag/v0.3.0
 [v0.2.0]: https://github.com/deghosal-2026/mcp-fabric/releases/tag/v0.2.0
 [v0.1.0]: https://github.com/deghosal-2026/mcp-fabric/releases/tag/v0.1.0
