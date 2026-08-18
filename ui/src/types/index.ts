@@ -48,12 +48,43 @@ export interface CapabilityMapping {
   routing_weight: number;
   // Tracks the review lifecycle: 'active' when current, 'stale' when the
   // server's tool schema has drifted, 'pending_review' after being flagged,
-  // or 'rejected' if an admin denied the schema change.
-  status?: 'active' | 'stale' | 'pending_review' | 'rejected';
+  // 'rejected' if an admin denied the schema change, 'stale-unverified' when
+  // re-inspection failed (fail-closed, excluded from routing).
+  status?: 'active' | 'stale' | 'pending_review' | 'rejected' | 'stale-unverified';
   // Hash of the server-side tool schema at last review. Compared against
   // the current server schema to detect drift; a mismatch generates a stale entry.
   tool_schema_digest?: string | null;
+  // Timestamp the mapping entered limbo (pending review). Used for age/deadline
+  // alerts and prioritized ordering. Null when the mapping is active/rejected.
+  pending_since?: string | null;
+  // Why the mapping is in the review queue (#447):
+  //   'unreachable'     — MCP server could not be reached during re-inspection
+  //   'timeout'         — list_tools timed out during re-inspection
+  //   'drifted'         — tool schema changed vs last verified digest
+  //   'schema_mismatch' — capability input/output schema changed (collision)
+  // Null for active mappings or limbo rows created before #447.
+  failure_class?: 'unreachable' | 'timeout' | 'drifted' | 'schema_mismatch' | null;
   server?: MCPServer;
+}
+
+// Live priority summary of the review queue (#447). Separates unreachable
+// (hands-off) items from genuine schema changes so unreachable items never
+// count toward the reviewer's pending-critical tally.
+export interface ReviewQueueSummary {
+  total: number;
+  critical: number;
+  unreachable: number;
+  by_failure_class: Record<string, number>;
+}
+
+export interface BulkRetireRequest {
+  failure_class?: string | null;
+  mapping_ids?: string[];
+}
+
+export interface BulkRetireResponse {
+  retired: number;
+  failure_class?: string | null;
 }
 
 export interface CapabilityAlias {

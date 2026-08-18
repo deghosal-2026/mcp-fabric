@@ -318,8 +318,26 @@ export function fetchDashboard() {
 // Schema-Digest Reviews
 // Fetch all capability mappings whose tool_schema_digest does not match the
 // server's current tool schema — these require an admin review decision.
-export function fetchStaleMappings() {
-  return fetcher<CapabilityMapping[]>('/admin/mappings/stale')
+// Optional failure_class filter (#447) restricts to a single reason
+// ('unreachable' | 'timeout' | 'drifted' | 'schema_mismatch').
+export function fetchStaleMappings(failureClass?: string) {
+  const qs = failureClass ? `?failure_class=${encodeURIComponent(failureClass)}` : ''
+  return fetcher<CapabilityMapping[]>(`/admin/mappings/stale${qs}`)
+}
+
+// Live priority summary of the review queue (#447). Separates unreachable
+// (hands-off) items from genuine schema changes.
+export function fetchQueueSummary() {
+  return fetcher<import('../types').ReviewQueueSummary>('/admin/mappings/summary')
+}
+
+// Bulk-retire review items without per-item review (#447). Target a whole
+// failure_class ("unreachable") or an explicit list of mapping IDs.
+export function bulkRetireMappings(body: import('../types').BulkRetireRequest) {
+  return fetcher<import('../types').BulkRetireResponse>('/admin/mappings/retire', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 }
 
 // Submit an admin review decision (approved / rejected) for a specific mapping.

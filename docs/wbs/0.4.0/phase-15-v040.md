@@ -12,7 +12,7 @@
 > **GitHub milestones:**
 > - [M1 — Cohesion & Adversarial Fuzz](https://github.com/deghosal-2026/mcp-fabric/issues?q=is%3Aissue+state%3Aopen+label%3A%22%5B0.4.0%5D%22+cohesion) — ✅ done (#439, #440)
 > - [M2 — Permissions & Policy Feedback](https://github.com/deghosal-2026/mcp-fabric/issues?q=is%3Aissue+state%3Aopen+label%3A%22%5B0.4.0%5D%22) — ✅ done (#445, #443, #441)
-> - [M3 — Review Queue Resilience](https://github.com/deghosal-2026/mcp-fabric/issues?q=is%3Aissue+state%3Aopen+label%3A%22%5B0.4.0%5D%22) — 🚧 in progress (#444 done; #446 done; #447 backend done, UI pending)
+> - [M3 — Review Queue Resilience](https://github.com/deghosal-2026/mcp-fabric/issues?q=is%3Aissue+state%3Aopen+label%3A%22%5B0.4.0%5D%22) — ✅ done (#444, #446, #447)
 > - [M4 — Approval Fatigue Mitigation](https://github.com/deghosal-2026/mcp-fabric/issues?q=is%3Aissue+state%3Aopen+label%3A%22%5B0.4.0%5D%22) — 🚧 pending (#442)
 
 ---
@@ -28,7 +28,7 @@
 | 441 | [Detect many-to-one capability-mapping collisions + require review](https://github.com/deghosal-2026/mcp-fabric/issues/441) | M2 | [x] |
 | 444 | [Fail-closed on missing schema re-inspection + stale-review age alerts](https://github.com/deghosal-2026/mcp-fabric/issues/444) | M3 | [x] |
 | 446 | [Staleness watchdog must be external to the review queue system](https://github.com/deghosal-2026/mcp-fabric/issues/446) | M3 | [x] |
-| 447 | [Queue prioritization: separate unreachable from genuinely changed review items](https://github.com/deghosal-2026/mcp-fabric/issues/447) | M3 | [ ] |
+| 447 | [Queue prioritization: separate unreachable from genuinely changed review items](https://github.com/deghosal-2026/mcp-fabric/issues/447) | M3 | [x] |
 | 442 | [HITL approval fatigue: reversibility split + bulk approve + expiring envelopes](https://github.com/deghosal-2026/mcp-fabric/issues/442) | M4 | [ ] |
 
 ---
@@ -306,9 +306,9 @@
 **Checklist:**
 - [x] Every review item carries a `failure_class` (`unreachable` / `drifted` / `schema_mismatch` / `timeout`)
 - [x] Re-inspection handler writes `failure_class` at item creation
-- [ ] UI separates unreachable items (distinct section/visual) with filter
-- [ ] Bulk action: "retire all unreachable" without per-item review
-- [ ] Grouped notifications (unreachable ≠ drift); unreachable excluded from critical tally
+- [x] UI separates unreachable items (distinct section/visual) with filter
+- [x] Bulk action: "retire all unreachable" without per-item review
+- [x] Grouped notifications (unreachable ≠ drift); unreachable excluded from critical tally
 - [ ] Optional auto-retire after N consecutive unreachable inspections
 - [x] Queue of 50 unreachable + 2 changes → real changes rise to top
 - [x] Backend: queue filter (`GET /mappings/stale?failure_class=`), summary (`GET /mappings/summary`), bulk retire (`POST /mappings/retire`)
