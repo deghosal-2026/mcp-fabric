@@ -226,6 +226,16 @@ class CapabilityMapping(UUIDMixin, Base):
     pending_since: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Classification of why a mapping sits in limbo (#447). Distinguishes
+    # "server unreachable" (decide retire-or-wait, hands-off) from "schema
+    # genuinely changed" (review and re-approve, hands-on) so unreachable
+    # items never bury real schema changes or count toward the reviewer's
+    # pending-critical tally:
+    #   unreachable      — re-inspection could not reach the server.
+    #   timeout          — re-inspection timed out.
+    #   drifted          — re-inspection found a schema change (needs review).
+    #   schema_mismatch  — many-to-one capability-mapping collision (#441).
+    failure_class: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -238,6 +248,7 @@ class CapabilityMapping(UUIDMixin, Base):
         Index("idx_mappings_capability", "capability_id"),
         Index("idx_mappings_server", "server_id"),
         Index("idx_mappings_status", "status"),
+        Index("idx_mappings_failure_class", "failure_class"),
         Index("idx_mappings_unique", "capability_id", "server_id", "tool_name", unique=True),
         Index(
             "idx_mappings_digest_unique",

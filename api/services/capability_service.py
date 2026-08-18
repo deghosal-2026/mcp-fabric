@@ -41,7 +41,15 @@ from api.schemas.capability import (
     CapabilityResponse,
     MappingReviewCreate,
     MappingReviewResponse,
+    ReviewQueueSummary,
 )
+
+# Failure classes that signal an offline server (hands-off: retire-or-wait).
+# These never count toward the reviewer's critical tally (#447).
+_UNREACHABLE_CLASSES = ("unreachable", "timeout")
+# Failure classes that signal a genuine schema change (hands-on: review + re-approve).
+_CRITICAL_CLASSES = ("drifted", "schema_mismatch")
+_LIMBO_STATUSES = ("stale", "pending_review", "stale-unverified")
 
 
 class CapabilityService:
@@ -249,6 +257,7 @@ class CapabilityService:
         # routable until an admin reviews and approves it.
         collides = await self._has_collision(capability_id, params.tool_name, digest)
         status = "pending_review" if collides else "active"
+        failure_class = "schema_mismatch" if collides else None
 
         pending_since = datetime.now(UTC) if collides else None
 
@@ -262,24 +271,13 @@ class CapabilityService:
             is_primary=params.is_primary,
             tool_schema_digest=digest,
             status=status,
+            failure_class=failure_class,
             pending_since=pending_since,
         )
         self.db.add(mapping)
         await self.db.commit()
         await self.db.refresh(mapping)
-        return CapabilityMappingResponse(
-            id=mapping.id,
-            capability_id=mapping.capability_id,
-            server_id=mapping.server_id,
-            tool_name=mapping.tool_name,
-            input_mapping=mapping.input_mapping,
-            output_mapping=mapping.output_mapping,
-            is_primary=mapping.is_primary or True,
-            routing_weight=mapping.routing_weight or 1.0,
-            tool_schema_digest=mapping.tool_schema_digest,
-            status=mapping.status,
-            pending_since=mapping.pending_since,
-        )
+        return self._to_mapping_response(mapping)
 
     async def _has_collision(self, capability_id: UUID, tool_name: str, digest: str) -> bool:
         """True when another mapping maps a *different* tool_name to this capability (#441).
@@ -318,38 +316,28 @@ class CapabilityService:
 
         return [CapabilityMappingResponse.model_validate(m) for m in collisions]
 
-    async def get_stale_mappings(self) -> builtins.list[CapabilityMappingResponse]:
+    async def get_stale_mappings(
+        self, failure_class: str | None = None
+    ) -> builtins.list[CapabilityMappingResponse]:
         """List all mappings in limbo that need admin review (#444).
 
         WHY: Admin dashboard shows pending reviews. Includes all non-active,
         non-rejected statuses: 'stale' (schema changed), 'pending_review'
         (collision), 'stale-unverified' (re-inspection failed, fail-closed).
         Ordered oldest-first so the most overdue items surface at the top.
+        Optionally filtered to a single failure_class (#447).
         """
         stmt = (
             select(CapabilityMapping)
             .options(selectinload(CapabilityMapping.server))
-            .where(CapabilityMapping.status.in_(("stale", "pending_review", "stale-unverified")))
+            .where(CapabilityMapping.status.in_(_LIMBO_STATUSES))
             .order_by(CapabilityMapping.pending_since.asc())
         )
+        if failure_class:
+            stmt = stmt.where(CapabilityMapping.failure_class == failure_class)
         result = await self.db.execute(stmt)
         mappings = result.scalars().all()
-        return [
-            CapabilityMappingResponse(
-                id=m.id,
-                capability_id=m.capability_id,
-                server_id=m.server_id,
-                tool_name=m.tool_name,
-                input_mapping=m.input_mapping,
-                output_mapping=m.output_mapping,
-                is_primary=m.is_primary or True,
-                routing_weight=m.routing_weight or 1.0,
-                tool_schema_digest=m.tool_schema_digest,
-                status=m.status,
-                pending_since=m.pending_since,
-            )
-            for m in mappings
-        ]
+        return [self._to_mapping_response(m) for m in mappings]
 
     async def get_overdue_reviews(
         self, threshold_hours: int = 24
@@ -365,7 +353,7 @@ class CapabilityService:
         stmt = (
             select(CapabilityMapping)
             .where(
-                CapabilityMapping.status.in_(("stale", "pending_review", "stale-unverified")),
+                CapabilityMapping.status.in_(_LIMBO_STATUSES),
                 CapabilityMapping.pending_since.is_not(None),
                 CapabilityMapping.pending_since <= cutoff,
             )
@@ -373,22 +361,102 @@ class CapabilityService:
         )
         result = await self.db.execute(stmt)
         mappings = result.scalars().all()
-        return [
-            CapabilityMappingResponse(
-                id=m.id,
-                capability_id=m.capability_id,
-                server_id=m.server_id,
-                tool_name=m.tool_name,
-                input_mapping=m.input_mapping,
-                output_mapping=m.output_mapping,
-                is_primary=m.is_primary or True,
-                routing_weight=m.routing_weight or 1.0,
-                tool_schema_digest=m.tool_schema_digest,
-                status=m.status,
-                pending_since=m.pending_since,
+        return [self._to_mapping_response(m) for m in mappings]
+
+    async def get_prioritized_reviews(self) -> builtins.list[CapabilityMappingResponse]:
+        """Review queue ordered so real changes surface above unreachable noise (#447).
+
+        WHY: A queue of 50 unreachable servers + 2 schema changes must not bury
+        the changes a human actually needs to act on. Critical classes (drifted,
+        schema_mismatch) are bucketed first (oldest within class first), then the
+        unreachable classes (unreachable, timeout). Both groups keep an
+        oldest-first ordering inside themselves.
+        """
+        stmt = (
+            select(CapabilityMapping)
+            .where(CapabilityMapping.status.in_(_LIMBO_STATUSES))
+            .order_by(
+                CapabilityMapping.failure_class.in_(list(_CRITICAL_CLASSES)).desc(),
+                CapabilityMapping.pending_since.asc().nulls_last(),
             )
-            for m in mappings
-        ]
+        )
+        result = await self.db.execute(stmt)
+        mappings = result.scalars().all()
+        return [self._to_mapping_response(m) for m in mappings]
+
+    async def get_queue_summary(self) -> ReviewQueueSummary:
+        """Live priority summary of the review queue (#447).
+
+        WHY: Gives the admin UI and the external watchdog a fast, grouped view
+        so unreachable items are visually and computationally separated from
+        genuine schema changes. The critical tally excludes unreachable classes
+        so they never exert review pressure.
+        """
+        result = await self.db.execute(
+            select(CapabilityMapping.status, CapabilityMapping.failure_class)
+            .where(CapabilityMapping.status.in_(_LIMBO_STATUSES))
+        )
+        rows = result.all()
+
+        by_failure_class: dict[str, int] = {}
+        for _, failure_class in rows:
+            if failure_class:
+                by_failure_class[failure_class] = by_failure_class.get(failure_class, 0) + 1
+
+        critical = sum(v for k, v in by_failure_class.items() if k in _CRITICAL_CLASSES)
+        unreachable = sum(v for k, v in by_failure_class.items() if k in _UNREACHABLE_CLASSES)
+        return ReviewQueueSummary(
+            total=len(rows),
+            critical=critical,
+            unreachable=unreachable,
+            by_failure_class=by_failure_class,
+        )
+
+    async def bulk_retire(
+        self,
+        failure_class: str | None = None,
+        mapping_ids: builtins.list[UUID] | None = None,
+    ) -> int:
+        """Retire every limbo mapping in a class, or an explicit set of IDs (#447).
+
+        WHY: A bulk "retire all unreachable" action removes stale items without
+        making a human click through each of them — unreachable servers are a
+        hands-off decision. Also supports retiring an explicit ID list.
+
+        SIDE EFFECTS:
+          - Sets status='rejected' and clears pending_since for matching items.
+          - Records a MappingReview ('rejected') per retired mapping for audit.
+        """
+        if not failure_class and not mapping_ids:
+            raise ValueError("Specify either failure_class or mapping_ids")
+
+        stmt = select(CapabilityMapping).where(
+            CapabilityMapping.status.in_(_LIMBO_STATUSES)
+        )
+        if failure_class:
+            stmt = stmt.where(CapabilityMapping.failure_class == failure_class)
+        if mapping_ids:
+            stmt = stmt.where(CapabilityMapping.id.in_(mapping_ids))
+        result = await self.db.execute(stmt)
+        mappings = list(result.scalars().all())
+
+        now = datetime.now(UTC)
+        for m in mappings:
+            m.status = "rejected"
+            m.pending_since = None
+            self.db.add(
+                MappingReview(
+                    mapping_id=m.id,
+                    previous_digest=m.tool_schema_digest,
+                    new_digest=m.tool_schema_digest,
+                    decision="rejected",
+                    reason=f"bulk retired ({failure_class or 'selected'})",
+                    reviewed_by=None,
+                    created_at=now,
+                )
+            )
+        await self.db.commit()
+        return len(mappings)
 
     async def review_mapping(
         self,
@@ -467,13 +535,29 @@ class CapabilityService:
             created_at=review.created_at,
         )
 
-    async def _to_response(self, cap: Capability) -> CapabilityResponse:
-        """Convert a Capability ORM object to a CapabilityResponse schema.
+    @staticmethod
+    def _to_mapping_response(m: CapabilityMapping) -> CapabilityMappingResponse:
+        """Convert a CapabilityMapping ORM row to its response schema.
 
-        Computes mappings_count (number of server mappings for this capability)
-        and aliases list from the ORM relationships. These are not stored as
-        columns but are derived from related tables.
+        Centralizes the mapping so every review-queue listing carries the same
+        fields (including failure_class for #447) without per-call drift.
         """
+        return CapabilityMappingResponse(
+            id=m.id,
+            capability_id=m.capability_id,
+            server_id=m.server_id,
+            tool_name=m.tool_name,
+            input_mapping=m.input_mapping,
+            output_mapping=m.output_mapping,
+            is_primary=m.is_primary or True,
+            routing_weight=m.routing_weight or 1.0,
+            tool_schema_digest=m.tool_schema_digest,
+            status=m.status,
+            pending_since=m.pending_since,
+            failure_class=m.failure_class,
+        )
+
+    async def _to_response(self, cap: Capability) -> CapabilityResponse:
         return CapabilityResponse(
             id=cap.id,
             name=cap.name,

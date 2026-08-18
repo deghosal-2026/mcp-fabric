@@ -32,7 +32,13 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from api.mcp import MCPClient, MCPError, ToolDefinition, compare_tool_definitions
+from api.mcp import (
+    MCPClient,
+    MCPError,
+    MCPTimeoutError,
+    ToolDefinition,
+    compare_tool_definitions,
+)
 from api.models import CapabilityMapping, MCPServer, ServerTool, ToolVersion
 from api.schemas.agent import TrustAssignmentResponse
 from api.schemas.capability import CapabilityMappingResponse
@@ -229,6 +235,9 @@ class RegistryService:
             # them. Treating "couldn't re-inspect" as "unchanged" would keep
             # stale mappings live — the servers most likely to have drifted
             # (down, flaky, mid-deploy) would keep stale mappings active.
+            # #447: record why the server failed so the review queue can split
+            # unreachable (hands-off, batch-retire) from actionable change.
+            failure_class = "timeout" if isinstance(exc, MCPTimeoutError) else "unreachable"
             now = datetime.now(UTC)
             active_result = await self.db.execute(
                 select(CapabilityMapping).where(
@@ -238,6 +247,7 @@ class RegistryService:
             )
             for mapping in active_result.scalars().all():
                 mapping.status = "stale-unverified"
+                mapping.failure_class = failure_class
                 mapping.pending_since = now
             server.health_status = "unreachable"
             await self.db.commit()
@@ -353,6 +363,7 @@ class RegistryService:
             stale_mappings: list[CapabilityMapping] = list(mapping_result.scalars().all())
             for mapping in stale_mappings:
                 mapping.status = "stale"
+                mapping.failure_class = "drifted"
                 mapping.pending_since = now
 
         server.updated_at = now

@@ -131,6 +131,7 @@ class CapabilityMappingResponse(BaseModel):
     tool_schema_digest: str | None = None
     status: str = "active"
     pending_since: datetime | None = None
+    failure_class: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -178,3 +179,55 @@ class MappingReviewCreate(BaseModel):
 
     decision: str
     reason: str | None = None
+
+
+class BulkRetireRequest(BaseModel):
+    """Request body for retiring a group of review items at once (#447).
+
+    POST /api/v1/admin/mappings/retire
+
+    Retires (marks 'rejected', clears pending_since) every limbo mapping that
+    matches the given failure_class — a hands-off batch action for items that
+    need no per-item assessment (e.g. all 'unreachable' servers), so they can
+    be removed without burying the reviewer or counting toward the critical
+    tally. One of failure_class / mapping_ids is required; either may be used.
+
+    Fields:
+        failure_class: Only retire items with this class (unreachable/drifted/...).
+        mapping_ids:   Explicit list of mapping IDs to retire.
+    """
+
+    failure_class: str | None = None
+    mapping_ids: list[UUID] | None = None
+
+
+class BulkRetireResponse(BaseModel):
+    """Result of a bulk retire action (#447).
+
+    Fields:
+        retired: number of mappings that were retired.
+        failure_class: the class that was targeted (if provided).
+    """
+
+    retired: int
+    failure_class: str | None = None
+
+
+class ReviewQueueSummary(BaseModel):
+    """Live view of the review queue grouped by failure reason (#447).
+
+    The critical tally deliberately EXCLUDES unreachable/timeout items — those
+    are hands-off (retire-or-wait) and must not pressure the reviewer. Only
+    drifted/schema_mismatch items represent real, review-worthy change.
+
+    Fields:
+        total:            all review items currently in limbo.
+        critical:         items needing hands-on review (drifted + schema_mismatch).
+        unreachable:      items that are offline (unreachable + timeout).
+        by_failure_class: raw count per failure_class value.
+    """
+
+    total: int
+    critical: int
+    unreachable: int
+    by_failure_class: dict[str, int]

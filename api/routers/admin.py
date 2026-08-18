@@ -54,9 +54,12 @@ from api.schemas.admin import (
 # (CapabilityMappingResponse, MappingReviewCreate, MappingReviewResponse)
 # and CapabilityService for the review business logic.
 from api.schemas.capability import (
+    BulkRetireRequest,
+    BulkRetireResponse,
     CapabilityMappingResponse,
     MappingReviewCreate,
     MappingReviewResponse,
+    ReviewQueueSummary,
 )
 from api.schemas.dashboard import DashboardStats
 from api.services.approval_service import ApprovalService
@@ -232,11 +235,42 @@ async def pack_cohesion(
 # The frontend Pending Reviews page polls this to show the review queue.
 # Returns CapabilityMappingResponse[] — each stale mapping includes the
 # stored tool_schema_digest so the frontend can show what changed.
+# Optional ?failure_class= filters to a single reason (#447).
 @router.get("/mappings/stale")
 async def list_stale_mappings(
+    failure_class: str | None = None,
     svc: CapabilityService = Depends(get_capability_service),
 ) -> list[CapabilityMappingResponse]:
-    return await svc.get_stale_mappings()
+    return await svc.get_stale_mappings(failure_class=failure_class)
+
+
+# Live priority summary of the review queue (#447). Separates unreachable
+# (hands-off) items from genuine schema changes so the blank flag hides
+# real actionable work. Used by the admin UI and the external watchdog.
+@router.get("/mappings/summary")
+async def get_mappings_summary(
+    svc: CapabilityService = Depends(get_capability_service),
+) -> ReviewQueueSummary:
+    return await svc.get_queue_summary()
+
+
+# Bulk-retire review items without per-item review (#447). Target a whole
+# failure_class ("unreachable") or an explicit list of mapping IDs. Retired
+# items become 'rejected' and are removed from the queue.
+@router.post("/mappings/retire")
+async def bulk_retire_mappings(
+    body: BulkRetireRequest,
+    svc: CapabilityService = Depends(get_capability_service),
+) -> BulkRetireResponse:
+    if not body.failure_class and not body.mapping_ids:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "no_target", "message": "Specify failure_class or mapping_ids"},
+        )
+    retired = await svc.bulk_retire(
+        failure_class=body.failure_class, mapping_ids=body.mapping_ids
+    )
+    return BulkRetireResponse(retired=retired, failure_class=body.failure_class)
 
 
 # List overdue limbo mappings — items whose pending_since exceeds the threshold (#444).
