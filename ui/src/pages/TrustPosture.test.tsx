@@ -5,17 +5,19 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
 import { ToastProvider } from '../components/shared/Toast'
 import { TrustPosturePage } from './TrustPosture'
-import { fetchServers, fetchAgentClasses, setTrustAssignment } from '../api/client'
+import { fetchServers, fetchAgentClasses, setTrustAssignment, fetchPackBreadth } from '../api/client'
 
 vi.mock('../api/client', () => ({
   fetchServers: vi.fn(),
   fetchAgentClasses: vi.fn(),
   setTrustAssignment: vi.fn(),
+  fetchPackBreadth: vi.fn(),
 }))
 
 const mockFetchServers = vi.mocked(fetchServers)
 const mockFetchAgentClasses = vi.mocked(fetchAgentClasses)
 const mockSetTrustAssignment = vi.mocked(setTrustAssignment)
+const mockFetchPackBreadth = vi.mocked(fetchPackBreadth)
 
 function renderWithProviders(ui: React.ReactElement) {
   const testQueryClient = new QueryClient({
@@ -70,6 +72,7 @@ beforeEach(() => {
   mockFetchServers.mockResolvedValue(mockServers as any)
   mockFetchAgentClasses.mockResolvedValue(mockClasses as any)
   mockSetTrustAssignment.mockResolvedValue({} as any)
+  mockFetchPackBreadth.mockResolvedValue([])
 })
 
 describe('TrustPosturePage', () => {

@@ -122,7 +122,7 @@ class IPRateLimitMiddleware(BaseHTTPMiddleware):
         self._last_cleanup: float = 0
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        if request.url.path in HEALTH_PATHS:
+        if request.url.path in HEALTH_PATHS or settings.environment == "testing":
             return await call_next(request)
 
         client_ip = extract_client_ip(request)
