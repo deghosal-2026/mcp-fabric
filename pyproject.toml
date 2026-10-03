@@ -19,7 +19,7 @@ classifiers = [
 
 dependencies = [
     "greenlet>=3.0",
-    "fastapi>=0.141.1",
+    "fastapi>=0.142.2",
     "uvicorn[standard]>=0.52.1",
     "sqlalchemy[asyncio]>=2.0",
     "aiosqlite>=0.22.1",
